@@ -1,11 +1,12 @@
 // Blook Maker server. Serves the app and the shared shapes catalog.
 // No dependencies: run it with `node server.js`.
 import { createServer } from 'node:http';
-import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt as scryptCallback } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -21,6 +22,20 @@ const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 2 * 1024 * 1024;
 const MAX_NODES = 20000;
 const SESSION_MS = 8 * 60 * 60 * 1000;
+const ACCOUNT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
+const TRY_WINDOW_MS = 15 * 60 * 1000;
+const MAX_TRIES = 20;
+
+// Plus costs nothing for now. Set PLUS_IS_FREE=false once payment is connected.
+const PLUS_IS_FREE = process.env.PLUS_IS_FREE !== 'false';
+
+// Render's free disk is wiped on restart, so accounts can also be kept in a
+// private GitHub repo. Set GITHUB_TOKEN and DATA_REPO (owner/name) to turn it on.
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const DATA_REPO = process.env.DATA_REPO;
+const GITHUB_API = process.env.GITHUB_API || 'https://api.github.com';
+const USERS_IN_GITHUB = !!(GITHUB_TOKEN && DATA_REPO);
+const USERS_FILE = join(DATA, 'users.json');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -40,7 +55,7 @@ function loadPassword() {
 
 const adminPassword = loadPassword();
 const sessions = new Map();
-let failedLogins = 0;
+const tries = new Map();
 
 let shapes = existsSync(SHAPES_FILE) ? JSON.parse(readFileSync(SHAPES_FILE, 'utf8')) : [];
 
@@ -48,6 +63,126 @@ function saveShapes() {
   const tmp = SHAPES_FILE + '.tmp';
   writeFileSync(tmp, JSON.stringify(shapes, null, 1));
   renameSync(tmp, SHAPES_FILE);
+}
+
+/* ---------- Accounts ---------- */
+
+const scrypt = promisify(scryptCallback);
+const sessionSecret = createHash('sha256').update(`blook-session:${adminPassword}`).digest();
+const usersUrl = `${GITHUB_API}/repos/${DATA_REPO}/contents/users.json`;
+const githubHeaders = {
+  Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'blook-maker',
+};
+
+let users = {};
+let usersSha = null;
+let usersWrite = Promise.resolve();
+
+async function loadUsers() {
+  if (!USERS_IN_GITHUB) {
+    if (existsSync(USERS_FILE)) users = JSON.parse(readFileSync(USERS_FILE, 'utf8'));
+    return;
+  }
+  const res = await fetch(usersUrl, { headers: githubHeaders });
+  if (res.status === 404) return;
+  if (!res.ok) throw new Error(`Could not read accounts from GitHub (${res.status}).`);
+  const file = await res.json();
+  usersSha = file.sha;
+  users = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
+}
+
+async function writeUsers() {
+  const json = JSON.stringify(users);
+  if (!USERS_IN_GITHUB) {
+    const tmp = USERS_FILE + '.tmp';
+    writeFileSync(tmp, json);
+    renameSync(tmp, USERS_FILE);
+    return;
+  }
+  const res = await fetch(usersUrl, {
+    method: 'PUT',
+    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: 'Update accounts',
+      content: Buffer.from(json).toString('base64'),
+      ...(usersSha ? { sha: usersSha } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(`Could not save accounts to GitHub (${res.status}).`);
+  usersSha = (await res.json()).content.sha;
+}
+
+// One save at a time, and a failed save does not block the next one.
+function saveUsers() {
+  const next = usersWrite.catch(() => {}).then(writeUsers);
+  usersWrite = next;
+  return next;
+}
+
+const hashPassword = async (password, salt) => (await scrypt(password, salt, 32)).toString('hex');
+const publicUser = (u) => ({ name: u.name, plus: !!u.plus });
+const sign = (payload) => createHmac('sha256', sessionSecret).update(payload).digest('base64url');
+
+function issueToken(key) {
+  const payload = Buffer.from(JSON.stringify({ u: key, e: Date.now() + ACCOUNT_SESSION_MS })).toString('base64url');
+  return `${payload}.${sign(payload)}`;
+}
+
+function currentUser(req) {
+  const [payload, signature] = (req.headers.authorization || '').replace(/^Bearer /, '').split('.');
+  if (!payload || !signature) return null;
+  const expected = Buffer.from(sign(payload));
+  const given = Buffer.from(signature);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
+  const { u, e } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  return e > Date.now() ? users[u] || null : null;
+}
+
+function triesFor(req) {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
+  const now = Date.now();
+  let record = tries.get(ip);
+  if (!record || record.reset < now) {
+    record = { count: 0, reset: now + TRY_WINDOW_MS };
+    tries.set(ip, record);
+  }
+  return record;
+}
+
+const TOO_MANY = { error: 'Too many tries. Wait a few minutes and try again.' };
+
+async function register(req, res) {
+  const record = triesFor(req);
+  if (record.count >= MAX_TRIES) return send(res, 429, TOO_MANY);
+  record.count += 1;
+  const { username, password } = await readJson(req);
+  if (typeof username !== 'string' || !/^[\w-]{3,20}$/.test(username)) {
+    return send(res, 400, { error: 'Usernames need 3 to 20 letters or numbers.' });
+  }
+  if (typeof password !== 'string' || password.length < 6 || password.length > 100) {
+    return send(res, 400, { error: 'Passwords need at least 6 characters.' });
+  }
+  const key = username.toLowerCase();
+  const salt = randomBytes(16).toString('hex');
+  const hash = await hashPassword(password, salt);
+  if (users[key]) return send(res, 409, { error: 'That username is taken.' });
+  users[key] = { name: username, salt, hash, plus: false, createdAt: Date.now() };
+  await saveUsers();
+  return send(res, 201, { token: issueToken(key), user: publicUser(users[key]) });
+}
+
+async function login(req, res) {
+  const record = triesFor(req);
+  if (record.count >= MAX_TRIES) return send(res, 429, TOO_MANY);
+  const { username, password } = await readJson(req);
+  const key = String(username || '').toLowerCase();
+  const user = users[key];
+  const attempt = user && typeof password === 'string' ? await hashPassword(password, user.salt) : '';
+  if (!user || attempt.length !== user.hash.length || !timingSafeEqual(Buffer.from(attempt), Buffer.from(user.hash))) {
+    record.count += 1;
+    return send(res, 401, { error: 'That username or password is not right.' });
+  }
+  return send(res, 200, { token: issueToken(key), user: publicUser(user) });
 }
 
 const digest = (s) => createHash('sha256').update(String(s)).digest();
@@ -116,21 +251,37 @@ function cleanShape(input) {
     category: cleanText(input.category, 40, 'Uploaded'),
     fillRule: input.fillRule === 'evenodd' ? 'evenodd' : 'nonzero',
     lineOnly: !!input.lineOnly,
+    plus: !!input.plus,
     subpaths,
   };
 }
 
 async function api(req, res, path) {
-  if (req.method === 'GET' && path === '/api/shapes') return send(res, 200, { shapes, temporary: TEMPORARY_DISK });
+  if (req.method === 'GET' && path === '/api/shapes') {
+    return send(res, 200, { shapes, temporary: TEMPORARY_DISK, accountsTemporary: TEMPORARY_DISK && !USERS_IN_GITHUB });
+  }
+  if (req.method === 'POST' && path === '/api/auth/register') return register(req, res);
+  if (req.method === 'POST' && path === '/api/auth/login') return login(req, res);
+  if (path === '/api/me' || path === '/api/plus/join') {
+    const user = currentUser(req);
+    if (!user) return send(res, 401, { error: 'Please log in.' });
+    if (req.method === 'GET' && path === '/api/me') return send(res, 200, { user: publicUser(user) });
+    if (req.method === 'POST' && path === '/api/plus/join') {
+      if (!PLUS_IS_FREE) return send(res, 402, { error: 'Plus is not available yet.' });
+      user.plus = true;
+      await saveUsers();
+      return send(res, 200, { user: publicUser(user) });
+    }
+  }
 
   if (req.method === 'POST' && path === '/api/admin/login') {
-    if (failedLogins >= 10) return send(res, 429, { error: 'Too many tries. Restart the server to try again.' });
+    const record = triesFor(req);
+    if (record.count >= MAX_TRIES) return send(res, 429, TOO_MANY);
     const { password } = await readJson(req);
     if (!passwordMatches(password)) {
-      failedLogins += 1;
+      record.count += 1;
       return send(res, 401, { error: 'That password is not right.' });
     }
-    failedLogins = 0;
     const token = randomBytes(24).toString('hex');
     sessions.set(token, Date.now() + SESSION_MS);
     return send(res, 200, { token });
@@ -153,6 +304,7 @@ async function api(req, res, path) {
     const patch = await readJson(req);
     shapes[index].name = cleanText(patch.name, 60, shapes[index].name);
     shapes[index].category = cleanText(patch.category, 40, shapes[index].category);
+    if (typeof patch.plus === 'boolean') shapes[index].plus = patch.plus;
     saveShapes();
     return send(res, 200, { shape: shapes[index] });
   }
@@ -196,6 +348,10 @@ server.on('error', (err) => {
 });
 
 console.log('Starting Blook Maker...');
+await loadUsers();
+if (TEMPORARY_DISK && !USERS_IN_GITHUB) {
+  console.log('Warning: accounts will be lost on restart. Set GITHUB_TOKEN and DATA_REPO to keep them.');
+}
 server.listen(PORT, HOST, () => {
   console.log(`Running at http://localhost:${PORT}`);
   console.log(process.env.ADMIN_PASSWORD ? 'Admin password: set from ADMIN_PASSWORD' : `Admin password: ${adminPassword}`);

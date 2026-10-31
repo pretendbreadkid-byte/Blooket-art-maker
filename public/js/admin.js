@@ -1,7 +1,8 @@
 // The admin page: sign in, then upload and manage catalog shapes.
 import { svgToShape, shapeThumb } from './shapes.js';
+import { imageToShape } from './trace.js';
 import { esc } from './render.js';
-import { $, $$, icon, toast, confirmBox, readText } from './ui.js';
+import { $, $$, icon, toast, confirmBox, readText, readDataUrl } from './ui.js';
 
 const TOKEN_KEY = 'blook-admin-token';
 
@@ -69,8 +70,10 @@ async function uploadFiles(root, files) {
   let added = 0;
   for (const file of files) {
     try {
-      const shape = svgToShape(await readText(file));
-      await call('POST', '/api/shapes', { ...shape, name: file.name.replace(/\.svg$/i, ''), category });
+      const isSvg = /\.svg$/i.test(file.name);
+      const shape = isSvg ? svgToShape(await readText(file)) : await imageToShape(await readDataUrl(file));
+      const plus = $('#uplus', root).checked;
+      await call('POST', '/api/shapes', { ...shape, plus, name: file.name.replace(/\.[^.]+$/, ''), category });
       added++;
     } catch (error) {
       if (error.status === 401) { renderLogin(root); return; }
@@ -82,7 +85,7 @@ async function uploadFiles(root, files) {
 }
 
 async function renderManager(root) {
-  const { shapes = [], temporary = false } = await call('GET', '/api/shapes');
+  const { shapes = [], temporary = false, accountsTemporary = false } = await call('GET', '/api/shapes');
   const lastCategory = shapes[shapes.length - 1]?.category || 'Uploaded';
   root.innerHTML = `<div class="admin">
     <header class="admin-top">
@@ -92,14 +95,18 @@ async function renderManager(root) {
       <button class="btn ghost" id="signout">Sign out</button>
     </header>
     ${temporary ? '<p class="admin-note">Shapes uploaded on this live site disappear when it restarts. To keep a shape, upload it in your VS Code preview, then push to GitHub.</p>' : ''}
+    ${accountsTemporary ? '<p class="admin-note">Accounts are not being kept yet, so everyone loses their login when this site restarts. Set GITHUB_TOKEN and DATA_REPO to fix that.</p>' : ''}
     <section class="upload">
       <label class="drop" id="drop">
         ${icon('upload')}
-        <b>Drop SVG files here</b>
-        <span class="muted">or click to choose them. Each file becomes one shape.</span>
-        <input type="file" id="ufile" accept=".svg,image/svg+xml" multiple hidden>
+        <b>Drop SVGs or pictures here</b>
+        <span class="muted">or click to choose them. A picture becomes a shape with its real outline.</span>
+        <input type="file" id="ufile" accept=".svg,image/*" multiple hidden>
       </label>
-      <label class="field"><span>Add to category</span><input id="ucat" maxlength="40" value="${esc(lastCategory)}"></label>
+      <div class="upload-side">
+        <label class="field"><span>Add to category</span><input id="ucat" maxlength="40" value="${esc(lastCategory)}"></label>
+        <label class="check"><input type="checkbox" id="uplus"><span>Plus only</span></label>
+      </div>
     </section>
     <h2>${shapes.length} uploaded shape${shapes.length === 1 ? '' : 's'}</h2>
     ${shapes.length ? '' : '<p class="muted">The built-in basic shapes are always there. Shapes you upload here show up in everyone\'s Shapes panel.</p>'}
@@ -108,6 +115,7 @@ async function renderManager(root) {
         <span class="admin-thumb">${shapeThumb(s)}</span>
         <label class="field"><span>Name</span><input data-k="name" maxlength="60" value="${esc(s.name)}"></label>
         <label class="field"><span>Category</span><input data-k="category" maxlength="40" value="${esc(s.category)}"></label>
+        <label class="check"><input type="checkbox" data-plus ${s.plus ? 'checked' : ''}><span>Plus</span></label>
         <button class="ib" data-del aria-label="Delete ${esc(s.name)}" title="Delete">${icon('trash')}</button>
       </li>`).join('')}
     </ul>
@@ -122,6 +130,15 @@ async function renderManager(root) {
 
   $$('.admin-list li', root).forEach((row) => {
     const id = row.dataset.id;
+    $('[data-plus]', row).onchange = async (e) => {
+      try {
+        await call('PATCH', `/api/shapes/${id}`, { plus: e.target.checked });
+        toast('Saved.', 'ok');
+      } catch (error) {
+        if (error.status === 401) renderLogin(root);
+        else toast(error.message, 'warn');
+      }
+    };
     $$('[data-k]', row).forEach((field) => {
       field.onchange = async () => {
         try {

@@ -1,12 +1,14 @@
 // The option bar, the Selected panel, the Layers panel and the shapes catalog.
 import {
-  S, hooks, refresh, liveRefresh, commit, activeLayer, selected, posed, edit, select, canUndo, canRedo,
+  S, hooks, refresh, liveRefresh, commit, activeLayer, selected, posed, edit, select, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
 import { newLayer, clone, uid, pathBounds } from './model.js';
 import { layerMarkup, esc } from './render.js';
-import { BASIC_SHAPES, shapeThumb } from './shapes.js';
-import { localBox, hasCorners } from './stage.js';
-import { TOOLS, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, toggleNodeCurve } from './tools.js';
+import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
+import { localBox, hasCorners, toDoc } from './stage.js';
+import { TOOLS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind } from './tools.js';
+import { isPlus } from './session.js';
+import { plusDialog } from './plus.js';
 import { $, $$, html, icon, swatch, colorPopover, toast, confirmBox } from './ui.js';
 
 const FONTS = ['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'];
@@ -27,11 +29,12 @@ function slider({ label, value, min, max, step = 1, unit = '', onInput, onChange
   return row;
 }
 
-function colorButton({ label, value, allowNone, onInput, onDone }) {
+function colorButton({ label, value, allowNone, allowGradient, onInput, onDone }) {
   const btn = html(`<button class="color-btn" title="Choose ${esc(label)}">${swatch(value)}<span>${esc(label)}</span></button>`);
+  let current = value;
   btn.onclick = () => colorPopover(btn, {
-    value, allowNone,
-    onInput: (c) => { btn.querySelector('.sw').replaceWith(html(swatch(c))); onInput(c); },
+    value: current, allowNone, allowGradient,
+    onInput: (c) => { current = c; btn.querySelector('.sw').replaceWith(html(swatch(c))); onInput(c); },
     onDone,
   });
   return btn;
@@ -79,30 +82,46 @@ function optionBar() {
   bar.append(title);
   const add = (...els) => bar.append(...els);
   const ink = (key, label) => colorButton({ label, value: S[key], onInput: (c) => { S[key] = c; } });
+  const paint = (label) => colorButton({ label, value: S.fillGradient || S.fill, allowGradient: true, onInput: setToolFill });
 
   if (tool === 'pencil' || tool === 'marker' || tool === 'eraser') {
     if (tool !== 'eraser') add(ink('stroke', 'Colour'));
     add(slider({ label: 'Size', value: S.sizes[tool], min: 1, max: 200, unit: 'px', onInput: (v) => { S.sizes[tool] = v; } }));
   } else if (tool === 'shapes') {
-    add(ink('fill', 'Fill'), ink('stroke', 'Outline'));
+    add(paint('Fill'), ink('stroke', 'Outline'));
     add(slider({ label: 'Outline size', value: S.shapeOutline, min: 0, max: 60, unit: 'px', onInput: (v) => { S.shapeOutline = v; } }));
   } else if (tool === 'bucket') {
-    add(ink('fill', 'Colour'));
+    add(paint('Colour'));
   } else if (tool === 'text') {
-    add(ink('fill', 'Colour'));
+    add(paint('Colour'));
     add(fontControls(S.font, (patch) => Object.assign(S.font, patch)));
   } else if (tool === 'vertices') {
     const [item] = selected();
     if (item?.type === 'path') {
       add(roundingSlider(item));
       const has = S.nodeSel.size > 0;
-      const curve = button('Curve / sharp', 'smooth', () => { for (const k of S.nodeSel) toggleNodeCurve(k); }, has ? '' : 'off');
-      const remove = button('Delete point', 'trash', () => deleteNodes(), has ? '' : 'off');
-      add(curve, remove);
+      const kind = has ? selectedNodeKind(item) : S.nodeKind;
+      const choose = (next) => () => {
+        S.nodeKind = next;
+        if (has) { setNodesKind(next); commit(); } else hooks.panels();
+      };
+      add(html(`<span class="opt-label">${has ? 'This point' : 'New points'}</span>`));
+      add(
+        button('Pointed', 'sharp', choose('pointed'), kind === 'pointed' ? 'on' : ''),
+        button('Rounded', 'smooth', choose('rounded'), kind === 'rounded' ? 'on' : ''),
+        button('Delete point', 'trash', () => deleteNodes(), has ? '' : 'off'),
+      );
     } else {
       add(html('<span class="muted">Click a shape or a drawing to see its points.</span>'));
     }
   }
+}
+
+function selectedNodeKind(item) {
+  const [key] = S.nodeSel;
+  const [sp, i] = key.split(':').map(Number);
+  const n = posed(item).subpaths[sp]?.nodes[i];
+  return n && (n.ix || n.iy || n.ox || n.oy) ? 'rounded' : 'pointed';
 }
 
 function fontControls(target, apply) {
@@ -139,10 +158,25 @@ function documentPanel(box) {
   box.append(html('<h3>Canvas</h3>'));
   box.append(html(`<p class="muted">${d.width} × ${d.height} px${d.animated ? ' · Animation' : ''}</p>`));
   box.append(colorButton({
-    label: 'Background', value: d.background, allowNone: true,
-    onInput: (c) => { d.background = c; hooks.stage(); },
+    label: 'Background', value: d.bgGradient || d.background, allowNone: true, allowGradient: true,
+    onInput: (c) => {
+      const { fill, gradient } = paintPatch(c);
+      d.background = fill;
+      d.bgGradient = gradient;
+      hooks.stage();
+    },
     onDone: commit,
   }));
+  box.append(slider({
+    label: 'Round canvas corners', value: Math.round(d.cornerRadius || 0), min: 0, max: Math.floor(Math.min(d.width, d.height) / 2), unit: 'px',
+    onInput: (v) => { d.cornerRadius = v; refreshFrameCorners(); },
+    onChange: commit,
+  }));
+}
+
+function refreshFrameCorners() {
+  $('#frame').style.borderRadius = `${S.doc.cornerRadius * S.zoom}px`;
+  hooks.stage();
 }
 
 function selectedPanel() {
@@ -179,8 +213,8 @@ function selectedPanel() {
     const first = posed(paintable[0]);
     const row = html('<div class="row"></div>');
     row.append(colorButton({
-      label: 'Fill', value: first.fill, allowNone: true,
-      onInput: (c) => { paintable.forEach((o) => edit(o, { fill: c })); liveRefresh(); },
+      label: 'Fill', value: first.gradient || first.fill, allowNone: true, allowGradient: true,
+      onInput: (c) => { paintable.forEach((o) => edit(o, paintPatch(c))); liveRefresh(); },
       onDone: commit,
     }));
     row.append(colorButton({
@@ -414,11 +448,43 @@ function catalogPanel() {
   renderCatalogGrid();
 }
 
+const DRAG_START_PX = 6;
+const DROPPED_SHAPE_SIZE = 0.25;
+
+// Drag a shape out of the bar and drop it anywhere on the canvas.
+function startShapeDrag(e, item, shape) {
+  e.preventDefault();
+  const startX = e.clientX, startY = e.clientY;
+  let ghost = null;
+  const move = (ev) => {
+    if (!ghost && Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_START_PX) return;
+    ghost ??= document.body.appendChild(html(`<div class="shape-ghost">${shapeThumb(shape)}</div>`));
+    ghost.style.left = `${ev.clientX}px`;
+    ghost.style.top = `${ev.clientY}px`;
+  };
+  const up = (ev) => {
+    removeEventListener('pointermove', move);
+    removeEventListener('pointerup', up);
+    if (!ghost) return;
+    ghost.remove();
+    item.dataset.dragged = '1';
+    setTimeout(() => delete item.dataset.dragged, 0);
+    const r = $('#wk').getBoundingClientRect();
+    if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return;
+    const p = toDoc(ev);
+    const size = Math.min(S.doc.width, S.doc.height) * DROPPED_SHAPE_SIZE;
+    S.shape = shape;
+    addShape(shape, p.x, p.y, size, size);
+  };
+  addEventListener('pointermove', move);
+  addEventListener('pointerup', up);
+}
+
 function renderCatalogGrid() {
   const grid = $('#catalog .cat-grid');
   grid.innerHTML = '';
   const groups = new Map();
-  for (const shape of [...BASIC_SHAPES, ...S.catalog]) {
+  for (const shape of [...BASIC_SHAPES, ...PLUS_SHAPES, ...S.catalog]) {
     if (search && !`${shape.name} ${shape.category}`.toLowerCase().includes(search)) continue;
     if (!groups.has(shape.category)) groups.set(shape.category, []);
     groups.get(shape.category).push(shape);
@@ -428,8 +494,18 @@ function renderCatalogGrid() {
     grid.append(html(`<h4>${esc(category)}</h4>`));
     const row = html('<div class="cat-row"></div>');
     for (const shape of shapes) {
-      const b = html(`<button class="cat-item ${S.shape.id === shape.id ? 'on' : ''}" title="${esc(shape.name)}">${shapeThumb(shape)}<span>${esc(shape.name)}</span></button>`);
-      b.onclick = () => { S.shape = shape; renderCatalogGrid(); };
+      const locked = shape.plus && !isPlus();
+      const b = html(`<button class="cat-item ${S.shape.id === shape.id ? 'on' : ''} ${locked ? 'locked' : ''}" title="${esc(shape.name)}">${shapeThumb(shape)}<span>${esc(shape.name)}</span>${locked ? '<em class="plus-badge">PLUS</em>' : ''}</button>`);
+      b.onclick = async () => {
+        if (b.dataset.dragged) { delete b.dataset.dragged; return; }
+        if (locked) {
+          if (await plusDialog(`${shape.name} is a Plus shape`)) { renderCatalogGrid(); }
+          return;
+        }
+        S.shape = shape;
+        renderCatalogGrid();
+      };
+      if (!locked) b.addEventListener('pointerdown', (e) => startShapeDrag(e, b, shape));
       row.append(b);
     }
     grid.append(row);

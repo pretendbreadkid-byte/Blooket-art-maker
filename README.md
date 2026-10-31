@@ -22,36 +22,65 @@ Then open <http://localhost:5180>.
 
 | Tool | Key | What it does |
 | --- | --- | --- |
-| Select | V | Move, resize and turn things. Double-click to edit text or points. |
-| Vertices | A | Drag points, click a dot to add one, double-click to curve one, round the corners. |
+| Select | V | Move, resize and turn things. Ctrl+click picks more. Double-click to edit text or points. Right-click for more. |
+| Lasso | L | Draw a loop around things to pick them. |
+| Vertices | A | Drag points, click a dot to add one, choose Pointed or Rounded, round the corners. |
 | Pencil | P | Thin, sharp lines. |
 | Marker | M | Thick, see-through lines. |
-| Shapes | S | Basic shapes and the uploaded catalog. |
-| Bucket | B | Fill a shape, a closed drawing, or the background. |
+| Shapes | S | Basic shapes, Plus shapes and the uploaded catalog. Click one, or drag it onto the canvas. |
+| Bucket | B | Fill a shape, a closed drawing, or the background, with a colour or a gradient. |
 | Text | T | Click and type. |
 | Eraser | E | Rubs out art on the current layer. |
 | Move view | H | Drag around. Hold Space to do this from any tool. Scroll to zoom. |
 
 Other keys: `[` and `]` change brush size, Ctrl+Z undo, Ctrl+Y redo, Ctrl+D duplicate, Delete remove.
 
-In animations: Enter plays, `,` and `.` step one frame. Pick a later frame and move or change something, and a keyframe is added for you.
+In animations: Enter plays, `,` and `.` step one frame. Pick a later frame and move or change something, and a keyframe is added for you. Shapes warp smoothly between keyframes, even when you add or remove points.
+
+**Add picture** can keep a picture as it is, or turn it into a shape with its real outline. Pictures with a plain or see-through background work best.
+
+If art goes past the edge, the app offers to expand the canvas: **Perfect fit** wraps tightly around your lines and **Basic fit** just makes it big enough.
+
+## Plans
+
+| | Guest | Basic | Plus |
+| --- | --- | --- | --- |
+| Make art | Yes | Yes | Yes |
+| Saves your art | No | Yes | Yes |
+| Export SVG and WEBP | Yes | Yes | Yes |
+| Export PNG, JPG and PDF | No | No | Yes |
+| Plus shapes | No | No | Yes |
+
+Plus is free for now. Set `PLUS_IS_FREE=false` to turn off free sign-ups, then connect payment in `POST /api/plus/join` in `server.js`. Plus checks currently run in the browser, so move them to the server before charging money.
 
 ## Admins
 
-The **Admin** link on the home screen opens the shapes catalog. Admins upload SVG files, and each file becomes one single-colour shape with editable points that everyone can use.
+The **Admin** link on the home screen opens the shapes catalog. Admins upload files, and each file becomes one single-colour shape with editable points that everyone can use.
 
 The password is printed in the terminal when the server starts, and saved in `data/admin-password.txt`. To choose your own, set `ADMIN_PASSWORD` before starting.
 
+Admins can upload SVGs or pictures, and tick **Plus** to make a shape Plus only.
+
 ## Where things are saved
 
-- **Projects and folders** are saved in the browser you use, so they stay private to that browser. VS Code's preview and Chrome each keep their own copy.
+- **Accounts** are saved in `data/users.json`, or in a private GitHub repo if you set that up (below). Passwords are stored as salted hashes.
+- **Projects and folders** are saved in the browser you use, per account. Logging in on another device will not show them yet. VS Code's preview and Chrome each keep their own copy.
+- **Guests** are kept in memory only, so their art is gone when the page closes.
 - **Catalog shapes** are saved in `catalog/shapes.json`, shared with everyone.
 
 To keep a new shape for good, upload it in your VS Code preview, then commit and push `catalog/shapes.json`. Render redeploys and the shape goes live. Shapes uploaded on the live site vanish when it restarts, and its admin page says so.
 
 ## Putting it online
 
-Set `HOST=0.0.0.0`, `PORT` and `ADMIN_PASSWORD`, and put it behind HTTPS. By default it only listens on your own computer.
+Set `HOST=0.0.0.0`, `PORT` and `ADMIN_PASSWORD`, and put it behind HTTPS. By default it only listens on your own computer. `ADMIN_PASSWORD` also protects logins, so changing it signs everyone out.
+
+### Keeping accounts on Render
+
+Render's free disk is wiped on every restart, so accounts need somewhere else to live. No database is needed:
+
+1. Make a new **private** GitHub repo, for example `blook-maker-data`.
+2. Make a [fine-grained token](https://github.com/settings/personal-access-tokens/new) for only that repo, with **Contents: Read and write**.
+3. In Render, add `GITHUB_TOKEN` (the token) and `DATA_REPO` (like `your-name/blook-maker-data`).
 
 ## Tests
 

@@ -17,7 +17,7 @@ export function newDoc({ name, folderId = null, animated = false, width = 1024, 
   const layer = newLayer('Layer 1');
   return {
     id: uid('p'), name, folderId, animated, width, height,
-    background: '#ffffff', fps: 12, frames: 48,
+    background: '#ffffff', bgGradient: null, cornerRadius: 0, fps: 12, frames: 48,
     layers: [layer], activeLayerId: layer.id,
     createdAt: Date.now(), updatedAt: Date.now(),
   };
@@ -26,7 +26,7 @@ export function newDoc({ name, folderId = null, animated = false, width = 1024, 
 function baseObject(type, props) {
   return {
     id: uid('o'), type, name: type, x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1,
-    fill: 'none', stroke: 'none', strokeWidth: 0, keys: [], erase: [], ...props,
+    fill: 'none', gradient: null, stroke: 'none', strokeWidth: 0, keys: [], erase: [], ...props,
   };
 }
 
@@ -71,7 +71,9 @@ function cornerGeometry(sp, i) {
   };
 }
 
-function subpathD(sp) {
+// uniform writes every frame of an animation with the same commands, which
+// animated SVG needs before it will warp smoothly between them.
+function subpathD(sp, uniform) {
   const { nodes, closed } = sp;
   const N = nodes.length;
   if (!N) return '';
@@ -81,17 +83,37 @@ function subpathD(sp) {
   const last = closed ? N : N - 1;
   for (let k = 0; k < last; k++) {
     const a = nodes[k], j = (k + 1) % N, b = nodes[j], g = geo[j];
+    const from = geo[k].out;
     if (hasOut(a) || hasIn(b)) {
       d += `C${f(a.x + (a.ox || 0))} ${f(a.y + (a.oy || 0))} ${f(b.x + (b.ix || 0))} ${f(b.y + (b.iy || 0))} ${f(g.inn.x)} ${f(g.inn.y)}`;
+    } else if (uniform) {
+      const c = (p, q, t) => f(p + (q - p) * t);
+      d += `C${c(from.x, g.inn.x, 1 / 3)} ${c(from.y, g.inn.y, 1 / 3)} ${c(from.x, g.inn.x, 2 / 3)} ${c(from.y, g.inn.y, 2 / 3)} ${f(g.inn.x)} ${f(g.inn.y)}`;
     } else {
       d += `L${f(g.inn.x)} ${f(g.inn.y)}`;
     }
-    if (g.r) d += `A${f(g.r)} ${f(g.r)} 0 0 ${g.sweep} ${f(g.out.x)} ${f(g.out.y)}`;
+    if (uniform) {
+      const c = (p, q) => f(p + (q - p) * ARC_HANDLE);
+      d += `C${c(g.inn.x, b.x)} ${c(g.inn.y, b.y)} ${c(g.out.x, b.x)} ${c(g.out.y, b.y)} ${f(g.out.x)} ${f(g.out.y)}`;
+    } else if (g.r) {
+      d += `A${f(g.r)} ${f(g.r)} 0 0 ${g.sweep} ${f(g.out.x)} ${f(g.out.y)}`;
+    }
   }
   return closed ? d + 'Z' : d;
 }
 
-export const pathD = (subpaths) => subpaths.map(subpathD).join('');
+const ARC_HANDLE = 0.5523;
+
+export const pathD = (subpaths, { uniform = false } = {}) => subpaths.map((sp) => subpathD(sp, uniform)).join('');
+
+export function pointInPolygon(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
 
 const cubicAt = (p0, p1, p2, p3, t) => {
   const u = 1 - t;
@@ -167,6 +189,63 @@ export function splitSegment(sp, i) {
   return i + 1;
 }
 
+function growTo(sp, count) {
+  const out = clone(sp);
+  while (out.nodes.length < count) {
+    const N = out.nodes.length;
+    const last = out.closed ? N : N - 1;
+    let longest = 0, best = -1;
+    for (let i = 0; i < last; i++) {
+      const a = out.nodes[i], b = out.nodes[(i + 1) % N];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len > best) { best = len; longest = i; }
+    }
+    splitSegment(out, longest);
+  }
+  return out;
+}
+
+function pointLike(sp) {
+  const b = pathBounds([sp]);
+  const x = b.x + b.width / 2, y = b.y + b.height / 2;
+  return { closed: sp.closed, nodes: sp.nodes.map(() => ({ x, y })) };
+}
+
+// Gives two outlines the same points so one can warp into the other. Extra
+// outlines grow from a single point.
+export function matchSubpaths(a, b) {
+  const left = [], right = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const p = a[i] || pointLike(b[i]), q = b[i] || pointLike(a[i]);
+    const count = Math.max(p.nodes.length, q.nodes.length);
+    left.push(growTo(p, count));
+    right.push(growTo(q, count));
+  }
+  return [left, right];
+}
+
+const allPoses = (obj) => [obj, ...obj.keys.map((k) => k.pose)];
+
+// Adds a point on every keyframe, at the same place on the outline, so the
+// animation can warp to and from it. Returns the new point's index.
+export function addVertex(obj, s, i) {
+  let index = i + 1;
+  for (const pose of allPoses(obj)) {
+    const sp = pose.subpaths?.[s];
+    if (sp && i < sp.nodes.length) index = splitSegment(sp, i);
+  }
+  return index;
+}
+
+export function removeVertices(obj, keys) {
+  for (const pose of allPoses(obj)) {
+    if (!pose.subpaths) continue;
+    pose.subpaths = pose.subpaths
+      .map((sp, s) => ({ ...sp, nodes: sp.nodes.filter((_, i) => !keys.has(`${s}:${i}`)) }))
+      .filter((sp) => sp.nodes.length > 1);
+  }
+}
+
 // Sets a node's handles along the line between its neighbours.
 export function smoothNode(sp, i) {
   const { nodes, closed } = sp;
@@ -215,7 +294,7 @@ export function strokeToSubpath(points, tolerance = 0.8) {
 
 /* ---------- Keyframes ---------- */
 
-export const POSE_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity', 'fill', 'stroke', 'strokeWidth', 'subpaths'];
+export const POSE_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity', 'fill', 'gradient', 'stroke', 'strokeWidth', 'subpaths'];
 
 export const EASINGS = {
   linear: { label: 'Steady', fn: (t) => t },
@@ -239,22 +318,23 @@ function lerpColor(a, b, t) {
   return `#${hex(0)}${hex(1)}${hex(2)}`;
 }
 
+function lerpGradient(a, b, t) {
+  if (!a || !b) return t < 0.5 ? a ?? null : b ?? null;
+  return { from: lerpColor(a.from, b.from, t), to: lerpColor(a.to, b.to, t), angle: lerp(a.angle, b.angle, t) };
+}
+
 function sameShape(a, b) {
   return a.length === b.length && a.every((sp, i) => sp.nodes.length === b[i].nodes.length);
 }
 
 function lerpSubpaths(a, b, t) {
-  if (!sameShape(a, b)) return a;
-  return a.map((sp, s) => ({
+  const [from, to] = sameShape(a, b) ? [a, b] : matchSubpaths(a, b);
+  return from.map((sp, s) => ({
     closed: sp.closed,
     nodes: sp.nodes.map((n, i) => {
-      const m = b[s].nodes[i];
+      const m = to[s].nodes[i];
       const out = {};
-      for (const k of ['x', 'y', 'ix', 'iy', 'ox', 'oy', 'r']) {
-        const v = lerp(n[k] || 0, m[k] || 0, t);
-        if (v) out[k] = v;
-      }
-      out.x ??= 0; out.y ??= 0;
+      for (const k of ['x', 'y', 'ix', 'iy', 'ox', 'oy', 'r']) out[k] = lerp(n[k] || 0, m[k] || 0, t);
       return out;
     }),
   }));
@@ -265,6 +345,7 @@ function lerpPose(a, b, t) {
   for (const k of POSE_PROPS) {
     if (a[k] === undefined) continue;
     if (k === 'fill' || k === 'stroke') out[k] = lerpColor(a[k], b[k], t);
+    else if (k === 'gradient') out[k] = lerpGradient(a[k], b[k], t);
     else if (k === 'subpaths') out[k] = lerpSubpaths(a[k], b[k], t);
     else out[k] = lerp(a[k], b[k], t);
   }

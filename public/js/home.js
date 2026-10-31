@@ -4,10 +4,13 @@ import {
 } from './store.js';
 import { newDoc, uid, clamp } from './model.js';
 import { esc } from './render.js';
-import { $, $$, html, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
+import { session, isPlus, logOut } from './session.js';
+import { plusDialog } from './plus.js';
+import { $, $$, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
 
 const MIN_SIZE = 16;
 const MAX_SIZE = 8192;
+const ROUNDED_CANVAS = 0.12;
 
 const SIZE_PRESETS = [
   { name: 'Small square', w: 512, h: 512 },
@@ -20,9 +23,11 @@ const SIZE_PRESETS = [
 
 let currentFolder = 'all';
 let host = null;
+let leave = () => {};
 
-export async function renderHome(root) {
+export async function renderHome(root, onLeave = leave) {
   host = root;
+  leave = onLeave;
   document.title = 'Blook Maker';
   const [folders, projects] = await Promise.all([listFolders(), listProjects()]);
   folders.sort((a, b) => a.name.localeCompare(b.name));
@@ -47,9 +52,16 @@ export async function renderHome(root) {
       </ul>
       <button class="btn ghost" id="newfolder">${icon('folderplus')}<span>New folder</span></button>
       <div class="grow"></div>
+      ${isPlus() ? '' : `<button class="plus-card" id="getplus"><span class="plus-badge">PLUS</span><b>More shapes and exports</b><small>Free for now</small></button>`}
+      <div class="who">
+        <span class="who-icon">${icon('user')}</span>
+        <span class="who-name"><b>${esc(session.user?.name || 'Guest')}</b>${isPlus() ? '<span class="plus-badge">PLUS</span>' : ''}</span>
+        <button class="ib" id="logout" title="${session.guest ? 'Back to the welcome screen' : 'Log out'}" aria-label="Log out">${icon('logout')}</button>
+      </div>
       <a class="admin-link" href="#/admin">${icon('shield')}<span>Admin: shapes catalog</span></a>
     </aside>
     <main class="home-main">
+      ${session.guest ? '<p class="guest-note">You are playing as a guest. Your art disappears when you close this page, so export anything you want to keep.</p>' : ''}
       <h1>${esc(title)}</h1>
       ${shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState()}
     </main>
@@ -57,6 +69,8 @@ export async function renderHome(root) {
 
   $('#new', root).onclick = () => newProjectWizard(folders);
   $('#newfolder', root).onclick = () => createFolder();
+  $('#getplus', root)?.addEventListener('click', async () => { if (await plusDialog()) renderHome(root); });
+  $('#logout', root).onclick = () => { logOut(); leave(); };
   $('.empty-new', root)?.addEventListener('click', () => newProjectWizard(folders));
 
   $$('[data-f]', root).forEach((b) => {
@@ -217,6 +231,7 @@ function newProjectWizard(folders) {
     animated: null,
     width: 1024,
     height: 1024,
+    rounded: false,
   };
   let step = 0;
 
@@ -274,12 +289,17 @@ function newProjectWizard(folders) {
           ${SIZE_PRESETS.map((p, i) => {
             const k = 44 / Math.max(p.w, p.h);
             return `<button class="size-card" data-i="${i}">
-              <span class="size-art"><i style="width:${p.w * k}px;height:${p.h * k}px"></i></span>
+              <span class="size-art"><i class="${state.rounded ? 'round' : ''}" style="width:${p.w * k}px;height:${p.h * k}px"></i></span>
               <b>${p.name}</b><small>${p.w} × ${p.h}</small>
             </button>`;
           }).join('')}
         </div>
         <form class="size-custom">
+          <span class="size-custom-label">Canvas corners</span>
+          <div class="corner-pick">
+            <label class="radio"><input type="radio" name="corners" value="square" ${state.rounded ? '' : 'checked'}><i class="corner-art"></i><b>Square</b></label>
+            <label class="radio"><input type="radio" name="corners" value="round" ${state.rounded ? 'checked' : ''}><i class="corner-art round"></i><b>Rounded</b></label>
+          </div>
           <span class="size-custom-label">Or your own size</span>
           <label class="field"><span>Width</span><input type="number" id="pw" min="${MIN_SIZE}" max="${MAX_SIZE}" value="${state.width}"></label>
           <span class="times">×</span>
@@ -298,6 +318,12 @@ function newProjectWizard(folders) {
       });
       mark();
       w.oninput = h.oninput = mark;
+      $$('[name=corners]', box).forEach((r) => {
+        r.onchange = () => {
+          state.rounded = r.value === 'round';
+          $$('.size-art i', box).forEach((i) => i.classList.toggle('round', state.rounded));
+        };
+      });
       $$('.size-card', box).forEach((c) => {
         c.onclick = () => {
           const p = SIZE_PRESETS[+c.dataset.i];
@@ -316,6 +342,7 @@ function newProjectWizard(folders) {
           return;
         }
         const doc = newDoc({ ...state, width, height });
+        doc.cornerRadius = state.rounded ? Math.round(Math.min(width, height) * ROUNDED_CANVAS) : 0;
         try {
           await saveDoc(doc);
         } catch {

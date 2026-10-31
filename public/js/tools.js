@@ -1,17 +1,18 @@
 // Everything that happens when you press, drag and release on the canvas.
 import {
-  S, hooks, refresh, liveRefresh, commit, activeLayer, layerOf, findObj, selected, select, posed, edit,
+  S, hooks, refresh, liveRefresh, commit, activeLayer, layerOf, findObj, selected, select, posed, edit, fillPatch,
 } from './state.js';
 import {
   toDoc, objectEl, liveLayer, worldBox, selectionFrame, placeFrame, zoomAt, drawOverlay,
 } from './stage.js';
 import {
-  newPath, newText, newImage, clone, pathD, fitSubpaths, strokeToSubpath, splitSegment, smoothNode, sharpenNode,
-  worldToLocal, worldVectorToLocal, rad, simplify, pathBounds,
+  newPath, newText, newImage, clone, pathD, fitSubpaths, strokeToSubpath, addVertex, removeVertices, smoothNode, sharpenNode,
+  pointInPolygon, localToWorld, pathBounds,
+  worldToLocal, worldVectorToLocal, rad, simplify,
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
 import { exportSVG, rasterize, esc } from './render.js';
-import { toast, $ } from './ui.js';
+import { toast, menu, $ } from './ui.js';
 
 let drag = null;
 let spaceHeld = false;
@@ -23,8 +24,9 @@ const DOUBLE_PRESS_MS = 350;
 export const setSpaceHeld = (v) => { spaceHeld = v; };
 
 export const TOOLS = {
-  select: { label: 'Select', key: 'V', hint: 'Click something to pick it, then drag to move. Drag the corners to resize and the round handle to turn it.' },
-  vertices: { label: 'Vertices', key: 'A', hint: 'Click a shape, then drag its points. Click a small dot to add a point. Double-click a point to curve it.' },
+  select: { label: 'Select', key: 'V', hint: 'Click to pick something and drag to move it. Ctrl+click picks more. Right-click for more options.' },
+  lasso: { label: 'Lasso', key: 'L', hint: 'Draw a loop around things to pick them. Hold Ctrl to add to what you have picked.' },
+  vertices: { label: 'Vertices', key: 'A', hint: 'Click a shape, then drag its points. Click a yellow dot to add a point. Choose Pointed or Rounded up top.' },
   pencil: { label: 'Pencil', key: 'P', hint: 'Drag to draw a thin, sharp line.' },
   marker: { label: 'Marker', key: 'M', hint: 'Drag to draw a thick, see-through line.' },
   shapes: { label: 'Shapes', key: 'S', hint: 'Pick a shape, then drag on the canvas to draw it. Or just click to drop one in.' },
@@ -36,7 +38,7 @@ export const TOOLS = {
 
 const DRAWING = new Set(['pencil', 'marker', 'shapes', 'text', 'eraser', 'bucket']);
 
-function layerReady() {
+export function layerReady() {
   const layer = activeLayer();
   if (layer.locked) { toast('This layer is locked. Unlock it in the Layers panel.', 'warn'); return false; }
   if (!layer.visible) { toast('This layer is hidden. Show it in the Layers panel.', 'warn'); return false; }
@@ -130,15 +132,16 @@ function moveRotate(p, e) {
 
 function selectDown(e, p) {
   const h = e.target.dataset?.h;
+  const adding = e.shiftKey || e.ctrlKey || e.metaKey;
   if (h && h !== 'move') { startTransform(h, p, e); return; }
-  if (h === 'move' && !e.shiftKey) { startMove(p); return; }
+  if (h === 'move' && !adding) { startMove(p); return; }
   let hit = pickable(e);
   if (h === 'move') {
     const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el.closest('[data-id]'));
     hit = under ? findObj(under.closest('[data-id]').dataset.id) : null;
   }
   if (hit) {
-    if (e.shiftKey) {
+    if (adding) {
       const next = new Set(S.sel);
       next.has(hit.id) ? next.delete(hit.id) : next.add(hit.id);
       select([...next]);
@@ -149,7 +152,7 @@ function selectDown(e, p) {
     startMove(p);
     return;
   }
-  if (!e.shiftKey && S.sel.size) { select([]); refresh(); }
+  if (!adding && S.sel.size) { select([]); refresh(); }
   drag = { type: 'marquee', p0: p };
 }
 
@@ -183,17 +186,19 @@ function verticesDown(e, p) {
   const t = e.target.dataset || {};
   const [item] = selected();
   if (item && (t.n || t.hd || t.mid)) {
-    const s = posed(item);
-    const subpaths = clone(s.subpaths);
     if (t.mid) {
       const [sp, i] = t.mid.split(':').map(Number);
-      const index = splitSegment(subpaths[sp], i);
+      const index = addVertex(item, sp, i);
+      lastPress = { time: 0, x: 0, y: 0 };
       S.nodeSel = new Set([`${sp}:${index}`]);
-      edit(item, { subpaths });
+      if (S.nodeKind === 'rounded') setNodesKind('rounded');
       refresh();
-      drag = { type: 'nodes', item, pose: s, base: clone(subpaths), p0: p, moved: true };
+      const fresh = posed(item);
+      drag = { type: 'nodes', item, pose: fresh, base: clone(fresh.subpaths), p0: p, moved: true };
       return;
     }
+    const s = posed(item);
+    const subpaths = clone(s.subpaths);
     if (t.hd) {
       const [sp, i, side] = t.hd.split(':');
       drag = { type: 'handle', item, pose: s, base: subpaths, sp: +sp, i: +i, side, p0: p };
@@ -253,17 +258,24 @@ export function toggleNodeCurve(key) {
   commit();
 }
 
+export function setNodesKind(kind) {
+  const [item] = selected();
+  if (!item || !S.nodeSel.size) return;
+  const subpaths = clone(posed(item).subpaths);
+  for (const key of S.nodeSel) {
+    const [sp, i] = key.split(':').map(Number);
+    if (kind === 'rounded') smoothNode(subpaths[sp], i);
+    else sharpenNode(subpaths[sp].nodes[i]);
+  }
+  edit(item, { subpaths });
+}
+
 export function deleteNodes() {
   const [item] = selected();
   if (!item || !S.nodeSel.size) return false;
-  const subpaths = clone(posed(item).subpaths);
-  const doomed = new Set(S.nodeSel);
-  const kept = subpaths
-    .map((sp, s) => ({ ...sp, nodes: sp.nodes.filter((_, i) => !doomed.has(`${s}:${i}`)) }))
-    .filter((sp) => sp.nodes.length > 1);
+  removeVertices(item, new Set(S.nodeSel));
   S.nodeSel.clear();
-  if (!kept.length) { deleteSelection(); return true; }
-  edit(item, { subpaths: kept });
+  if (!posed(item).subpaths.length) { deleteSelection(); return true; }
   commit();
   return true;
 }
@@ -337,7 +349,7 @@ const DEFAULT_SHAPE_SIZE = 0.25;
 
 function shapePaint(shape) {
   if (shape.lineOnly) return { fill: 'none', stroke: S.stroke, strokeWidth: Math.max(S.shapeOutline, 6) };
-  return { fill: S.fill, stroke: S.stroke, strokeWidth: S.shapeOutline };
+  return { ...fillPatch(), stroke: S.stroke, strokeWidth: S.shapeOutline };
 }
 
 function shapeRect(p, e) {
@@ -356,6 +368,7 @@ function previewShape(p, e) {
 }
 
 export function addShape(shape, cx, cy, w, h) {
+  if (!layerReady()) return;
   const subpaths = fitSubpaths(shape.subpaths, w, h);
   const obj = newPath({ name: shape.name, x: cx, y: cy, subpaths, fillRule: shape.fillRule, ...shapePaint(shape) });
   activeLayer().objects.push(obj);
@@ -384,7 +397,7 @@ async function bucket(e, p) {
     const el = objectEl(hit.id).querySelector('path,text');
     const hasOutline = hit.strokeWidth > 0 && hit.stroke !== 'none';
     const onFill = hit.type === 'text' || !hasOutline || (hit.fill !== 'none' && isInFill(el, e));
-    edit(hit, onFill ? { fill: S.fill } : { stroke: S.fill });
+    edit(hit, onFill ? fillPatch() : { stroke: S.fill });
     commit();
     return;
   }
@@ -393,12 +406,12 @@ async function bucket(e, p) {
     for (const o of [...layer.objects].reverse()) {
       if (o.type !== 'path' || o.fill !== 'none' || !o.subpaths.every((sp) => sp.closed)) continue;
       const el = objectEl(o.id)?.querySelector('path');
-      if (el && isInFill(el, e)) { edit(o, { fill: S.fill }); commit(); return; }
+      if (el && isInFill(el, e)) { edit(o, fillPatch()); commit(); return; }
     }
   }
   if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return;
   const blank = !doc.layers.some((l) => l.visible && l.objects.length);
-  if (blank) { doc.background = S.fill; commit(); return; }
+  if (blank) { fillBackground(); return; }
   if (!layerReady()) return;
 
   const scale = Math.min(2, 1800 / Math.max(doc.width, doc.height));
@@ -406,14 +419,20 @@ async function bucket(e, p) {
   const canvas = await rasterize(exportSVG(doc, { frame: S.frame }), w, h);
   const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
   const { mask, area } = floodRegion(data, w, h, Math.floor(p.x * scale), Math.floor(p.y * scale));
-  if (area === w * h) { doc.background = S.fill; commit(); return; }
+  if (area === w * h) { fillBackground(); return; }
   const loops = traceLoops(dilate(mask, w, h), w, h);
   if (!loops.length) return;
   const subpaths = loops.map((loop) => ({ closed: true, nodes: loop.map((q) => ({ x: q.x / scale, y: q.y / scale })) }));
   const b = pathBounds(subpaths);
   const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
   subpaths.forEach((sp) => sp.nodes.forEach((n) => { n.x -= cx; n.y -= cy; }));
-  activeLayer().objects.push(newPath({ name: 'Fill', x: cx, y: cy, subpaths, fill: S.fill, fillRule: 'evenodd' }));
+  activeLayer().objects.push(newPath({ name: 'Fill', x: cx, y: cy, subpaths, ...fillPatch(), fillRule: 'evenodd' }));
+  commit();
+}
+
+function fillBackground() {
+  S.doc.background = S.fill;
+  S.doc.bgGradient = S.fillGradient;
   commit();
 }
 
@@ -483,12 +502,77 @@ function textDown(e, p) {
   const hit = pickable(e);
   if (hit?.type === 'text') { select([hit.id]); refresh(); openTextEditor(hit); return; }
   if (!layerReady()) return;
-  const obj = newText({ x: p.x, y: p.y, fill: S.fill, ...S.font });
+  const obj = newText({ x: p.x, y: p.y, ...fillPatch(), ...S.font });
   activeLayer().objects.push(obj);
   select([obj.id]);
   refresh();
   // Wait for the press to finish, or the new box loses focus straight away.
   setTimeout(() => openTextEditor(obj));
+}
+
+/* ---------- Lasso ---------- */
+
+function startLasso(p, e) {
+  liveLayer().innerHTML = `<path fill="rgba(255,79,121,.12)" stroke="#ff4f79" stroke-width="${2 / S.zoom}" stroke-dasharray="${6 / S.zoom} ${4 / S.zoom}"/>`;
+  drag = { type: 'lasso', pts: [p], el: liveLayer().firstChild, adding: e.shiftKey || e.ctrlKey || e.metaKey };
+}
+
+function insideLasso(raw, poly) {
+  const o = posed(raw);
+  if (o.type === 'path') {
+    const nodes = o.subpaths.flatMap((sp) => sp.nodes);
+    const inside = nodes.filter((n) => { const w = localToWorld(o, n.x, n.y); return pointInPolygon(w.x, w.y, poly); });
+    return nodes.length > 0 && inside.length * 2 >= nodes.length;
+  }
+  const b = worldBox([raw.id]);
+  return !!b && pointInPolygon(b.x + b.width / 2, b.y + b.height / 2, poly);
+}
+
+function finishLasso() {
+  const { pts, adding } = drag;
+  liveLayer().innerHTML = '';
+  if (pts.length < 3) { if (!adding) { select([]); refresh(); } return; }
+  const ids = adding ? [...S.sel] : [];
+  for (const layer of S.doc.layers) {
+    if (!layer.visible || layer.locked) continue;
+    for (const o of layer.objects) if (!ids.includes(o.id) && insideLasso(o, pts)) ids.push(o.id);
+  }
+  select(ids);
+  if (ids.length) setTool('select');
+  else refresh();
+}
+
+/* ---------- Right-click menu ---------- */
+
+function contextMenu(e) {
+  e.preventDefault();
+  if (S.tool === 'text') return;
+  const hit = pickable(e);
+  if (hit && !S.sel.has(hit.id)) { select([hit.id]); refresh(); }
+  const at = { getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX + 190, top: e.clientY, bottom: e.clientY }) };
+  const paste = { label: 'Paste', icon: 'copy', onClick: pasteClipboard };
+  if (!S.sel.size) {
+    menu(at, [
+      ...(S.clipboard?.length ? [paste] : []),
+      {
+        label: 'Pick everything', icon: 'select',
+        onClick: () => { select(S.doc.layers.filter((l) => l.visible && !l.locked).flatMap((l) => l.objects.map((o) => o.id))); refresh(); },
+      },
+    ]);
+    return;
+  }
+  menu(at, [
+    { label: 'Copy', icon: 'copy', onClick: copySelection },
+    ...(S.clipboard?.length ? [paste] : []),
+    { label: 'Duplicate', icon: 'copy', onClick: duplicateSelection },
+    null,
+    { label: 'Bring to front', icon: 'up', onClick: () => reorderSelection('front') },
+    { label: 'Send to back', icon: 'down', onClick: () => reorderSelection('back') },
+    { label: 'Flip across', icon: 'flipx', onClick: () => flipSelection('x') },
+    { label: 'Flip down', icon: 'flipy', onClick: () => flipSelection('y') },
+    null,
+    { label: 'Delete', icon: 'trash', danger: true, onClick: deleteSelection },
+  ]);
 }
 
 /* ---------- Actions ---------- */
@@ -611,7 +695,7 @@ function moveBrushRing(e) {
 }
 
 function down(e) {
-  if (e.button === 2 || e.target.closest('.text-edit')) return;
+  if (e.button === 2 || e.target.closest('.text-edit, .fit-ask')) return;
   if (S.playing) hooks.stop?.();
   document.querySelector('.popover')?.remove();
   closeTextEditor();
@@ -627,6 +711,7 @@ function down(e) {
   const p = toDoc(e);
   if (DRAWING.has(S.tool) && S.tool !== 'bucket' && S.tool !== 'text' && !layerReady()) return;
   if (S.tool === 'select') selectDown(e, p);
+  else if (S.tool === 'lasso') startLasso(p, e);
   else if (S.tool === 'vertices') verticesDown(e, p);
   else if (S.tool === 'pencil' || S.tool === 'marker' || S.tool === 'eraser') startStroke(S.tool, p);
   else if (S.tool === 'shapes') drag = { type: 'shape', p0: p };
@@ -664,6 +749,10 @@ function move(e) {
       return;
     }
     case 'shape': previewShape(p, e); return;
+    case 'lasso':
+      drag.pts.push(p);
+      drag.el.setAttribute('d', `M${drag.pts.map((q) => `${q.x} ${q.y}`).join('L')}Z`);
+      return;
     default: return;
   }
   liveRefresh();
@@ -674,7 +763,8 @@ function up() {
   if (!drag) return;
   const d = drag;
   if (d.type === 'marquee') { finishMarquee(); drag = null; drawOverlay(); return; }
-  if (d.type === 'stroke') finishStroke();
+  if (d.type === 'lasso') finishLasso();
+  else if (d.type === 'stroke') finishStroke();
   else if (d.type === 'shape') finishShape();
   else if (d.moved) { drag = null; commit(); return; }
   drag = null;
@@ -710,6 +800,7 @@ export function attachTools(wk) {
   wk.addEventListener('pointermove', move);
   wk.addEventListener('pointerup', up);
   wk.addEventListener('pointercancel', up);
+  wk.addEventListener('contextmenu', contextMenu);
   wk.addEventListener('pointerleave', () => { $('#brush').hidden = true; });
   wk.addEventListener('wheel', wheel, { passive: false });
 }

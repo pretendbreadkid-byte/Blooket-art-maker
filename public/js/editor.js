@@ -6,12 +6,17 @@ import { getDoc, getMeta } from './store.js';
 import { mountStage, drawStage, drawOverlay, fitView, placeFrame, zoomAt } from './stage.js';
 import {
   TOOLS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
-  copySelection, pasteClipboard, nudge, addImageFromUrl, closeTextEditor,
+  copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor,
 } from './tools.js';
 import { drawPanels } from './panels.js';
 import { drawTimeline, setFrame, stop, togglePlay } from './timeline.js';
 import { fetchCatalog } from './shapes.js';
-import { exportSVG, esc } from './render.js';
+import { esc } from './render.js';
+import { exportDialog } from './export.js';
+import { checkOverflow, resetFitPrompt } from './fit.js';
+import { imageToShape } from './trace.js';
+import { session } from './session.js';
+import { pathD, pathBounds } from './model.js';
 import { $, icon, toast, dialog, readDataUrl } from './ui.js';
 
 const TEMPLATE = `
@@ -31,7 +36,7 @@ const TEMPLATE = `
       <button class="ib" id="zoomin" title="Zoom in" aria-label="Zoom in">${icon('plus')}</button>
     </div>
     <button class="btn ghost" id="import">${icon('image')}<span>Add picture</span></button>
-    <button class="btn primary" id="export">${icon('download')}<span>Export SVG</span></button>
+    <button class="btn primary" id="export">${icon('download')}<span>Export</span></button>
     <input type="file" id="file" accept="image/*,.svg" hidden multiple>
   </header>
   <div class="ed-opts" id="opts"></div>
@@ -41,6 +46,7 @@ const TEMPLATE = `
     <div id="frame"><svg id="art" xmlns="http://www.w3.org/2000/svg"></svg><svg id="overlay"></svg></div>
     <div id="brush" hidden></div>
     <div id="hint" class="hint"></div>
+    <div id="fitask" class="fit-ask" role="alertdialog" hidden></div>
   </main>
   <aside class="ed-right">
     <section id="inspector" class="panel"></section>
@@ -133,41 +139,34 @@ function onKeyUp(e) {
   if (e.key === ' ') { setSpaceHeld(false); document.body.classList.remove('panning'); }
 }
 
-function download(name, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+const TRACED_SHAPE_SIZE = 0.6;
+
+// Asks whether a picture stays a picture or becomes a shape with its real outline.
+async function pictureChoice(file, href) {
+  const traced = await imageToShape(href).catch((error) => ({ error: error.message }));
+  return dialog((box, close) => {
+    box.innerHTML = `<h2>What should we do with this picture?</h2>
+      <div class="pic-choices">
+        <button class="pic-choice" data-c="picture"><span class="pic-art"><img src="${esc(href)}" alt=""></span><b>Keep it as a picture</b><small>Looks exactly like the file</small></button>
+        <button class="pic-choice" data-c="shape" ${traced.error ? 'disabled' : ''}>
+          <span class="pic-art">${traced.error ? '' : `<svg viewBox="-56 -56 112 112"><path d="${pathD(traced.subpaths)}" fill="currentColor" fill-rule="evenodd"/></svg>`}</span>
+          <b>Turn it into a shape</b><small>${traced.error ? esc(traced.error) : 'Same outline, ready to colour and warp'}</small>
+        </button>
+      </div>
+      <div class="dlg-actions"><button class="btn ghost" data-no>Cancel</button></div>`;
+    $('[data-no]', box).onclick = () => close();
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-c]');
+      if (b && !b.disabled) close({ kind: b.dataset.c, traced });
+    });
+  }, { wide: true });
 }
 
-function exportDialog() {
-  const doc = S.doc;
-  const safe = doc.name.replace(/[^\w -]+/g, '').trim() || 'art';
-  dialog((box, close) => {
-    box.innerHTML = `<h2>Export SVG</h2>
-      <p class="muted">${doc.width} × ${doc.height} px. Hidden layers are left out.</p>
-      <label class="field"><span>File name</span><input id="xname" value="${esc(safe)}" autofocus></label>
-      ${doc.animated ? `<div class="choice-row">
-        <label class="radio"><input type="radio" name="kind" value="anim" checked><span><b>Animated SVG</b><small>Plays and loops in any web browser</small></span></label>
-        <label class="radio"><input type="radio" name="kind" value="frame"><span><b>Just this frame</b><small>A still picture of frame ${S.frame + 1}</small></span></label>
-      </div>` : ''}
-      <div class="dlg-actions">
-        <button class="btn ghost" data-no>Cancel</button>
-        <button class="btn primary" data-yes>${icon('download')}<span>Download</span></button>
-      </div>`;
-    $('[data-no]', box).onclick = () => close();
-    $('[data-yes]', box).onclick = () => {
-      const animate = doc.animated && $('[name=kind]:checked', box).value === 'anim';
-      const name = ($('#xname', box).value.trim() || safe).replace(/\.svg$/i, '');
-      download(`${name}.svg`, exportSVG(doc, { frame: S.frame, animate }));
-      close();
-      toast('Your SVG is downloading.', 'ok');
-    };
-  });
+function addTracedShape(file, traced, x, y) {
+  const b = pathBounds(traced.subpaths);
+  const scale = (Math.min(S.doc.width, S.doc.height) * TRACED_SHAPE_SIZE) / Math.max(b.width, b.height);
+  const shape = { ...traced, name: file.name.replace(/\.[^.]+$/, '') };
+  addShape(shape, x ?? S.doc.width / 2, y ?? S.doc.height / 2, b.width * scale, b.height * scale);
 }
 
 async function importFiles(files, x, y) {
@@ -177,7 +176,10 @@ async function importFiles(files, x, y) {
       continue;
     }
     try {
-      await addImageFromUrl(await readDataUrl(file), x, y);
+      const href = await readDataUrl(file);
+      const choice = await pictureChoice(file, href);
+      if (choice?.kind === 'picture') await addImageFromUrl(href, x, y);
+      if (choice?.kind === 'shape') addTracedShape(file, choice.traced, x, y);
     } catch {
       toast(`${file.name} could not be opened.`, 'warn');
     }
@@ -235,9 +237,13 @@ export async function openEditor(root, id) {
   hooks.panels = drawPanels;
   hooks.timeline = drawTimeline;
   hooks.stop = stop;
+  hooks.committed = checkOverflow;
+  resetFitPrompt();
   hooks.saved = (state) => {
     const el = $('#saved');
-    if (el) el.textContent = state === 'saving' ? 'Saving…' : 'Saved';
+    if (!el) return;
+    if (session.guest) el.textContent = 'Guest: not saved';
+    else el.textContent = state === 'saving' ? 'Saving…' : 'Saved';
   };
 
   mountStage(root);

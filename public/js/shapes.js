@@ -50,6 +50,36 @@ export const BASIC_SHAPES = BASIC_DEFS.map(([id, name, d, make, fillRule = 'nonz
   subpaths: fitSubpaths(make ? make() : parseD(d), 100, 100),
 }));
 
+function flowerD(petals) {
+  const point = (i) => {
+    const a = ((-90 + (i * 360) / petals) * Math.PI) / 180;
+    return `${round(30 * Math.cos(a))} ${round(30 * Math.sin(a))}`;
+  };
+  let d = `M${point(0)}`;
+  for (let i = 1; i <= petals; i++) d += `A19 19 0 1 1 ${point(i)}`;
+  return `${d}Z`;
+}
+
+const PLUS_DEFS = [
+  ['cloud', 'Cloud', 'M-30 30A22 22 0 0 1 -32 -14A26 26 0 0 1 16 -24A20 20 0 0 1 34 30Z'],
+  ['bolt', 'Lightning', 'M10 -50L-30 8H-4L-14 50L30 -12H4Z'],
+  ['crown', 'Crown', 'M-50 35V-30L-22 0L0 -40L22 0L50 -30V35Z'],
+  ['gem', 'Gem', 'M-30 -40H30L50 -12L0 45L-50 -12Z'],
+  ['shield', 'Shield', 'M0 -50L42 -34V4C42 28 20 42 0 50C-20 42 -42 28 -42 4V-34Z'],
+  ['drop', 'Drop', 'M0 -50C14 -26 38 -8 38 16A38 34 0 0 1 -38 16C-38 -8 -14 -26 0 -50Z'],
+  ['flower', 'Flower', flowerD(6)],
+  ['ghost', 'Ghost', 'M-38 50V-10A38 40 0 0 1 38 -10V50L19 34L0 50L-19 34Z'],
+  ['leaf', 'Leaf', 'M-42 42C-50 -20 -10 -46 45 -45C46 10 20 50 -42 42Z'],
+  ['cat', 'Cat', 'M-42 -45L-14 -24H14L42 -45V10A42 38 0 0 1 -42 10Z'],
+  ['tree', 'Tree', 'M0 -50L30 -14H14L40 18H8V50H-8V18H-40L-14 -14H-30Z'],
+  ['mushroom', 'Mushroom', 'M-46 4A46 46 0 0 1 46 4C46 10 22 8 14 8V40A8 8 0 0 1 6 48H-6A8 8 0 0 1 -14 40V8C-22 8 -46 10 -46 4Z'],
+];
+
+export const PLUS_SHAPES = PLUS_DEFS.map(([id, name, d]) => ({
+  id, name, category: 'Plus shapes', fillRule: 'nonzero', lineOnly: false, plus: true,
+  subpaths: fitSubpaths(parseD(d), 100, 100),
+}));
+
 export async function fetchCatalog() {
   try {
     const res = await fetch('/api/shapes');

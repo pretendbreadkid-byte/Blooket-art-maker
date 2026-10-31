@@ -15,7 +15,9 @@ export const S = {
   selKey: null,
   zoom: 1, panX: 0, panY: 0, fitted: true,
   fill: '#6c3bf5',
+  fillGradient: null,
   stroke: '#1f1b3a',
+  nodeKind: 'pointed',
   shapeOutline: 0,
   sizes: { pencil: 4, marker: 22, eraser: 28 },
   shape: BASIC_SHAPES[0],
@@ -28,7 +30,7 @@ export const S = {
 };
 
 // Set by the editor: redraw the canvas, the handles, the panels, the save badge.
-export const hooks = { stage() {}, overlay() {}, panels() {}, timeline() {}, saved() {} };
+export const hooks = { stage() {}, overlay() {}, panels() {}, timeline() {}, saved() {}, committed() {} };
 
 let undoStack = [], redoStack = [], lastSnapshot = null, saveTimer = null;
 
@@ -55,6 +57,17 @@ export const layerOf = (id) => S.doc.layers.find((l) => l.objects.some((o) => o.
 export const selected = () => [...S.sel].map(findObj).filter(Boolean);
 export const posed = (o) => sample(o, S.frame);
 export const edit = (o, patch) => setProps(S.doc, o, S.frame, patch);
+
+// A paint is a colour string or a gradient { from, to, angle }.
+export const paintPatch = (paint) => (typeof paint === 'string'
+  ? { fill: paint, gradient: null }
+  : { fill: paint.from, gradient: paint });
+export const fillPatch = () => ({ fill: S.fill, gradient: S.fillGradient });
+export function setToolFill(paint) {
+  const { fill, gradient } = paintPatch(paint);
+  S.fill = fill;
+  S.fillGradient = gradient;
+}
 
 export function select(ids) {
   S.sel = new Set(ids);
@@ -97,6 +110,7 @@ export function commit() {
   lastSnapshot = snapshot;
   scheduleSave();
   refresh();
+  hooks.committed();
 }
 
 function restore(snapshot) {

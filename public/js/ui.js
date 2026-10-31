@@ -13,6 +13,7 @@ export function html(markup) {
 
 const ICONS = {
   select: 'M5 3l14 8-6 2-3 6z',
+  lasso: 'M12 4c5 0 9 2.500 9 6s-4 6-9 6c-1.500 0-3-.200-4.200-.700M12 4C7 4 3 6.500 3 10c0 2 1.300 3.700 3.300 4.800M6.300 14.800a2 2 0 1 0 1.500.5c.3 1.700-.3 3.700-1.800 5.700',
   vertices: 'M6 18L18 6M4 16h4v4H4zM16 4h4v4h-4zM12 9.5a2.5 2.5 0 1 1 0 5',
   pencil: 'M4 20l1-5L16 4l4 4L9 19zM14 6l4 4',
   marker: 'M9 15l-5 5h6l2-2M9 15l7-11 5 4-9 10zM9 15l3 3',
@@ -56,6 +57,9 @@ const ICONS = {
   upload: 'M12 16V5M7 9l5-5 5 5M4 20h16',
   smooth: 'M4 18C10 18 8 6 20 6',
   sharp: 'M4 18L12 6l8 12',
+  logout: 'M10 4H5v16h5M16 8l4 4-4 4M20 12H9',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c1-4 4-6 8-6s7 2 8 6',
+  star: 'M12 3l2.700 5.600 6.200.900-4.500 4.300 1.100 6.200L12 17.100 6.500 20l1.100-6.200L3.100 9.500l6.200-.900z',
 };
 
 export const icon = (name) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name] || ''}"/></svg>`;
@@ -154,16 +158,22 @@ export const PALETTE = [
   '#2fbf71', '#0e9f8e', '#1fa2ff', '#2d5bff', '#6c3bf5', '#b14aed', '#ff5da2', '#8c5a3c',
 ];
 
+export const paintCss = (value) => (typeof value === 'string'
+  ? value
+  : `linear-gradient(${value.angle + 90}deg, ${value.from}, ${value.to})`);
+
 export function swatch(value) {
   return value === 'none'
     ? '<span class="sw none" title="No colour"></span>'
-    : `<span class="sw" style="background:${esc(value)}"></span>`;
+    : `<span class="sw" style="background:${esc(paintCss(value))}"></span>`;
 }
 
 // A colour chooser made of a palette, a hex box and the system picker.
-export function colorPopover(anchor, { value, allowNone = false, onInput, onDone }) {
+export function colorPopover(anchor, { value, allowNone = false, allowGradient = false, onInput, onDone }) {
   document.querySelector('.popover')?.remove();
+  if (typeof value !== 'string') { gradientPopover(anchor, { value, allowNone, onInput, onDone }); return; }
   const pop = html(`<div class="popover">
+    ${allowGradient ? '<div class="pop-tabs"><button class="on">Solid</button><button data-grad>Gradient</button></div>' : ''}
     <div class="pal">${PALETTE.map((c) => `<button data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</div>
     <div class="pop-row">
       <input type="color" value="${value === 'none' ? '#000000' : esc(value)}" aria-label="More colours">
@@ -186,6 +196,13 @@ export function colorPopover(anchor, { value, allowNone = false, onInput, onDone
     const c = e.target.closest('[data-c]')?.dataset.c;
     if (c) pick(c, true);
     if (e.target.closest('[data-none]')) pick('none', true);
+    if (e.target.closest('[data-grad]')) {
+      pop.remove();
+      document.removeEventListener('pointerdown', outside, true);
+      const start = { from: value === 'none' ? '#ff4f79' : value, to: '#ffc93c', angle: 90 };
+      onInput(start);
+      gradientPopover(anchor, { value: start, allowNone, onInput, onDone });
+    }
   });
   $('[type=color]', pop).oninput = (e) => pick(e.target.value);
   $('.hex', pop).oninput = (e) => { if (/^#[0-9a-f]{6}$/i.test(e.target.value)) pick(e.target.value.toLowerCase()); };
@@ -193,6 +210,74 @@ export function colorPopover(anchor, { value, allowNone = false, onInput, onDone
   const r = anchor.getBoundingClientRect(), m = pop.getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(innerWidth - m.width - 8, r.left))}px`;
   pop.style.top = `${r.bottom + m.height + 8 > innerHeight ? Math.max(8, r.top - m.height - 6) : r.bottom + 6}px`;
+  setTimeout(() => document.addEventListener('pointerdown', outside, true));
+}
+
+// Pick two colours and turn the dial to point the gradient any way you like.
+function gradientPopover(anchor, { value, onInput, onDone }) {
+  const g = { ...value };
+  let stop = 'from';
+  const pop = html(`<div class="popover">
+    <div class="pop-tabs"><button data-solid>Solid</button><button class="on">Gradient</button></div>
+    <div class="grad-bar"></div>
+    <div class="grad-stops">
+      <button class="grad-stop on" data-stop="from" aria-label="Start colour"></button>
+      <button class="grad-swap" data-swap title="Swap colours" aria-label="Swap colours">${icon('redo')}</button>
+      <button class="grad-stop" data-stop="to" aria-label="End colour"></button>
+      <input type="color" aria-label="More colours">
+    </div>
+    <div class="pal">${PALETTE.map((c) => `<button data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</div>
+    <div class="grad-angle">
+      <div class="dial" role="slider" aria-label="Gradient direction"><i></i></div>
+      <label class="num"><span>Direction</span><input type="number" step="1"></label>
+    </div>
+  </div>`);
+  const dial = $('.dial', pop), number = $('.num input', pop), wheel = $('[type=color]', pop);
+  const paint = (announce = true) => {
+    $('.grad-bar', pop).style.background = paintCss(g);
+    $('.dial i', pop).style.transform = `rotate(${g.angle}deg)`;
+    number.value = Math.round(g.angle);
+    wheel.value = g[stop];
+    pop.querySelectorAll('.grad-stop').forEach((b) => {
+      b.style.background = g[b.dataset.stop];
+      b.classList.toggle('on', b.dataset.stop === stop);
+    });
+    if (announce) onInput({ ...g });
+  };
+  const done = () => {
+    pop.remove();
+    document.removeEventListener('pointerdown', outside, true);
+    onDone?.();
+  };
+  const outside = (e) => { if (!pop.contains(e.target)) done(); };
+  pop.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-c]')?.dataset.c;
+    const s = e.target.closest('[data-stop]')?.dataset.stop;
+    if (c) { g[stop] = c; paint(); }
+    if (s) { stop = s; paint(false); }
+    if (e.target.closest('[data-swap]')) { [g.from, g.to] = [g.to, g.from]; paint(); }
+    if (e.target.closest('[data-solid]')) { onInput(g.from); done(); }
+  });
+  wheel.oninput = () => { g[stop] = wheel.value; paint(); };
+  number.oninput = () => { if (number.value !== '') { g.angle = +number.value; paint(); } };
+  dial.addEventListener('pointerdown', (e) => {
+    dial.setPointerCapture(e.pointerId);
+    const turn = (ev) => {
+      const r = dial.getBoundingClientRect();
+      const deg = (Math.atan2(ev.clientY - r.top - r.height / 2, ev.clientX - r.left - r.width / 2) * 180) / Math.PI;
+      const snapped = ev.shiftKey ? Math.round(deg / 15) * 15 : Math.round(deg);
+      g.angle = (snapped + 360) % 360;
+      paint();
+    };
+    turn(e);
+    dial.onpointermove = turn;
+    dial.onpointerup = () => { dial.onpointermove = null; };
+  });
+  document.body.append(pop);
+  const r = anchor.getBoundingClientRect(), m = pop.getBoundingClientRect();
+  pop.style.left = `${Math.max(8, Math.min(innerWidth - m.width - 8, r.left))}px`;
+  pop.style.top = `${r.bottom + m.height + 8 > innerHeight ? Math.max(8, r.top - m.height - 6) : r.bottom + 6}px`;
+  paint(false);
   setTimeout(() => document.addEventListener('pointerdown', outside, true));
 }
 

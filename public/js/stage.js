@@ -1,6 +1,6 @@
 // The canvas: zoom and pan, drawing the art, and drawing handles on top of it.
 import { S, posed, selected } from './state.js';
-import { layersMarkup, backgroundMarkup } from './render.js';
+import { layersMarkup, backgroundMarkup, frameClip } from './render.js';
 import { localToWorld, isCorner, clamp } from './model.js';
 import { $ } from './ui.js';
 
@@ -16,7 +16,10 @@ export function mountStage(root) {
 export function placeFrame() {
   const { width, height } = S.doc;
   const w = width * S.zoom, h = height * S.zoom;
-  Object.assign(frameEl.style, { width: `${w}px`, height: `${h}px`, left: `${S.panX}px`, top: `${S.panY}px` });
+  Object.assign(frameEl.style, {
+    width: `${w}px`, height: `${h}px`, left: `${S.panX}px`, top: `${S.panY}px`,
+    borderRadius: `${(S.doc.cornerRadius || 0) * S.zoom}px`,
+  });
   art.setAttribute('width', w);
   art.setAttribute('height', h);
   overlay.setAttribute('width', w);
@@ -56,7 +59,8 @@ export function drawStage() {
   const ghost = S.onion && d.animated && S.frame > 0
     ? `<g opacity="0.3" pointer-events="none">${layersMarkup(d, S.frame - 1, { prefix: 'onion' })}</g>`
     : '';
-  art.innerHTML = `${backgroundMarkup(d)}${ghost}${layersMarkup(d, S.frame, { editor: true, prefix: 'stage' })}<g id="live" pointer-events="none"></g>`;
+  const clip = frameClip(d, 'stage');
+  art.innerHTML = `${clip.defs}<g${clip.attr}>${backgroundMarkup(d, 'stage')}${ghost}${layersMarkup(d, S.frame, { editor: true, prefix: 'stage' })}</g><g id="live" pointer-events="none"></g>`;
 }
 
 export const liveLayer = () => $('#live', art);
