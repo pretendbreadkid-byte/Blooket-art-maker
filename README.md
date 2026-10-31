@@ -45,7 +45,9 @@ The password is printed in the terminal when the server starts, and saved in `da
 ## Where things are saved
 
 - **Projects and folders** are saved in the browser you use, so they stay private to that browser. VS Code's preview and Chrome each keep their own copy.
-- **Catalog shapes** are saved on the server in `data/shapes.json`, shared with everyone.
+- **Catalog shapes** are saved in `catalog/shapes.json`, shared with everyone.
+
+To keep a new shape for good, upload it in your VS Code preview, then commit and push `catalog/shapes.json`. Render redeploys and the shape goes live. Shapes uploaded on the live site vanish when it restarts, and its admin page says so.
 
 ## Putting it online
 

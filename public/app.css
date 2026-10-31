@@ -157,6 +157,7 @@ a { color: inherit; text-decoration: none; }
 .upload { display: grid; grid-template-columns: 1fr 200px; gap: 14px; align-items: start; }
 .drop { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 28px 12px; text-align: center; border: 2px dashed var(--brand); border-radius: var(--radius); background: var(--panel); color: var(--brand-dark); cursor: pointer; }
 .drop:hover, .drop.over { background: var(--brand-soft); }
+.admin-note { padding: 10px 14px; border-radius: 12px; background: #fff7dd; color: #6b5310; font-weight: 600; }
 .admin-list { display: flex; flex-direction: column; gap: 8px; }
 .admin-list li { display: grid; grid-template-columns: 60px 1fr 1fr 32px; gap: 12px; align-items: end; padding: 10px; background: var(--panel); border-radius: 12px; }
 .admin-thumb { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 10px; background: var(--brand-soft); color: var(--brand); padding: 8px; }

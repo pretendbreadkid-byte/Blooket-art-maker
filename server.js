@@ -10,7 +10,10 @@ import { fileURLToPath } from 'node:url';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
 const DATA = process.env.DATA_DIR || join(ROOT, 'data');
-const SHAPES_FILE = join(DATA, 'shapes.json');
+// The catalog lives in the repo, so pushing to GitHub is what keeps it safe.
+const SHAPES_FILE = process.env.DATA_DIR ? join(DATA, 'shapes.json') : join(ROOT, 'catalog', 'shapes.json');
+// Render sets this. Its disk is wiped on every restart.
+const TEMPORARY_DISK = !!process.env.RENDER;
 const PASSWORD_FILE = join(DATA, 'admin-password.txt');
 const PORT = Number(process.env.PORT || 5180);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -118,7 +121,7 @@ function cleanShape(input) {
 }
 
 async function api(req, res, path) {
-  if (req.method === 'GET' && path === '/api/shapes') return send(res, 200, { shapes });
+  if (req.method === 'GET' && path === '/api/shapes') return send(res, 200, { shapes, temporary: TEMPORARY_DISK });
 
   if (req.method === 'POST' && path === '/api/admin/login') {
     if (failedLogins >= 10) return send(res, 429, { error: 'Too many tries. Restart the server to try again.' });

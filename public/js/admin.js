@@ -1,5 +1,5 @@
 // The admin page: sign in, then upload and manage catalog shapes.
-import { fetchCatalog, svgToShape, shapeThumb } from './shapes.js';
+import { svgToShape, shapeThumb } from './shapes.js';
 import { esc } from './render.js';
 import { $, $$, icon, toast, confirmBox, readText } from './ui.js';
 
@@ -82,7 +82,7 @@ async function uploadFiles(root, files) {
 }
 
 async function renderManager(root) {
-  const shapes = await fetchCatalog();
+  const { shapes = [], temporary = false } = await call('GET', '/api/shapes');
   const lastCategory = shapes[shapes.length - 1]?.category || 'Uploaded';
   root.innerHTML = `<div class="admin">
     <header class="admin-top">
@@ -91,6 +91,7 @@ async function renderManager(root) {
       <div class="grow"></div>
       <button class="btn ghost" id="signout">Sign out</button>
     </header>
+    ${temporary ? '<p class="admin-note">Shapes uploaded on this live site disappear when it restarts. To keep a shape, upload it in your VS Code preview, then push to GitHub.</p>' : ''}
     <section class="upload">
       <label class="drop" id="drop">
         ${icon('upload')}
