@@ -60,7 +60,7 @@ function sanitizeSvg(text) {
   root.querySelectorAll('script,foreignObject,iframe,object,embed').forEach(n => n.remove());
   [root, ...root.querySelectorAll('*')].forEach(el => [...el.attributes].forEach(a => {
     const n = a.name.toLowerCase(), v = a.value.trim().toLowerCase();
-    if (n.startsWith('on') || ((n === 'href' || n === 'xlink:href') && !v.startsWith('#')) || v.startsWith('javascript:')) el.removeAttribute(a.name);
+    if (n.startsWith('on') || ((n === 'href' || n === 'xlink:href') && !v.startsWith('#')) || /^(javascript|data|vbscript):/.test(v)) el.removeAttribute(a.name);
   }));
   let vb = root.getAttribute('viewBox');
   if (!vb) vb = `0 0 ${parseFloat(root.getAttribute('width')) || 100} ${parseFloat(root.getAttribute('height')) || 100}`;
