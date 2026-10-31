@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blooket Art Maker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<section id="home">
+  <header><h1>🎨 Art Maker</h1>
+    <div><button id="newFolder">📁 New folder</button> <button id="newProject" class="primary">＋ New project</button></div>
+  </header>
+  <div id="folders"></div>
+</section>
+
+<dialog id="dlg">
+  <form method="dialog" id="newForm">
+    <h2>New project</h2>
+    <label>Name <input name="name" value="My art" required></label>
+    <label>Folder <select name="folder" id="dlgFolder"></select></label>
+    <fieldset><legend>Animated?</legend>
+      <label><input type="radio" name="animated" value="no" checked> Still image</label>
+      <label><input type="radio" name="animated" value="yes"> Animated (keyframes)</label>
+    </fieldset>
+    <label>Frame size
+      <select id="preset">
+        <option value="800x600">800 × 600</option><option value="1920x1080">1920 × 1080</option>
+        <option value="1080x1080">1080 × 1080</option><option value="512x512">512 × 512</option>
+        <option value="custom">Custom…</option>
+      </select></label>
+    <div id="customSize" hidden>
+      <label>Width <input type="number" name="w" min="16" max="8000" value="800"></label>
+      <label>Height <input type="number" name="h" min="16" max="8000" value="600"></label>
+    </div>
+    <menu><button value="cancel" formnovalidate>Cancel</button><button value="ok" class="primary">Create</button></menu>
+  </form>
+</dialog>
+
+<section id="editor" hidden>
+  <div id="top">
+    <button id="back">← Projects</button>
+    <input id="pname" aria-label="Project name">
+    <button id="undo">↶ Undo</button>
+    <button id="exportSvg" class="primary">⬇ Export SVG</button>
+  </div>
+  <div id="main">
+    <aside id="tools"></aside>
+    <div id="stageWrap"><svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <aside id="side">
+      <h3>Options</h3>
+      <label>Size <input type="range" id="size" min="1" max="100" value="4"> <span id="sizeV">4</span></label>
+      <label>Fill <input type="color" id="fill" value="#4f8cff"></label>
+      <label>Outline <input type="color" id="stroke" value="#000000"></label>
+      <label>Corner rounding <input type="range" id="radius" min="0" max="100" value="0"></label>
+      <label>Text <input id="textVal" value="Hello"></label>
+      <button id="delSel">🗑 Delete selected</button>
+      <h3>Shapes catalog</h3>
+      <div id="catalog"></div>
+      <label><input type="checkbox" id="admin"> Admin mode</label>
+      <div id="adminBox" hidden><input type="file" id="upload" accept=".svg,image/svg+xml"><small>Upload an SVG to add it to the catalog.</small></div>
+      <h3>Layers <button id="addLayer">＋</button></h3>
+      <ul id="layers"></ul>
+    </aside>
+  </div>
+  <div id="timeline" hidden>
+    <button id="addFrame">＋ Keyframe</button><button id="dupFrame">⧉ Duplicate</button><button id="delFrame">🗑</button>
+    <button id="play">▶ Play</button>
+    <label>FPS <input type="number" id="fps" min="1" max="60" value="8"></label>
+    <div id="frames"></div>
+  </div>
+</section>
+<script src="app.js"></script>
+</body>
+</html>
