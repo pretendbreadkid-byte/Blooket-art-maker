@@ -229,6 +229,7 @@ function newProjectWizard(folders) {
     name: 'My new art',
     folderId: currentFolder === 'all' ? null : currentFolder,
     animated: null,
+    animMode: 'keys',
     width: 1024,
     height: 1024,
     rounded: false,
@@ -273,13 +274,35 @@ function newProjectWizard(folders) {
             <span class="type-art">${icon('image')}</span><b>No, a picture</b><small>One still image</small>
           </button>
           <button class="type-card ${state.animated === true ? 'on' : ''}" data-v="1">
-            <span class="type-art">${icon('play')}</span><b>Yes, animated</b><small>Things move with keyframes</small>
+            <span class="type-art">${icon('play')}</span><b>Yes, animated</b><small>Make things move</small>
           </button>
         </div>
         <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
       $('[data-back]', box).onclick = () => { step = 0; stepName(); };
       $$('.type-card', box).forEach((b) => {
-        b.onclick = () => { state.animated = b.dataset.v === '1'; step = 2; stepSize(); };
+        b.onclick = () => {
+          state.animated = b.dataset.v === '1';
+          if (state.animated) { stepMotion(); return; }
+          step = 2;
+          stepSize();
+        };
+      });
+    };
+
+    const stepMotion = () => {
+      box.innerHTML = `${dots()}<h2>How should it animate?</h2>
+        <div class="type-cards">
+          <button class="type-card ${state.animMode === 'keys' ? 'on' : ''}" data-m="keys" autofocus>
+            <span class="type-art">${icon('diamond')}</span><b>Keyframes</b><small>Set where things go, and they slide there smoothly</small>
+          </button>
+          <button class="type-card ${state.animMode === 'pages' ? 'on' : ''}" data-m="pages">
+            <span class="type-art">${icon('page')}</span><b>Pages</b><small>Draw each page, and it flips from one to the next</small>
+          </button>
+        </div>
+        <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
+      $('[data-back]', box).onclick = stepType;
+      $$('.type-card', box).forEach((b) => {
+        b.onclick = () => { state.animMode = b.dataset.m; step = 2; stepSize(); };
       });
     };
 
@@ -331,7 +354,11 @@ function newProjectWizard(folders) {
           mark();
         };
       });
-      $('[data-back]', box).onclick = () => { step = 1; stepType(); };
+      $('[data-back]', box).onclick = () => {
+        step = 1;
+        if (state.animated) stepMotion();
+        else stepType();
+      };
       $('form', box).onsubmit = async (e) => {
         e.preventDefault();
         const width = Math.round(+w.value), height = Math.round(+h.value);

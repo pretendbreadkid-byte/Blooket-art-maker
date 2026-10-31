@@ -91,7 +91,7 @@ export async function fetchCatalog() {
 
 /* ---------- Reading an uploaded SVG ---------- */
 
-const GEOMETRY = 'path,rect,circle,ellipse,polygon,polyline,line';
+export const GEOMETRY = 'path,rect,circle,ellipse,polygon,polyline,line';
 const SKIP_PARENTS = 'defs,clipPath,mask,symbol,pattern,marker';
 
 function rectD(el) {
@@ -109,7 +109,7 @@ function ellipseD(cx, cy, rx, ry) {
   return `M${cx + rx} ${cy}A${rx} ${ry} 0 1 1 ${cx - rx} ${cy}A${rx} ${ry} 0 1 1 ${cx + rx} ${cy}Z`;
 }
 
-function elementD(el) {
+export function elementD(el) {
   const num = (k) => parseFloat(el.getAttribute(k)) || 0;
   const tag = el.localName;
   if (tag === 'path') return el.getAttribute('d') || '';

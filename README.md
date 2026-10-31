@@ -23,19 +23,44 @@ Then open <http://localhost:5180>.
 | Tool | Key | What it does |
 | --- | --- | --- |
 | Select | V | Move, resize and turn things. Ctrl+click picks more. Double-click to edit text or points. Right-click for more. |
-| Lasso | L | Draw a loop around things to pick them. |
-| Vertices | A | Drag points, click a dot to add one, choose Pointed or Rounded, round the corners. |
+| Lasso | L | Draw a loop around things to pick them. In the drop-down under Select. |
+| Vertices | A | Drag points, click a dot to add one, choose Pointed or Rounded, round the corners. In the drop-down under Select. |
+| Line | N | Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect. |
 | Pencil | P | Thin, sharp lines. |
 | Marker | M | Thick, see-through lines. |
 | Shapes | S | Basic shapes, Plus shapes and the uploaded catalog. Click one, or drag it onto the canvas. |
 | Bucket | B | Fill a shape, a closed drawing, or the background, with a colour or a gradient. |
 | Text | T | Click and type. |
 | Eraser | E | Rubs out art on the current layer. |
-| Move view | H | Drag around. Hold Space to do this from any tool. Scroll to zoom. |
+| Move view | H | Drag around. Hold Space to do this from any tool. Scroll to zoom. In the drop-down under Select. |
+| Blooks | | Search the Blook assets and drag one onto the canvas. |
 
 Other keys: `[` and `]` change brush size, Ctrl+Z undo, Ctrl+Y redo, Ctrl+D duplicate, Delete remove.
 
-In animations: Enter plays, `,` and `.` step one frame. Pick a later frame and move or change something, and a keyframe is added for you. Shapes warp smoothly between keyframes, even when you add or remove points.
+To connect lines you already drew, pick them, right-click and choose **Connect lines**. One open line gets **Close the line** instead. Use the Bucket to fill a closed line, and Vertices to change where it goes.
+
+Drag the edges between panels to resize them. Double-click an edge to reset it.
+
+## Animations
+
+A new animation can use **Keyframes** or **Pages**. Enter plays, and `,` and `.` step one frame or page.
+
+- **Keyframes:** pick a later frame and move or change something, and a keyframe is added for you. Shapes warp smoothly between keyframes, even when you add or remove points.
+- **Pages:** each page is its own drawing, and playing flips from one to the next. Turn on Ghost to see the page before. Drag pages to reorder them, and right-click one for more.
+
+**Loop back to beginning** plays the animation in reverse so it ends where it began. Right-click something on the canvas or its row in the timeline, or use the **Loop back** button. In a page animation, 1 2 3 becomes 1 2 3 2 1.
+
+## Blook assets
+
+The Blook art is by [Blooket](https://www.blooket.com) and is used with permission.
+
+The pictures are in `public/blooks`. Each one arrives as separate pieces held together, on its own layer. Right-click it and choose **Take apart** to use the pieces on their own. Six of the files are animated, and they arrive as a still picture.
+
+To add more, copy SVGs into that folder, or run this to tidy the names and skip duplicates:
+
+```
+node scripts/import-blooks.js "C:\path\to\folder"
+```
 
 **Add picture** can keep a picture as it is, or turn it into a shape with its real outline. Pictures with a plain or see-through background work best.
 

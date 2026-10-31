@@ -2,11 +2,15 @@
 import {
   S, hooks, refresh, liveRefresh, commit, activeLayer, selected, posed, edit, select, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
-import { newLayer, clone, uid, pathBounds } from './model.js';
+import { newLayer, clone, uid, pathBounds, objectsOn, regroup } from './model.js';
 import { layerMarkup, esc } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
-import { TOOLS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind } from './tools.js';
+import {
+  TOOLS, PICK_TOOLS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
+  hasGroup, takeApart,
+} from './tools.js';
+import { drawBlooks } from './blooks.js';
 import { isPlus } from './session.js';
 import { plusDialog } from './plus.js';
 import { $, $$, html, icon, swatch, colorPopover, toast, confirmBox } from './ui.js';
@@ -84,9 +88,10 @@ function optionBar() {
   const ink = (key, label) => colorButton({ label, value: S[key], onInput: (c) => { S[key] = c; } });
   const paint = (label) => colorButton({ label, value: S.fillGradient || S.fill, allowGradient: true, onInput: setToolFill });
 
-  if (tool === 'pencil' || tool === 'marker' || tool === 'eraser') {
+  if (tool === 'pencil' || tool === 'marker' || tool === 'eraser' || tool === 'line') {
     if (tool !== 'eraser') add(ink('stroke', 'Colour'));
     add(slider({ label: 'Size', value: S.sizes[tool], min: 1, max: 200, unit: 'px', onInput: (v) => { S.sizes[tool] = v; } }));
+    if (tool === 'line') add(html('<span class="muted">To move a point later, use Vertices. To fill a closed line, use the Bucket.</span>'));
   } else if (tool === 'shapes') {
     add(paint('Fill'), ink('stroke', 'Outline'));
     add(slider({ label: 'Outline size', value: S.shapeOutline, min: 0, max: 60, unit: 'px', onInput: (v) => { S.shapeOutline = v; } }));
@@ -187,6 +192,7 @@ function selectedPanel() {
 
   const single = items.length === 1 ? items[0] : null;
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
+  if (hasGroup()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
 
   if (single) {
     const s = posed(single);
@@ -290,7 +296,8 @@ function layerRow(layer) {
   }
   if (open) {
     const list = html('<ul class="obj-list"></ul>');
-    for (const o of [...layer.objects].reverse()) {
+    const shown = objectsOn(S.doc, layer, S.frame);
+    for (const o of [...shown].reverse()) {
       const item = html(`<li class="${S.sel.has(o.id) ? 'on' : ''}"><button>${esc(o.name)}</button></li>`);
       $('button', item).onclick = (e) => {
         e.stopPropagation();
@@ -300,7 +307,7 @@ function layerRow(layer) {
       };
       list.append(item);
     }
-    if (!layer.objects.length) list.append(html('<li class="muted">Nothing here yet</li>'));
+    if (!shown.length) list.append(html('<li class="muted">Nothing here yet</li>'));
     row.append(list);
   }
 
@@ -387,6 +394,7 @@ function duplicateLayer() {
   copy.id = uid('l');
   copy.name = `${source.name} copy`;
   copy.objects.forEach((o) => { o.id = uid('o'); });
+  regroup(copy.objects);
   list.splice(list.indexOf(source) + 1, 0, copy);
   S.doc.activeLayerId = copy.id;
   commit();
@@ -438,7 +446,7 @@ let search = '';
 
 function catalogPanel() {
   const box = $('#catalog');
-  box.hidden = S.tool !== 'shapes';
+  box.hidden = S.tool !== 'shapes' || S.blooksOpen;
   if (box.hidden) return;
   if ($('.cat-search', box)) { renderCatalogGrid(); return; }
   box.innerHTML = `<div class="panel-head"><h3>Shapes</h3></div>
@@ -451,14 +459,14 @@ function catalogPanel() {
 const DRAG_START_PX = 6;
 const DROPPED_SHAPE_SIZE = 0.25;
 
-// Drag a shape out of the bar and drop it anywhere on the canvas.
-function startShapeDrag(e, item, shape) {
+// Drag something out of a side panel and drop it anywhere on the canvas.
+export function startPanelDrag(e, item, picture, onDrop) {
   e.preventDefault();
   const startX = e.clientX, startY = e.clientY;
   let ghost = null;
   const move = (ev) => {
     if (!ghost && Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_START_PX) return;
-    ghost ??= document.body.appendChild(html(`<div class="shape-ghost">${shapeThumb(shape)}</div>`));
+    ghost ??= document.body.appendChild(html(`<div class="shape-ghost">${picture}</div>`));
     ghost.style.left = `${ev.clientX}px`;
     ghost.style.top = `${ev.clientY}px`;
   };
@@ -471,13 +479,16 @@ function startShapeDrag(e, item, shape) {
     setTimeout(() => delete item.dataset.dragged, 0);
     const r = $('#wk').getBoundingClientRect();
     if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return;
-    const p = toDoc(ev);
-    const size = Math.min(S.doc.width, S.doc.height) * DROPPED_SHAPE_SIZE;
-    S.shape = shape;
-    addShape(shape, p.x, p.y, size, size);
+    onDrop(toDoc(ev));
   };
   addEventListener('pointermove', move);
   addEventListener('pointerup', up);
+}
+
+function dropShape(shape, p) {
+  const size = Math.min(S.doc.width, S.doc.height) * DROPPED_SHAPE_SIZE;
+  if (shape.id !== 'line') S.shape = shape;
+  addShape(shape, p.x, p.y, size, size);
 }
 
 function renderCatalogGrid() {
@@ -502,10 +513,11 @@ function renderCatalogGrid() {
           if (await plusDialog(`${shape.name} is a Plus shape`)) { renderCatalogGrid(); }
           return;
         }
+        if (shape.id === 'line') { setTool('line'); return; }
         S.shape = shape;
         renderCatalogGrid();
       };
-      if (!locked) b.addEventListener('pointerdown', (e) => startShapeDrag(e, b, shape));
+      if (!locked) b.addEventListener('pointerdown', (e) => startPanelDrag(e, b, shapeThumb(shape), (p) => dropShape(shape, p)));
       row.append(b);
     }
     grid.append(row);
@@ -527,12 +539,25 @@ function showHint() {
   hintTimer = setTimeout(() => el.classList.add('gone'), HINT_MS);
 }
 
+function toolbarState() {
+  $$('#toolbar [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === S.tool));
+  const pick = $('#picktool');
+  if (PICK_TOOLS.includes(S.tool) && pick.dataset.tool !== S.tool) {
+    pick.dataset.tool = S.tool;
+    pick.title = `${TOOLS[S.tool].label} (${TOOLS[S.tool].key})`;
+    pick.innerHTML = `${icon(S.tool)}<span>${TOOLS[S.tool].label}</span>`;
+  }
+  pick.classList.toggle('on', PICK_TOOLS.includes(S.tool));
+  $('#blookbtn').classList.toggle('on', S.blooksOpen);
+}
+
 export function drawPanels() {
   optionBar();
   selectedPanel();
   layersPanel();
   catalogPanel();
-  $$('#toolbar [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === S.tool));
+  drawBlooks();
+  toolbarState();
   showHint();
   $('#undo').disabled = !canUndo();
   $('#redo').disabled = !canRedo();

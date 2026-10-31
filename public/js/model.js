@@ -13,14 +13,17 @@ export const lerp = (a, b, t) => a + (b - a) * t;
 
 export const newLayer = (name) => ({ id: uid('l'), name, visible: true, locked: false, opacity: 1, objects: [] });
 
-export function newDoc({ name, folderId = null, animated = false, width = 1024, height = 1024 }) {
+// animMode: 'keys' slides between keyframes, 'pages' flips between whole drawings.
+export function newDoc({ name, folderId = null, animated = false, animMode = 'keys', width = 1024, height = 1024 }) {
   const layer = newLayer('Layer 1');
-  return {
-    id: uid('p'), name, folderId, animated, width, height,
+  const doc = {
+    id: uid('p'), name, folderId, animated, animMode, width, height,
     background: '#ffffff', bgGradient: null, cornerRadius: 0, fps: 12, frames: 48,
     layers: [layer], activeLayerId: layer.id,
     createdAt: Date.now(), updatedAt: Date.now(),
   };
+  if (animated && animMode === 'pages') Object.assign(doc, { fps: 6, frames: 1, pages: [{ id: uid('g') }] });
+  return doc;
 }
 
 function baseObject(type, props) {
@@ -319,7 +322,7 @@ function lerpColor(a, b, t) {
 }
 
 function lerpGradient(a, b, t) {
-  if (!a || !b) return t < 0.5 ? a ?? null : b ?? null;
+  if (!a || !b || a.raw || b.raw) return t < 0.5 ? a ?? null : b ?? null;
   return { from: lerpColor(a.from, b.from, t), to: lerpColor(a.to, b.to, t), angle: lerp(a.angle, b.angle, t) };
 }
 
@@ -372,7 +375,7 @@ export function setProps(doc, obj, frame, patch) {
   for (const [k, v] of Object.entries(patch)) (POSE_PROPS.includes(k) ? posed : plain)[k] = v;
   Object.assign(obj, plain);
   if (!Object.keys(posed).length) return;
-  if (!doc.animated || (!obj.keys.length && frame === 0)) {
+  if (!doc.animated || isPages(doc) || (!obj.keys.length && frame === 0)) {
     Object.assign(obj, posed);
     return;
   }
@@ -406,6 +409,141 @@ export function moveKey(obj, from, to) {
   key.f = to;
   obj.keys.sort((a, b) => a.f - b.f);
   return true;
+}
+
+const BACKWARDS = { in: 'out', out: 'in' };
+const reversedEase = (key) => BACKWARDS[key.ease] || key.ease || 'ease';
+
+// Mirrors the animation so it plays backwards to where it began. Everything
+// turns around on the same frame, so things animated together stay together.
+// Returns the last frame used, or null if nothing has moved yet.
+export function loopBack(objects) {
+  const moving = objects.filter((o) => o.keys.length > 1);
+  if (!moving.length) return null;
+  const turn = Math.max(...moving.map((o) => o.keys[o.keys.length - 1].f));
+  let end = turn;
+  for (const o of moving) {
+    addKey(o, turn);
+    const { keys } = o;
+    const pivot = keys.length - 1;
+    keys[pivot].ease = reversedEase(keys[pivot - 1]);
+    for (let i = pivot - 1; i >= 0; i--) {
+      keys.push({ f: 2 * turn - keys[i].f, ease: i ? reversedEase(keys[i - 1]) : 'ease', pose: clone(keys[i].pose) });
+    }
+    end = Math.max(end, keys[keys.length - 1].f);
+  }
+  return end;
+}
+
+/* ---------- Pages ---------- */
+
+export const isPages = (doc) => !!doc.animated && doc.animMode === 'pages';
+
+// In a page animation, each object lives on one page.
+export const onFrame = (doc, o, frame) => !isPages(doc) || o.page === doc.pages[frame]?.id;
+export const objectsOn = (doc, layer, frame) => layer.objects.filter((o) => onFrame(doc, o, frame));
+
+// Gives copies their own groups, so picking one never picks the original too.
+export function regroup(objects) {
+  const fresh = new Map();
+  for (const o of objects) {
+    if (!o.group) continue;
+    if (!fresh.has(o.group)) fresh.set(o.group, uid('t'));
+    o.group = fresh.get(o.group);
+  }
+  return objects;
+}
+
+function copyPageObjects(doc, fromId, toId) {
+  for (const layer of doc.layers) {
+    const copies = layer.objects.filter((o) => o.page === fromId)
+      .map((o) => ({ ...clone(o), id: uid('o'), page: toId }));
+    layer.objects.push(...regroup(copies));
+  }
+}
+
+// Adds a page after index `at`. With `copyFrom`, it starts as a copy of that page.
+export function addPage(doc, at, copyFrom = null) {
+  const page = { id: uid('g') };
+  const source = copyFrom === null ? null : doc.pages[copyFrom];
+  doc.pages.splice(at + 1, 0, page);
+  if (source) copyPageObjects(doc, source.id, page.id);
+  doc.frames = doc.pages.length;
+  return at + 1;
+}
+
+export function removePage(doc, index) {
+  if (doc.pages.length < 2) return false;
+  const [gone] = doc.pages.splice(index, 1);
+  for (const layer of doc.layers) layer.objects = layer.objects.filter((o) => o.page !== gone.id);
+  doc.frames = doc.pages.length;
+  return true;
+}
+
+export function movePage(doc, from, to) {
+  doc.pages.splice(to, 0, doc.pages.splice(from, 1)[0]);
+}
+
+// 1 2 3 becomes 1 2 3 2 1.
+export function loopPagesBack(doc) {
+  if (doc.pages.length < 2) return false;
+  for (let i = doc.pages.length - 2; i >= 0; i--) addPage(doc, doc.pages.length - 1, i);
+  return true;
+}
+
+/* ---------- Connecting lines ---------- */
+
+const closeTo = (a, b, gap) => Math.hypot(a.x - b.x, a.y - b.y) <= gap;
+
+export function reverseSubpath(sp) {
+  return {
+    closed: sp.closed,
+    nodes: [...sp.nodes].reverse().map((n) => {
+      const out = { x: n.x, y: n.y };
+      if (n.ox || n.oy) { out.ix = n.ox; out.iy = n.oy; }
+      if (n.ix || n.iy) { out.ox = n.ix; out.oy = n.iy; }
+      return out;
+    }),
+  };
+}
+
+function appendSubpath(a, b, gap) {
+  const last = a.nodes[a.nodes.length - 1], first = b.nodes[0];
+  const touching = closeTo(last, first, gap);
+  if (touching && (first.ox || first.oy)) { last.ox = first.ox; last.oy = first.oy; }
+  return { closed: false, nodes: [...a.nodes, ...(touching ? b.nodes.slice(1) : b.nodes)] };
+}
+
+function closeIfTouching(sp, gap) {
+  const { nodes } = sp;
+  if (nodes.length < 3 || !closeTo(nodes[0], nodes[nodes.length - 1], gap)) return sp;
+  const last = nodes[nodes.length - 1];
+  const first = { ...nodes[0] };
+  if (last.ix || last.iy) { first.ix = last.ix; first.iy = last.iy; }
+  return { closed: true, nodes: [first, ...nodes.slice(1, -1)] };
+}
+
+// Chains open lines into one, always taking the nearest loose end next. Ends
+// within `gap` become one point. If the two final ends meet, the line closes.
+export function chainSubpaths(subpaths, gap = 1e-3) {
+  const rest = clone(subpaths);
+  let chain = rest.shift();
+  while (rest.length) {
+    const head = chain.nodes[0], tail = chain.nodes[chain.nodes.length - 1];
+    let best = null;
+    rest.forEach((sp, i) => {
+      const first = sp.nodes[0], last = sp.nodes[sp.nodes.length - 1];
+      const options = [[tail, first, 'after', false], [tail, last, 'after', true], [head, last, 'before', false], [head, first, 'before', true]];
+      for (const [mine, theirs, side, flip] of options) {
+        const dist = Math.hypot(mine.x - theirs.x, mine.y - theirs.y);
+        if (!best || dist < best.dist) best = { i, side, flip, dist };
+      }
+    });
+    const [next] = rest.splice(best.i, 1);
+    const piece = best.flip ? reverseSubpath(next) : next;
+    chain = best.side === 'after' ? appendSubpath(chain, piece, gap) : appendSubpath(piece, chain, gap);
+  }
+  return closeIfTouching(chain, gap);
 }
 
 /* ---------- Transforms ---------- */

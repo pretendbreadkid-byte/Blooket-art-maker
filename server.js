@@ -2,7 +2,7 @@
 // No dependencies: run it with `node server.js`.
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt as scryptCallback } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
+const BLOOKS = join(PUBLIC, 'blooks');
 const DATA = process.env.DATA_DIR || join(ROOT, 'data');
 // The catalog lives in the repo, so pushing to GitHub is what keeps it safe.
 const SHAPES_FILE = process.env.DATA_DIR ? join(DATA, 'shapes.json') : join(ROOT, 'catalog', 'shapes.json');
@@ -222,6 +223,15 @@ function readJson(req) {
   });
 }
 
+// Drop an SVG into public/blooks and it shows up in the editor.
+function listBlooks() {
+  if (!existsSync(BLOOKS)) return [];
+  return readdirSync(BLOOKS).filter((f) => f.endsWith('.svg')).sort().map((file) => {
+    const name = file.replace(/\.svg$/, '').replace(/-/g, ' ');
+    return { file, name: name[0].toUpperCase() + name.slice(1) };
+  });
+}
+
 const cleanText = (v, max, fallback) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : fallback);
 
 // Rebuilds the shape from numbers only, so nothing but geometry is ever stored.
@@ -260,6 +270,7 @@ async function api(req, res, path) {
   if (req.method === 'GET' && path === '/api/shapes') {
     return send(res, 200, { shapes, temporary: TEMPORARY_DISK, accountsTemporary: TEMPORARY_DISK && !USERS_IN_GITHUB });
   }
+  if (req.method === 'GET' && path === '/api/blooks') return send(res, 200, { blooks: listBlooks() });
   if (req.method === 'POST' && path === '/api/auth/register') return register(req, res);
   if (req.method === 'POST' && path === '/api/auth/login') return login(req, res);
   if (path === '/api/me' || path === '/api/plus/join') {

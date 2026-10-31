@@ -1,13 +1,16 @@
 // Builds the editor screen and connects the top bar, keyboard and file drops.
 import {
-  S, hooks, openDoc, refresh, commit, undo, redo, persist, selected,
+  S, hooks, openDoc, refresh, commit, undo, redo, persist, selected, visibleObjects,
 } from './state.js';
 import { getDoc, getMeta } from './store.js';
 import { mountStage, drawStage, drawOverlay, fitView, placeFrame, zoomAt } from './stage.js';
 import {
-  TOOLS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
+  TOOLS, PICK_TOOLS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
   copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor,
+  finishLine, cancelLine, lineInProgress,
 } from './tools.js';
+import { toggleBlooks } from './blooks.js';
+import { mountSplits } from './splits.js';
 import { drawPanels } from './panels.js';
 import { drawTimeline, setFrame, stop, togglePlay } from './timeline.js';
 import { fetchCatalog } from './shapes.js';
@@ -17,7 +20,7 @@ import { checkOverflow, resetFitPrompt } from './fit.js';
 import { imageToShape } from './trace.js';
 import { session } from './session.js';
 import { pathD, pathBounds } from './model.js';
-import { $, icon, toast, dialog, readDataUrl } from './ui.js';
+import { $, icon, menu, toast, dialog, readDataUrl } from './ui.js';
 
 const TEMPLATE = `
 <div class="ed">
@@ -42,6 +45,7 @@ const TEMPLATE = `
   <div class="ed-opts" id="opts"></div>
   <nav class="ed-tools" id="toolbar"></nav>
   <aside class="ed-catalog" id="catalog" hidden></aside>
+  <aside class="ed-catalog" id="blooks" hidden></aside>
   <main class="ed-stage" id="wk">
     <div id="frame"><svg id="art" xmlns="http://www.w3.org/2000/svg"></svg><svg id="overlay"></svg></div>
     <div id="brush" hidden></div>
@@ -50,15 +54,20 @@ const TEMPLATE = `
   </main>
   <aside class="ed-right">
     <section id="inspector" class="panel"></section>
+    <div class="split split-layers" data-split="layers" title="Drag to resize. Double-click to reset."></div>
     <section id="layers" class="panel"></section>
   </aside>
   <section class="ed-time" id="timeline" hidden></section>
+  <div class="split split-side" data-split="side" title="Drag to resize. Double-click to reset."></div>
+  <div class="split split-right" data-split="right" title="Drag to resize. Double-click to reset."></div>
+  <div class="split split-time" data-split="time" title="Drag to resize. Double-click to reset."></div>
 </div>`;
 
 let keyHandler = null, keyUpHandler = null, stageWatcher = null;
 
 export async function closeEditor() {
   closeTextEditor();
+  cancelLine();
   if (S.playing) stop();
   removeEventListener('keydown', keyHandler);
   removeEventListener('keyup', keyUpHandler);
@@ -99,7 +108,7 @@ function onKey(e) {
       c: copySelection, v: pasteClipboard, s: persist,
       x: () => { copySelection(); deleteSelection(); },
       a: () => {
-        S.sel = new Set(S.doc.layers.filter((l) => l.visible && !l.locked).flatMap((l) => l.objects.map((o) => o.id)));
+        S.sel = new Set(visibleObjects().map((o) => o.id));
         refresh();
       },
     };
@@ -113,7 +122,11 @@ function onKey(e) {
     deleteSelection();
     return;
   }
-  if (e.key === 'Escape') { S.sel.clear(); S.nodeSel.clear(); refresh(); return; }
+  if (e.key === 'Escape') {
+    if (lineInProgress()) { cancelLine(); return; }
+    S.sel.clear(); S.nodeSel.clear(); refresh(); return;
+  }
+  if (e.key === 'Enter' && lineInProgress()) { finishLine(); return; }
   if (e.key === 'Enter' && S.doc.animated) { togglePlay(); return; }
   if (e.key === ',' && S.doc.animated) { setFrame(S.frame - 1); return; }
   if (e.key === '.' && S.doc.animated) { setFrame(S.frame + 1); return; }
@@ -205,10 +218,23 @@ function wireTop(root) {
   file.onchange = () => { importFiles([...file.files]); file.value = ''; };
 
   const bar = $('#toolbar', root);
-  bar.innerHTML = Object.entries(TOOLS).map(([id, t]) => `<button data-tool="${id}" title="${t.label} (${t.key})">${icon(id)}<span>${t.label}</span></button>`).join('');
+  const others = Object.entries(TOOLS).filter(([id]) => !PICK_TOOLS.includes(id));
+  bar.innerHTML = `<div class="tool-pick">
+      <button id="picktool" data-tool="select" title="Select (V)">${icon('select')}<span>Select</span></button>
+      <button id="pickmore" class="tool-more" title="More ways to pick" aria-label="More ways to pick" aria-haspopup="menu">${icon('caret')}</button>
+    </div>
+    ${others.map(([id, t]) => `<button data-tool="${id}" title="${t.label} (${t.key})">${icon(id)}<span>${t.label}</span></button>`).join('')}
+    <button id="blookbtn" title="Blook assets">${icon('blook')}<span>Blooks</span></button>`;
   bar.onclick = (e) => {
     const b = e.target.closest('[data-tool]');
     if (b) setTool(b.dataset.tool);
+  };
+  $('#blookbtn', root).onclick = toggleBlooks;
+  const more = $('#pickmore', root);
+  more.onclick = () => {
+    const r = more.getBoundingClientRect();
+    const beside = { getBoundingClientRect: () => ({ left: r.right, right: r.right + 200, top: r.top, bottom: r.top }) };
+    menu(beside, PICK_TOOLS.map((id) => ({ label: `${TOOLS[id].label} (${TOOLS[id].key})`, icon: id, onClick: () => setTool(id) })));
   };
 
   const wk = $('#wk', root);
@@ -249,6 +275,7 @@ export async function openEditor(root, id) {
   mountStage(root);
   wireTop(root);
   attachTools($('#wk', root));
+  mountSplits(root);
   drawTimeline();
   placeFrame();
   fitView();

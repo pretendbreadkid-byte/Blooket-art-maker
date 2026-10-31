@@ -59,6 +59,13 @@ const ICONS = {
   sharp: 'M4 18L12 6l8 12',
   logout: 'M10 4H5v16h5M16 8l4 4-4 4M20 12H9',
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c1-4 4-6 8-6s7 2 8 6',
+  line: 'M4 19L10 8l5 7 5-11M3 17.500h3v3H3zM18.500 2.500h3v3h-3z',
+  blook: 'M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM8.500 11v1M15.500 11v1M9 16c2 1.500 4 1.500 6 0',
+  apart: 'M3 3h7v7H3zM14 14h7v7h-7zM14 3h7v7h-7M3 14h7v7',
+  loop: 'M4 12a8 8 0 0 1 14-5.300L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.300L4 15M4 20v-5h5',
+  link: 'M9 15l6-6M8 11l-3 3a3.500 3.500 0 0 0 5 5l3-3M16 13l3-3a3.500 3.500 0 0 0-5-5l-3 3',
+  page: 'M6 3h9l4 4v14H6zM15 3v4h4',
+  caret: 'M6 9l6 6 6-6',
   star: 'M12 3l2.700 5.600 6.200.900-4.500 4.300 1.100 6.200L12 17.100 6.500 20l1.100-6.200L3.100 9.500l6.200-.900z',
 };
 
@@ -215,7 +222,7 @@ export function colorPopover(anchor, { value, allowNone = false, allowGradient =
 
 // Pick two colours and turn the dial to point the gradient any way you like.
 function gradientPopover(anchor, { value, onInput, onDone }) {
-  const g = { ...value };
+  const g = { from: value.from, to: value.to, angle: value.angle };
   let stop = 'from';
   const pop = html(`<div class="popover">
     <div class="pop-tabs"><button data-solid>Solid</button><button class="on">Gradient</button></div>

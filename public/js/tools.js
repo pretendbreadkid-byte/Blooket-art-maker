@@ -1,17 +1,19 @@
 // Everything that happens when you press, drag and release on the canvas.
 import {
   S, hooks, refresh, liveRefresh, commit, activeLayer, layerOf, findObj, selected, select, posed, edit, fillPatch,
+  addObject, visibleObjects, groupOf,
 } from './state.js';
 import {
   toDoc, objectEl, liveLayer, worldBox, selectionFrame, placeFrame, zoomAt, drawOverlay,
 } from './stage.js';
 import {
   newPath, newText, newImage, clone, pathD, fitSubpaths, strokeToSubpath, addVertex, removeVertices, smoothNode, sharpenNode,
-  pointInPolygon, localToWorld, pathBounds,
+  pointInPolygon, localToWorld, pathBounds, mapSubpaths, chainSubpaths, objectsOn, isPages, regroup, uid,
   worldToLocal, worldVectorToLocal, rad, simplify,
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
 import { exportSVG, rasterize, esc } from './render.js';
+import { loopSelection } from './timeline.js';
 import { toast, menu, $ } from './ui.js';
 
 let drag = null;
@@ -27,6 +29,7 @@ export const TOOLS = {
   select: { label: 'Select', key: 'V', hint: 'Click to pick something and drag to move it. Ctrl+click picks more. Right-click for more options.' },
   lasso: { label: 'Lasso', key: 'L', hint: 'Draw a loop around things to pick them. Hold Ctrl to add to what you have picked.' },
   vertices: { label: 'Vertices', key: 'A', hint: 'Click a shape, then drag its points. Click a yellow dot to add a point. Choose Pointed or Rounded up top.' },
+  line: { label: 'Line', key: 'N', hint: 'Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect.' },
   pencil: { label: 'Pencil', key: 'P', hint: 'Drag to draw a thin, sharp line.' },
   marker: { label: 'Marker', key: 'M', hint: 'Drag to draw a thick, see-through line.' },
   shapes: { label: 'Shapes', key: 'S', hint: 'Pick a shape, then drag on the canvas to draw it. Or just click to drop one in.' },
@@ -36,7 +39,9 @@ export const TOOLS = {
   hand: { label: 'Move view', key: 'H', hint: 'Drag to move around. You can also hold Space anywhere, and scroll to zoom.' },
 };
 
-const DRAWING = new Set(['pencil', 'marker', 'shapes', 'text', 'eraser', 'bucket']);
+const DRAWING = new Set(['line', 'pencil', 'marker', 'shapes', 'text', 'eraser', 'bucket']);
+// These share one button with a drop-down next to it.
+export const PICK_TOOLS = ['select', 'vertices', 'hand', 'lasso'];
 
 export function layerReady() {
   const layer = activeLayer();
@@ -141,12 +146,14 @@ function selectDown(e, p) {
     hit = under ? findObj(under.closest('[data-id]').dataset.id) : null;
   }
   if (hit) {
+    const team = groupOf(hit);
     if (adding) {
       const next = new Set(S.sel);
-      next.has(hit.id) ? next.delete(hit.id) : next.add(hit.id);
+      const remove = next.has(hit.id);
+      team.forEach((id) => (remove ? next.delete(id) : next.add(id)));
       select([...next]);
     } else if (!S.sel.has(hit.id)) {
-      select([hit.id]);
+      select(team);
     }
     refresh();
     startMove(p);
@@ -280,6 +287,149 @@ export function deleteNodes() {
   return true;
 }
 
+/* ---------- Line ---------- */
+
+const SNAP_PX = 12;
+const LINE_DRAG_PX = 6;
+
+// Open lines on this layer that a new line could connect to.
+const looseLines = () => objectsOn(S.doc, activeLayer(), S.frame)
+  .filter((o) => o.type === 'path' && !o.erase.length && o.subpaths.some((sp) => !sp.closed));
+
+const worldSubpaths = (raw) => {
+  const o = posed(raw);
+  return mapSubpaths(o.subpaths, (x, y) => localToWorld(o, x, y));
+};
+
+function looseEnds() {
+  return looseLines().flatMap((o) => worldSubpaths(o).map((sp, i) => ({ sp, closed: o.subpaths[i].closed })))
+    .filter((e) => !e.closed)
+    .flatMap(({ sp }) => [sp.nodes[0], sp.nodes[sp.nodes.length - 1]]);
+}
+
+function snapFor(p) {
+  const reach = SNAP_PX / S.zoom;
+  const near = (q) => Math.hypot(q.x - p.x, q.y - p.y) <= reach;
+  const pts = S.line?.pts;
+  if (pts?.length > 2 && near(pts[0])) return { x: pts[0].x, y: pts[0].y, closes: true };
+  const end = looseEnds().find(near);
+  return end ? { x: end.x, y: end.y } : null;
+}
+
+function lineHover(p) {
+  S.lineSnap = snapFor(p);
+  if (S.line) S.line.hover = p;
+  drawOverlay();
+}
+
+function lineDown(p) {
+  const snap = snapFor(p);
+  const at = snap ? { x: snap.x, y: snap.y } : p;
+  if (snap?.closes) { finishLine(true); return; }
+  if (S.line) S.line.pts.push(at);
+  else S.line = { pts: [at], hover: null };
+  drag = { type: 'line', p0: p };
+  drawOverlay();
+}
+
+function lineUp(p) {
+  const { pts } = S.line || {};
+  if (!pts || Math.hypot(p.x - drag.p0.x, p.y - drag.p0.y) * S.zoom < LINE_DRAG_PX) return;
+  const snap = snapFor(p);
+  if (snap?.closes) { finishLine(true); return; }
+  pts.push(snap ? { x: snap.x, y: snap.y } : p);
+  drawOverlay();
+}
+
+export const lineInProgress = () => !!S.line;
+
+export function cancelLine() {
+  S.line = null;
+  S.lineSnap = null;
+  if (S.doc && S.tool === 'line') drawOverlay();
+}
+
+// Swaps lines for one new object in their place, using the first line's look.
+function replaceWithChain(lines, subpath) {
+  const [first] = lines;
+  const layer = layerOf(first.id);
+  const look = posed(first);
+  const b = pathBounds([subpath]);
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  const obj = newPath({
+    name: 'Line', x: cx, y: cy, fill: look.fill, gradient: look.gradient, stroke: look.stroke, opacity: look.opacity,
+    strokeWidth: look.strokeWidth * ((Math.abs(look.scaleX) + Math.abs(look.scaleY)) / 2),
+    subpaths: mapSubpaths([subpath], (x, y) => ({ x: x - cx, y: y - cy })),
+  });
+  const gone = new Set(lines.map((o) => o.id));
+  for (const l of S.doc.layers) l.objects = l.objects.filter((o) => !gone.has(o.id));
+  addObject(layer, obj);
+  return obj;
+}
+
+function connect(lines, gap) {
+  const parts = lines.flatMap((o) => worldSubpaths(o).filter((_, i) => !o.subpaths[i].closed));
+  return replaceWithChain(lines, chainSubpaths(parts, gap));
+}
+
+export function finishLine(closed = false) {
+  const line = S.line;
+  S.line = null;
+  S.lineSnap = null;
+  const pts = (line?.pts || []).filter((p, i, all) => !i || p.x !== all[i - 1].x || p.y !== all[i - 1].y);
+  if (pts.length < 2) { drawOverlay(); return; }
+  const b = pathBounds([{ closed: false, nodes: pts }]);
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  let obj = newPath({
+    name: 'Line', x: cx, y: cy, stroke: S.stroke, strokeWidth: S.sizes.line,
+    subpaths: [{ closed, nodes: pts.map((p) => ({ x: p.x - cx, y: p.y - cy })) }],
+  });
+  addObject(activeLayer(), obj);
+  if (!closed) {
+    const gap = 0.5;
+    const ends = [pts[0], pts[pts.length - 1]];
+    const touching = looseLines().filter((o) => o !== obj && worldSubpaths(o).some((sp) => !sp.closed
+      && ends.some((e) => [sp.nodes[0], sp.nodes[sp.nodes.length - 1]].some((q) => Math.hypot(q.x - e.x, q.y - e.y) <= gap))));
+    if (touching.length) obj = connect([obj, ...touching], gap);
+  }
+  select([obj.id]);
+  commit();
+  if (obj.subpaths[0].closed) toast('Closed! Use the Bucket to fill it in.', 'ok');
+}
+
+const openLines = () => selected().filter((o) => o.type === 'path' && !o.erase.length && o.subpaths.some((sp) => !sp.closed));
+
+// One line closes up. Two or more join end to end.
+export function connectSelection() {
+  const lines = openLines();
+  if (!lines.length) { toast('Pick some open lines first.'); return; }
+  if (lines.length === 1) {
+    const [only] = lines;
+    edit(only, { subpaths: posed(only).subpaths.map((sp) => ({ ...sp, closed: true })) });
+    commit();
+    return;
+  }
+  const obj = connect(lines, 0.5);
+  select([obj.id]);
+  commit();
+}
+
+/* ---------- Groups ---------- */
+
+export const hasGroup = () => selected().some((o) => o.group);
+
+export function takeApart() {
+  selected().forEach((o) => { delete o.group; });
+  commit();
+  toast('Taken apart! Click any piece to move it.', 'ok');
+}
+
+export function groupSelection() {
+  const group = uid('t');
+  selected().forEach((o) => { o.group = group; });
+  commit();
+}
+
 /* ---------- Pencil, marker, eraser ---------- */
 
 function strokeAttrsFor(tool) {
@@ -309,7 +459,7 @@ function finishStroke() {
   const c = pathBounds([{ closed: false, nodes: pts }]);
   const cx = c.x + c.width / 2, cy = c.y + c.height / 2;
   const sp = strokeToSubpath(pts.map((q) => ({ x: q.x - cx, y: q.y - cy })), Math.max(0.5, 0.8 / S.zoom));
-  activeLayer().objects.push(newPath({
+  addObject(activeLayer(), newPath({
     name: tool === 'pencil' ? 'Pencil line' : 'Marker line', x: cx, y: cy, subpaths: [sp],
     stroke: S.stroke, strokeWidth: S.sizes[tool], opacity: tool === 'marker' ? 0.6 : 1,
   }));
@@ -371,7 +521,7 @@ export function addShape(shape, cx, cy, w, h) {
   if (!layerReady()) return;
   const subpaths = fitSubpaths(shape.subpaths, w, h);
   const obj = newPath({ name: shape.name, x: cx, y: cy, subpaths, fillRule: shape.fillRule, ...shapePaint(shape) });
-  activeLayer().objects.push(obj);
+  addObject(activeLayer(), obj);
   select([obj.id]);
   setTool('select');
   commit();
@@ -426,7 +576,7 @@ async function bucket(e, p) {
   const b = pathBounds(subpaths);
   const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
   subpaths.forEach((sp) => sp.nodes.forEach((n) => { n.x -= cx; n.y -= cy; }));
-  activeLayer().objects.push(newPath({ name: 'Fill', x: cx, y: cy, subpaths, ...fillPatch(), fillRule: 'evenodd' }));
+  addObject(activeLayer(), newPath({ name: 'Fill', x: cx, y: cy, subpaths, ...fillPatch(), fillRule: 'evenodd' }));
   commit();
 }
 
@@ -503,7 +653,7 @@ function textDown(e, p) {
   if (hit?.type === 'text') { select([hit.id]); refresh(); openTextEditor(hit); return; }
   if (!layerReady()) return;
   const obj = newText({ x: p.x, y: p.y, ...fillPatch(), ...S.font });
-  activeLayer().objects.push(obj);
+  addObject(activeLayer(), obj);
   select([obj.id]);
   refresh();
   // Wait for the press to finish, or the new box loses focus straight away.
@@ -533,10 +683,7 @@ function finishLasso() {
   liveLayer().innerHTML = '';
   if (pts.length < 3) { if (!adding) { select([]); refresh(); } return; }
   const ids = adding ? [...S.sel] : [];
-  for (const layer of S.doc.layers) {
-    if (!layer.visible || layer.locked) continue;
-    for (const o of layer.objects) if (!ids.includes(o.id) && insideLasso(o, pts)) ids.push(o.id);
-  }
+  for (const o of visibleObjects()) if (!ids.includes(o.id) && insideLasso(o, pts)) ids.push(o.id);
   select(ids);
   if (ids.length) setTool('select');
   else refresh();
@@ -547,8 +694,9 @@ function finishLasso() {
 function contextMenu(e) {
   e.preventDefault();
   if (S.tool === 'text') return;
+  if (S.tool === 'line' && S.line) { finishLine(); return; }
   const hit = pickable(e);
-  if (hit && !S.sel.has(hit.id)) { select([hit.id]); refresh(); }
+  if (hit && !S.sel.has(hit.id)) { select(groupOf(hit)); refresh(); }
   const at = { getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX + 190, top: e.clientY, bottom: e.clientY }) };
   const paste = { label: 'Paste', icon: 'copy', onClick: pasteClipboard };
   if (!S.sel.size) {
@@ -556,12 +704,22 @@ function contextMenu(e) {
       ...(S.clipboard?.length ? [paste] : []),
       {
         label: 'Pick everything', icon: 'select',
-        onClick: () => { select(S.doc.layers.filter((l) => l.visible && !l.locked).flatMap((l) => l.objects.map((o) => o.id))); refresh(); },
+        onClick: () => { select(visibleObjects().map((o) => o.id)); refresh(); },
       },
     ]);
     return;
   }
+  const lines = openLines().length;
+  const keyed = S.doc.animated && !isPages(S.doc);
+  const special = [
+    ...(hasGroup() ? [{ label: 'Take apart', icon: 'apart', onClick: takeApart }] : []),
+    ...(S.sel.size > 1 && !selected().every((o) => o.group && o.group === selected()[0].group) ? [{ label: 'Group together', icon: 'link', onClick: groupSelection }] : []),
+    ...(lines ? [{ label: lines > 1 ? 'Connect lines' : 'Close the line', icon: 'link', onClick: connectSelection }] : []),
+    ...(keyed ? [{ label: 'Loop back to beginning', icon: 'loop', onClick: loopSelection }] : []),
+  ];
   menu(at, [
+    ...special,
+    ...(special.length ? [null] : []),
     { label: 'Copy', icon: 'copy', onClick: copySelection },
     ...(S.clipboard?.length ? [paste] : []),
     { label: 'Duplicate', icon: 'copy', onClick: duplicateSelection },
@@ -579,8 +737,11 @@ function contextMenu(e) {
 
 export function setTool(name) {
   closeTextEditor();
+  if (S.line) finishLine();
+  S.lineSnap = null;
   S.tool = name;
   S.nodeSel.clear();
+  if (name === 'shapes') S.blooksOpen = false;
   $('#brush').hidden = true;
   if (name === 'vertices' && selected().length > 1) select([selected()[0].id]);
   document.body.dataset.tool = name;
@@ -596,14 +757,15 @@ export function deleteSelection() {
 
 export function duplicateSelection() {
   const ids = [];
-  for (const o of selected()) {
-    const layer = layerOf(o.id);
+  const copies = selected().map((o) => {
     const copy = { ...clone(o), id: `${o.id}c${Math.random().toString(36).slice(2, 7)}` };
     copy.x += 24; copy.y += 24;
     for (const k of copy.keys) { k.pose.x += 24; k.pose.y += 24; }
-    layer.objects.push(copy);
+    layerOf(o.id).objects.push(copy);
     ids.push(copy.id);
-  }
+    return copy;
+  });
+  regroup(copies);
   select(ids);
   commit();
 }
@@ -615,13 +777,15 @@ export function copySelection() {
 export function pasteClipboard() {
   if (!S.clipboard?.length || !layerReady()) return;
   const ids = [];
-  for (const o of S.clipboard) {
+  const copies = S.clipboard.map((o) => {
     const copy = { ...clone(o), id: `${o.id}c${Math.random().toString(36).slice(2, 7)}` };
     copy.x += 24; copy.y += 24;
     for (const k of copy.keys) { k.pose.x += 24; k.pose.y += 24; }
-    activeLayer().objects.push(copy);
+    addObject(activeLayer(), copy);
     ids.push(copy.id);
-  }
+    return copy;
+  });
+  regroup(copies);
   select(ids);
   commit();
 }
@@ -673,7 +837,7 @@ export async function addImageFromUrl(href, x, y) {
   const obj = newImage({
     x: x ?? S.doc.width / 2, y: y ?? S.doc.height / 2, href, w: w * fit, h: h * fit,
   });
-  activeLayer().objects.push(obj);
+  addObject(activeLayer(), obj);
   select([obj.id]);
   setTool('select');
   commit();
@@ -713,6 +877,7 @@ function down(e) {
   if (S.tool === 'select') selectDown(e, p);
   else if (S.tool === 'lasso') startLasso(p, e);
   else if (S.tool === 'vertices') verticesDown(e, p);
+  else if (S.tool === 'line') lineDown(p);
   else if (S.tool === 'pencil' || S.tool === 'marker' || S.tool === 'eraser') startStroke(S.tool, p);
   else if (S.tool === 'shapes') drag = { type: 'shape', p0: p };
   else if (S.tool === 'text') textDown(e, p);
@@ -721,6 +886,7 @@ function down(e) {
 
 function move(e) {
   moveBrushRing(e);
+  if (S.tool === 'line') lineHover(toDoc(e));
   if (!drag) return;
   if (drag.type === 'pan') {
     S.panX = drag.panX + e.clientX - drag.x;
@@ -758,10 +924,11 @@ function move(e) {
   liveRefresh();
 }
 
-function up() {
+function up(e) {
   document.body.classList.remove('busy');
   if (!drag) return;
   const d = drag;
+  if (d.type === 'line') { lineUp(toDoc(e)); drag = null; return; }
   if (d.type === 'marquee') { finishMarquee(); drag = null; drawOverlay(); return; }
   if (d.type === 'lasso') finishLasso();
   else if (d.type === 'stroke') finishStroke();
@@ -780,6 +947,7 @@ function isDoublePress(e) {
 }
 
 function doublePress(e) {
+  if (S.tool === 'line' && S.line) { finishLine(); return true; }
   if (S.tool === 'vertices' && e.target.dataset?.n) { toggleNodeCurve(e.target.dataset.n); return true; }
   const [only] = selected();
   if (S.tool !== 'select' || S.sel.size !== 1 || (!pickable(e) && !e.target.dataset?.h)) return false;

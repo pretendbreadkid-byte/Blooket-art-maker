@@ -106,6 +106,23 @@ export const HANDLES = [
   ['n', 0, 1], ['e', 1, 2], ['s', 2, 3], ['w', 3, 0],
 ];
 
+// The line being drawn, plus a ring on any point it would connect to.
+function lineOverlay() {
+  const z = S.zoom;
+  const { line, lineSnap } = S;
+  let out = '';
+  if (line) {
+    const pts = line.pts.map((p) => `${p.x * z},${p.y * z}`).join(' ');
+    const last = line.pts[line.pts.length - 1];
+    const to = lineSnap || line.hover;
+    if (to) out += `<line class="line-next" x1="${last.x * z}" y1="${last.y * z}" x2="${to.x * z}" y2="${to.y * z}"/>`;
+    out += `<polyline class="line-draft" points="${pts}"/>`;
+    out += line.pts.map((p, i) => `<circle class="line-dot ${i ? '' : 'first'}" cx="${p.x * z}" cy="${p.y * z}" r="${i ? 4 : 6}"/>`).join('');
+  }
+  if (lineSnap) out += `<circle class="line-snap" cx="${lineSnap.x * z}" cy="${lineSnap.y * z}" r="11"/>`;
+  return out;
+}
+
 function selectionOverlay() {
   const f = selectionFrame();
   if (!f) return '';
@@ -166,7 +183,8 @@ function verticesOverlay() {
 }
 
 export function drawOverlay() {
-  overlay.innerHTML = S.tool === 'vertices' ? verticesOverlay() : selectionOverlay();
+  if (S.tool === 'line') overlay.innerHTML = lineOverlay();
+  else overlay.innerHTML = S.tool === 'vertices' ? verticesOverlay() : selectionOverlay();
 }
 
 export const hasCorners = (o) => o.type === 'path' && o.subpaths.some((sp) => sp.nodes.some((_, i) => isCorner(sp, i)));

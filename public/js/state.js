@@ -1,5 +1,5 @@
 // Editor state, undo history and saving.
-import { clone, sample, setProps } from './model.js';
+import { clone, clamp, sample, setProps, isPages, objectsOn } from './model.js';
 import { BASIC_SHAPES } from './shapes.js';
 import { exportSVG, rasterize } from './render.js';
 import { saveDoc, saveThumb } from './store.js';
@@ -19,7 +19,7 @@ export const S = {
   stroke: '#1f1b3a',
   nodeKind: 'pointed',
   shapeOutline: 0,
-  sizes: { pencil: 4, marker: 22, eraser: 28 },
+  sizes: { pencil: 4, marker: 22, eraser: 28, line: 6 },
   shape: BASIC_SHAPES[0],
   catalog: [],
   font: { fontFamily: 'Arial', fontSize: 64, bold: false, italic: false },
@@ -27,6 +27,9 @@ export const S = {
   onion: false,
   clipboard: null,
   thumb: null,
+  line: null,
+  lineSnap: null,
+  blooksOpen: false,
 };
 
 // Set by the editor: redraw the canvas, the handles, the panels, the save badge.
@@ -42,6 +45,8 @@ export function openDoc(doc, thumb) {
   S.nodeSel.clear();
   S.selKey = null;
   S.playing = false;
+  S.line = null;
+  S.lineSnap = null;
   undoStack = [];
   redoStack = [];
   lastSnapshot = JSON.stringify(doc);
@@ -55,6 +60,13 @@ export const allObjects = () => S.doc.layers.flatMap((l) => l.objects);
 export const findObj = (id) => allObjects().find((o) => o.id === id);
 export const layerOf = (id) => S.doc.layers.find((l) => l.objects.some((o) => o.id === id));
 export const selected = () => [...S.sel].map(findObj).filter(Boolean);
+export const visibleObjects = () => S.doc.layers.filter((l) => l.visible && !l.locked).flatMap((l) => objectsOn(S.doc, l, S.frame));
+// Puts new art on a layer. In a page animation it goes on the page showing now.
+export function addObject(layer, obj) {
+  if (isPages(S.doc)) obj.page = S.doc.pages[S.frame].id;
+  layer.objects.push(obj);
+}
+export const groupOf = (obj) => (obj.group ? allObjects().filter((o) => o.group === obj.group).map((o) => o.id) : [obj.id]);
 export const posed = (o) => sample(o, S.frame);
 export const edit = (o, patch) => setProps(S.doc, o, S.frame, patch);
 
@@ -116,6 +128,7 @@ export function commit() {
 function restore(snapshot) {
   S.doc = JSON.parse(snapshot);
   lastSnapshot = snapshot;
+  S.frame = clamp(S.frame, 0, S.doc.frames - 1);
   S.sel = new Set([...S.sel].filter(findObj));
   S.nodeSel.clear();
   S.selKey = null;

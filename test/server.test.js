@@ -57,6 +57,16 @@ test('anyone can read the catalog but not change it', async () => {
   assert.equal((await api('DELETE', '/api/shapes/abc', null, false)).status, 401);
 });
 
+test('anyone can list the Blook assets and open one', async () => {
+  const { blooks } = await (await fetch(`${BASE}/api/blooks`)).json();
+  assert.ok(blooks.length > 200);
+  const toast = blooks.find((b) => b.file === 'toast.svg');
+  assert.equal(toast.name, 'Toast');
+  const res = await fetch(`${BASE}/blooks/toast.svg`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/svg+xml');
+});
+
 test('a wrong password is refused', async () => {
   assert.equal((await api('POST', '/api/admin/login', { password: 'nope' }, false)).status, 401);
 });

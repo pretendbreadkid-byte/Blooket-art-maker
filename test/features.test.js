@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   newDoc, newPath, parseD, pathD, sample, setProps, addVertex, removeVertices, matchSubpaths, pointInPolygon,
+  loopBack, chainSubpaths, addPage, removePage, movePage, loopPagesBack, onFrame, regroup,
 } from '../public/js/model.js';
 import { exportSVG } from '../public/js/render.js';
 import { subjectMask, cleanMask, maskToShape, loopToSubpath } from '../public/js/trace.js';
@@ -192,4 +193,161 @@ test('the PDF has a valid cross-reference table', () => {
   assert.equal(offsets.length, 5);
   offsets.forEach((o, i) => assert.equal(text.slice(o, o + `${i + 1} 0 obj`.length), `${i + 1} 0 obj`));
   assert.ok(text.includes('/MediaBox [0 0 75 150]'));
+});
+
+function goesDown() {
+  const { doc, obj } = animated();
+  setProps(doc, obj, 20, { y: 300 });
+  return { doc, obj };
+}
+
+test('loop back plays the move in reverse and ends where it began', () => {
+  const { obj } = goesDown();
+  assert.equal(loopBack([obj]), 40);
+  assert.deepEqual(obj.keys.map((k) => k.f), [0, 20, 40]);
+  assert.equal(sample(obj, 40).y, sample(obj, 0).y);
+  assert.equal(sample(obj, 30).y, sample(obj, 10).y);
+});
+
+test('loop back swaps speeding up and slowing down', () => {
+  const { obj } = goesDown();
+  obj.keys[0].ease = 'in';
+  loopBack([obj]);
+  assert.equal(obj.keys[1].ease, 'out');
+  assert.ok(Math.abs(sample(obj, 30).y - sample(obj, 10).y) < 1e-9);
+});
+
+test('loop back needs something that has moved', () => {
+  const { obj } = animated();
+  assert.equal(loopBack([obj]), null);
+});
+
+test('things looped together turn around on the same frame', () => {
+  const short = goesDown().obj, long = goesDown().obj;
+  long.keys[1].f = 30;
+  assert.equal(loopBack([short, long]), 60);
+  assert.equal(sample(short, 30).y, 300);
+  assert.equal(sample(short, 60).y, 0);
+  assert.equal(sample(short, 45).y, sample(short, 15).y);
+});
+
+const open = (...points) => ({ closed: false, nodes: points.map(([x, y]) => ({ x, y })) });
+
+test('lines chain end to end, flipping any that point the wrong way', () => {
+  const chain = chainSubpaths([open([0, 0], [10, 0]), open([20, 20], [10, 0])], 0.5);
+  assert.deepEqual(chain.nodes.map((n) => [n.x, n.y]), [[0, 0], [10, 0], [20, 20]]);
+  assert.equal(chain.closed, false);
+});
+
+test('lines that come back to the start close into a shape', () => {
+  const chain = chainSubpaths([open([0, 0], [10, 0]), open([10, 0], [10, 10]), open([10, 10], [0, 0])], 0.5);
+  assert.equal(chain.closed, true);
+  assert.equal(chain.nodes.length, 3);
+});
+
+test('curves survive being flipped and chained', () => {
+  const curve = { closed: false, nodes: [{ x: 0, y: 0, ox: 5, oy: 5 }, { x: 10, y: 0, ix: -5, iy: 5 }] };
+  const chain = chainSubpaths([open([20, 0], [10, 0]), curve], 0.5);
+  const joint = chain.nodes[1];
+  assert.deepEqual([joint.x, joint.ox, joint.oy], [10, -5, 5]);
+});
+
+function flipbook() {
+  const doc = newDoc({ name: 't', animated: true, animMode: 'pages', width: 200, height: 200 });
+  const draw = (index, y) => {
+    const obj = newPath({ subpaths: square(), fill: '#000000', y, page: doc.pages[index].id });
+    doc.layers[0].objects.push(obj);
+    return obj;
+  };
+  return { doc, draw };
+}
+
+test('editing in a page animation never makes keyframes', () => {
+  const { doc, draw } = flipbook();
+  addPage(doc, 0);
+  const obj = draw(1, 10);
+  setProps(doc, obj, 1, { x: 50 });
+  assert.equal(obj.x, 50);
+  assert.equal(obj.keys.length, 0);
+});
+
+test('each page only draws its own art', () => {
+  const { doc, draw } = flipbook();
+  addPage(doc, 0);
+  const a = draw(0, 10), b = draw(1, 20);
+  assert.ok(onFrame(doc, a, 0) && !onFrame(doc, a, 1) && onFrame(doc, b, 1));
+  assert.equal(exportSVG(doc, { frame: 0 }).match(/<path/g).length, 1);
+  assert.match(exportSVG(doc, { frame: 1 }), /translate\(0 20\)/);
+});
+
+test('copied pages get their own objects and removing one takes its art', () => {
+  const { doc, draw } = flipbook();
+  draw(0, 10);
+  addPage(doc, 0, 0);
+  const [a, b] = doc.layers[0].objects;
+  assert.notEqual(a.id, b.id);
+  assert.equal(b.page, doc.pages[1].id);
+  assert.ok(removePage(doc, 1));
+  assert.equal(doc.layers[0].objects.length, 1);
+  assert.equal(doc.frames, 1);
+  assert.equal(removePage(doc, 0), false);
+});
+
+test('pages reorder', () => {
+  const { doc } = flipbook();
+  addPage(doc, 0);
+  const [first, second] = doc.pages;
+  movePage(doc, 0, 1);
+  assert.deepEqual(doc.pages, [second, first]);
+});
+
+test('page loop back goes 1 2 3 2 1', () => {
+  const { doc, draw } = flipbook();
+  addPage(doc, 0);
+  addPage(doc, 1);
+  [10, 20, 30].forEach((y, i) => draw(i, y));
+  assert.ok(loopPagesBack(doc));
+  const order = doc.pages.map((p) => doc.layers[0].objects.find((o) => o.page === p.id).y);
+  assert.deepEqual(order, [10, 20, 30, 20, 10]);
+  assert.equal(doc.frames, 5);
+});
+
+test('an exported page animation flips with discrete timing', () => {
+  const { doc, draw } = flipbook();
+  addPage(doc, 0);
+  draw(0, 10);
+  draw(1, 20);
+  const svg = exportSVG(doc, { animate: true });
+  assert.equal(svg.match(/attributeName="display"/g).length, 2);
+  assert.match(svg, /calcMode="discrete"/);
+  assert.equal(svg.match(/<path/g).length, 2);
+});
+
+test('imported pieces keep their gradients, clips and stroke style', () => {
+  const doc = newDoc({ name: 't', width: 100, height: 100 });
+  doc.layers[0].objects.push(newPath({
+    subpaths: square(), fill: '#111111',
+    gradient: {
+      from: '#111111', to: '#222222', angle: 90,
+      raw: { type: 'linear', coords: { x1: 0, y1: 0, x2: 1, y2: 0 }, stops: [[0, '#111111', 1], [0.5, '#333333', 0.5], [1, '#222222', 1]], matrix: [1, 0, 0, 1, 2, 3], spread: 'pad' },
+    },
+    stroke: '#000000', strokeWidth: 2, look: { 'stroke-linecap': 'butt', 'stroke-linejoin': 'miter', 'fill-opacity': 0.5 },
+    clips: [[{ rule: 'evenodd', subpaths: square() }]],
+  }));
+  const svg = exportSVG(doc);
+  assert.equal(svg.match(/<stop/g).length, 3);
+  assert.match(svg, /gradientTransform="matrix\(1 0 0 1 2 3\)"/);
+  assert.match(svg, /stroke-linecap="butt"/);
+  assert.equal(svg.match(/stroke-linecap/g).length, 1);
+  assert.match(svg, /fill-opacity="0.5"/);
+  assert.match(svg, /<clipPath[^>]*><path[^>]*clip-rule="evenodd"/);
+});
+
+test('copies of a group get a group of their own', () => {
+  const a = { group: 'x' }, b = { group: 'x' }, c = { group: 'y' }, d = {};
+  regroup([a, b, c, d]);
+  assert.equal(a.group, b.group);
+  assert.notEqual(a.group, 'x');
+  assert.notEqual(c.group, a.group);
+  assert.equal(d.group, undefined);
 });
