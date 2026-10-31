@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Blook Maker: Start server",
+      "type": "shell",
+      "command": "node server.js",
+      "isBackground": true,
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "blook-maker",
+        "pattern": { "regexp": "^never-matches$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^Starting Blook Maker",
+          "endsPattern": "^Running at"
+        }
+      }
+    },
+    {
+      "label": "Blook Maker: Preview in VS Code",
+      "type": "shell",
+      "command": "echo Preview open ${input:openPreview}",
+      "dependsOn": "Blook Maker: Start server",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "openPreview",
+      "type": "command",
+      "command": "simpleBrowser.show",
+      "args": "http://localhost:5180"
+    }
+  ]
+}

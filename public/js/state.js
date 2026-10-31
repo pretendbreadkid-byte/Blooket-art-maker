@@ -1,0 +1,121 @@
+// Editor state, undo history and saving.
+import { clone, sample, setProps } from './model.js';
+import { BASIC_SHAPES } from './shapes.js';
+import { exportSVG, rasterize } from './render.js';
+import { saveDoc, saveThumb } from './store.js';
+
+const HISTORY_LIMIT = 60;
+
+export const S = {
+  doc: null,
+  frame: 0,
+  tool: 'select',
+  sel: new Set(),
+  nodeSel: new Set(),
+  selKey: null,
+  zoom: 1, panX: 0, panY: 0, fitted: true,
+  fill: '#6c3bf5',
+  stroke: '#1f1b3a',
+  shapeOutline: 0,
+  sizes: { pencil: 4, marker: 22, eraser: 28 },
+  shape: BASIC_SHAPES[0],
+  catalog: [],
+  font: { fontFamily: 'Arial', fontSize: 64, bold: false, italic: false },
+  playing: false,
+  onion: false,
+  clipboard: null,
+  thumb: null,
+};
+
+// Set by the editor: redraw the canvas, the handles, the panels, the save badge.
+export const hooks = { stage() {}, overlay() {}, panels() {}, timeline() {}, saved() {} };
+
+let undoStack = [], redoStack = [], lastSnapshot = null, saveTimer = null;
+
+export function openDoc(doc, thumb) {
+  S.doc = doc;
+  S.thumb = thumb;
+  S.frame = 0;
+  S.sel.clear();
+  S.nodeSel.clear();
+  S.selKey = null;
+  S.playing = false;
+  undoStack = [];
+  redoStack = [];
+  lastSnapshot = JSON.stringify(doc);
+}
+
+export const refresh = () => { hooks.stage(); hooks.overlay(); hooks.panels(); hooks.timeline(); };
+export const liveRefresh = () => { hooks.stage(); hooks.overlay(); };
+
+export const activeLayer = () => S.doc.layers.find((l) => l.id === S.doc.activeLayerId) || S.doc.layers[0];
+export const allObjects = () => S.doc.layers.flatMap((l) => l.objects);
+export const findObj = (id) => allObjects().find((o) => o.id === id);
+export const layerOf = (id) => S.doc.layers.find((l) => l.objects.some((o) => o.id === id));
+export const selected = () => [...S.sel].map(findObj).filter(Boolean);
+export const posed = (o) => sample(o, S.frame);
+export const edit = (o, patch) => setProps(S.doc, o, S.frame, patch);
+
+export function select(ids) {
+  S.sel = new Set(ids);
+  S.nodeSel.clear();
+  const first = ids[0] && layerOf(ids[0]);
+  if (first) S.doc.activeLayerId = first.id;
+}
+
+function scheduleSave() {
+  hooks.saved('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(persist, 500);
+}
+
+export async function persist() {
+  clearTimeout(saveTimer);
+  const doc = S.doc;
+  if (!doc) return;
+  doc.updatedAt = Date.now();
+  await saveDoc(clone(doc), S.thumb);
+  if (S.doc === doc) hooks.saved('saved');
+  const scale = 320 / Math.max(doc.width, doc.height);
+  try {
+    const svg = exportSVG(doc, { frame: 0 });
+    const canvas = await rasterize(svg, Math.max(1, Math.round(doc.width * scale)), Math.max(1, Math.round(doc.height * scale)));
+    S.thumb = canvas.toDataURL('image/png');
+    await saveThumb(doc, S.thumb);
+  } catch {
+    // A missing thumbnail is not worth interrupting anyone for.
+  }
+}
+
+// Call once after each finished action: it records an undo step and saves.
+export function commit() {
+  const snapshot = JSON.stringify(S.doc);
+  if (snapshot === lastSnapshot) { refresh(); return; }
+  undoStack.push(lastSnapshot);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack = [];
+  lastSnapshot = snapshot;
+  scheduleSave();
+  refresh();
+}
+
+function restore(snapshot) {
+  S.doc = JSON.parse(snapshot);
+  lastSnapshot = snapshot;
+  S.sel = new Set([...S.sel].filter(findObj));
+  S.nodeSel.clear();
+  S.selKey = null;
+  scheduleSave();
+  refresh();
+}
+
+export function undo() {
+  if (undoStack.length) { redoStack.push(lastSnapshot); restore(undoStack.pop()); }
+}
+
+export function redo() {
+  if (redoStack.length) { undoStack.push(lastSnapshot); restore(redoStack.pop()); }
+}
+
+export const canUndo = () => undoStack.length > 0;
+export const canRedo = () => redoStack.length > 0;

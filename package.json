@@ -1,0 +1,14 @@
+{
+  "name": "blook-maker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A friendly vector art and animation maker that exports SVG.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
