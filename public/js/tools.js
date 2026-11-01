@@ -612,7 +612,7 @@ async function bucket(e, p) {
 
   const scale = Math.min(2, 1800 / Math.max(doc.width, doc.height));
   const w = Math.round(doc.width * scale), h = Math.round(doc.height * scale);
-  const canvas = await rasterize(exportSVG(doc, { frame: S.frame }), w, h);
+  const canvas = await rasterize(exportSVG(doc, { frame: S.frame, overlay: false }), w, h);
   const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
   const { mask, area } = floodRegion(data, w, h, Math.floor(p.x * scale), Math.floor(p.y * scale));
   if (area === w * h) { fillBackground(); return; }

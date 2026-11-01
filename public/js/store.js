@@ -89,7 +89,7 @@ async function write(changes) {
 
 const metaOf = (doc, thumb) => ({
   id: doc.id, name: doc.name, folderId: doc.folderId, animated: doc.animated,
-  width: doc.width, height: doc.height, updatedAt: doc.updatedAt, thumb,
+  width: doc.width, height: doc.height, updatedAt: doc.updatedAt, thumb, template: doc.template, pack: !!doc.pack,
 });
 
 export const listFolders = () => all('folders');

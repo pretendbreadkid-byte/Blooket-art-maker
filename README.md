@@ -37,6 +37,12 @@ Then open <http://localhost:5180>.
 | Assets | | Search the Blook art and drag one onto the canvas. |
 | Uploads | | Upload your own pictures. They stay on your account, ready for any project. |
 
+## Templates and packs
+
+New projects can start as a Blook, a Banner, a Blook background or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art, and the Canvas panel turns them on or off.
+
+Packs on the home screen turn your art into a pack with a price, pack art, a Blook background, and Blooks with their own rarity and odds. Test open shows what comes out. Packs save to the account like projects do.
+
 Other keys: `[` and `]` change brush size, Ctrl+Z undo, Ctrl+Y redo, Ctrl+D duplicate, Delete remove.
 
 To connect lines you already drew, pick them, right-click and choose **Connect lines**. One open line gets **Close the line** instead. Use the Bucket to fill a closed line, and Vertices to change where it goes.

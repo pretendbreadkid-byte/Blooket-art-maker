@@ -438,3 +438,34 @@ test('flattening a project that is already flat changes nothing', () => {
   flattenLayers(doc);
   assert.equal(JSON.stringify(doc), before);
 });
+
+test('a template overlay sits above the art and can be turned off', async () => {
+  const { newDoc: blank } = await import('../public/js/model.js');
+  const { TEMPLATES } = await import('../public/js/templates.js');
+  const doc = blank({ name: 'Blook', width: 512, height: 512 });
+  doc.template = 'blook';
+  doc.overlay = true;
+  assert.ok(exportSVG(doc).includes(TEMPLATES.blook.overlay.markup));
+  assert.ok(!exportSVG(doc, { overlay: false }).includes('fill-opacity=".28"'));
+  doc.overlay = false;
+  assert.ok(!exportSVG(doc).includes('fill-opacity=".28"'));
+  doc.overlay = true;
+  doc.template = 'background';
+  assert.ok(!exportSVG(doc).includes('pointer-events'));
+});
+
+test('packs follow the odds, whatever they add up to', async () => {
+  const { balanceOdds, chanceOf, pickBlook, whyNotOpen, newPack } = await import('../public/js/pack-rules.js');
+  const blooks = [{ id: 'a', odds: 30 }, { id: 'b', odds: 10 }, { id: 'c', odds: 0 }];
+  assert.equal(chanceOf(blooks[0], blooks), 75);
+  assert.equal(pickBlook(blooks, 0).id, 'a');
+  assert.equal(pickBlook(blooks, 0.74).id, 'a');
+  assert.equal(pickBlook(blooks, 0.76).id, 'b');
+  assert.equal(pickBlook(blooks, 0.9999).id, 'b');
+  assert.deepEqual(balanceOdds(blooks).map((b) => b.odds), [75, 25, 0]);
+  assert.deepEqual(balanceOdds([{ odds: 0 }, { odds: 0 }]).map((b) => b.odds), [50, 50]);
+  assert.match(whyNotOpen(newPack()), /pack art/);
+  assert.match(whyNotOpen({ art: 'x', blooks: [] }), /Blook/);
+  assert.match(whyNotOpen({ art: 'x', blooks: [{ odds: 0 }] }), /odds/);
+  assert.equal(whyNotOpen({ art: 'x', blooks }), '');
+});

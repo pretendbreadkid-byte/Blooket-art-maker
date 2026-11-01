@@ -558,3 +558,113 @@ body[data-tool=lasso] #wk { cursor: crosshair; }
   .pic-choices { grid-template-columns: 1fr; }
 }
 .shape-ghost img { width: 100%; height: 100%; object-fit: contain; }
+
+/* New project: what are you making? */
+.kind-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.kind-card { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px 8px; border: 2px solid var(--line); border-radius: 14px; text-align: center; }
+.kind-card:hover, .kind-card.on { border-color: var(--brand); background: var(--brand-soft); }
+.kind-card small { color: var(--muted); font-size: 12px; }
+.kind-art { display: grid; place-items: center; width: 100%; height: 88px; margin-bottom: 6px; color: var(--brand-dark); }
+.kind-art.big { height: 170px; }
+.kind-art .ico { width: 44px; height: 44px; }
+.template-art { display: block; max-width: 100%; max-height: 100%; width: 100%; height: 100%; }
+
+/* Packs */
+.pack-visual { position: relative; display: block; aspect-ratio: 200 / 220; }
+.pack-visual > img:first-child { display: block; width: 100%; height: 100%; }
+.pack-art { position: absolute; left: -.3%; top: 12.5%; width: 100.6%; height: 75.5%; object-fit: cover; }
+.pack-blank { display: grid; place-items: center; background: #2ca3e8; color: #fff; font: 400 16px "Titan One", sans-serif; }
+.pack-new { margin-bottom: 18px; }
+.pack-none { color: #fff; font-weight: 800; }
+.pack-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 18px; }
+.pack-card { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; background: var(--panel); border-radius: var(--radius); box-shadow: 0 1px 3px rgba(34, 28, 63, .1); }
+.pack-card > b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pack-edit { width: 120px; transition: transform .1s; }
+.pack-edit:hover { transform: scale(1.04) rotate(-1deg); }
+.dlg:has(.pack-maker), .dlg:has(.pick-grid) { width: min(780px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; }
+.pack-maker { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 18px; }
+.pack-side { display: flex; flex-direction: column; gap: 10px; }
+.pack-pick { width: 150px; align-self: center; }
+.back-pick { display: grid; place-items: center; height: 92px; overflow: hidden; border: 2px dashed var(--line-dark); border-radius: 10px; color: var(--muted); }
+.back-pick img { width: 100%; height: 100%; object-fit: cover; }
+.back-pick i { font-style: normal; }
+.pack-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pack-list-head { display: flex; align-items: center; justify-content: space-between; }
+.pack-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 122px 74px 28px; gap: 6px; align-items: center; }
+.pack-thumb { width: 44px; height: 44px; }
+.pack-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.pack-row input, .pack-row select { width: 100%; height: 36px; padding: 0 8px; border: 1.5px solid var(--line); border-radius: 9px; background: #fff; }
+.pack-odds { display: flex; align-items: center; gap: 3px; }
+.linkish { color: var(--brand-dark); font-weight: 800; text-decoration: underline; }
+.pick-tabs { display: flex; gap: 6px; }
+.pick-tabs button { padding: 7px 12px; border-radius: 9px; font-weight: 700; }
+.pick-tabs button.on { background: var(--brand); color: #fff; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; height: 340px; overflow-y: auto; align-content: start; }
+.pick-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px; border: 2px solid var(--line); border-radius: 11px; font-size: 12px; min-width: 0; }
+.pick-item:hover { border-color: var(--brand); }
+.pick-item img { width: 76px; height: 76px; object-fit: contain; }
+.pick-item span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A Blook's own card */
+.dlg.blook-card { position: relative; flex-direction: row; gap: 22px; width: min(780px, 100%); background: #9a49aa; color: #fff; border: 5px solid #ad62bb; }
+.blook-card-x { position: absolute; top: 12px; right: 14px; color: #fff; opacity: .55; }
+.blook-card-art { display: grid; place-items: center; flex: none; width: 340px; aspect-ratio: 1; border-radius: 20px; background: #2ca7e7 center / cover; }
+.blook-card-art img { width: 58%; }
+.blook-card-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dlg.blook-card h2 { font-size: 36px; line-height: 1.1; }
+.blook-card-text p { font-size: 20px; font-weight: 800; }
+.blook-card-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.blook-card-chips span { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 9px; background: rgba(0, 0, 0, .22); font-weight: 800; }
+.blook-card-chips i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; }
+.blook-card-chips .token { background: #f5c518; color: #8a5a00; font: 400 13px "Titan One", sans-serif; }
+
+/* Test opening a pack */
+.opener { --rarity: #6d1a7c; position: fixed; inset: 0; z-index: 900; overflow: hidden; background: #24042b; }
+.opener.revealed { background: color-mix(in srgb, var(--rarity) 22%, #000); }
+.opener-tiles { position: absolute; inset: -18px; display: grid; grid-template-columns: repeat(auto-fill, 140px); gap: 28px; justify-content: center; align-content: center; }
+.opener-tiles i { height: 140px; border-radius: 12px; background: #36083f; }
+.opener.revealed .opener-tiles i { background: var(--rarity); opacity: calc(var(--glow) * .85); animation: tile-glow 2.4s ease-in-out infinite alternate; animation-delay: calc(var(--glow) * -4s); }
+@keyframes tile-glow { to { opacity: calc(var(--glow) * .45); } }
+.opener-x { position: absolute; top: 14px; right: 16px; z-index: 3; display: grid; place-items: center; width: 54px; height: 54px; border-radius: 12px; background: rgba(255, 255, 255, .16); color: #fff; }
+.opener-x .ico { width: 26px; height: 26px; }
+.opener-count { position: absolute; left: 62px; bottom: 34px; font: 400 64px "Titan One", sans-serif; color: rgba(255, 255, 255, .16); }
+.opener-body { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.opener-pack { width: min(400px, 74vw, 56vh); animation: pack-in .35s ease-out; cursor: pointer; }
+.opener-pack:hover { transform: scale(1.03); }
+.opener-pack.shake { animation: pack-shake .75s ease-in forwards; }
+@keyframes pack-in { from { transform: scale(.5); opacity: 0; } }
+@keyframes pack-shake {
+  0%, 100% { transform: none; }
+  15% { transform: rotate(-4deg) scale(1.02); }
+  30% { transform: rotate(4deg) scale(1.04); }
+  45% { transform: rotate(-6deg) scale(1.06); }
+  60% { transform: rotate(6deg) scale(1.08); }
+  80% { transform: rotate(-3deg) scale(1.14); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.reveal-card { position: relative; display: flex; flex-direction: column; align-items: center; width: min(500px, 88vw, 66vh); aspect-ratio: 500 / 512; overflow: hidden; border-radius: 12px; background: #2ca7e7 center / cover; box-shadow: inset 0 -12px 0 rgba(0, 0, 0, .2); animation: card-in .4s cubic-bezier(.2, 1.5, .4, 1); }
+@keyframes card-in { from { transform: scale(.3); } }
+.reveal-name, .reveal-odds { font-family: "Titan One", sans-serif; font-weight: 400; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .25); }
+.reveal-name { margin-top: 3.5%; font-size: clamp(28px, 5.5vh, 48px); line-height: 1.1; }
+.reveal-rarity { font-family: "Titan One", sans-serif; font-weight: 400; font-size: clamp(20px, 3.8vh, 34px); line-height: 1.1; color: var(--rarity); -webkit-text-stroke: 5px #fff; paint-order: stroke fill; }
+.reveal-card img { flex: 1; min-height: 0; max-width: 62%; margin: 2% 0; object-fit: contain; }
+.reveal-odds { margin-bottom: 7%; font-size: clamp(22px, 4.2vh, 36px); }
+.opener-again { position: relative; z-index: 2; width: auto; padding: 0 28px; }
+.opener-confetti { position: absolute; left: 50%; top: 50%; }
+.opener-confetti i { position: absolute; width: 46px; height: 42px; background: var(--rarity); clip-path: polygon(50% 0, 100% 100%, 0 100%); filter: brightness(1.15); animation: confetti-burst 1.6s cubic-bezier(.1, .7, .3, 1) both; }
+@keyframes confetti-burst {
+  from { transform: translate(-50%, -50%) scale(.3); opacity: 1; }
+  80% { opacity: 1; }
+  to { transform: translate(var(--x), var(--y)) rotate(var(--spin)); opacity: 0; }
+}
+@media (max-width: 760px) {
+  .pack-maker { grid-template-columns: 1fr; }
+  .kind-cards { grid-template-columns: repeat(2, 1fr); }
+  .dlg.blook-card { flex-direction: column; }
+  .blook-card-art { width: 100%; }
+  .pack-row { grid-template-columns: 40px minmax(0, 1fr) 84px 58px 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .opener-pack, .opener-pack.shake, .reveal-card, .opener.revealed .opener-tiles i { animation: none; }
+  .opener-confetti { display: none; }
+}

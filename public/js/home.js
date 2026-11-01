@@ -7,6 +7,8 @@ import { esc } from './render.js';
 import { session, isPlus, logOut } from './session.js';
 import { syncArt, flushUploads, resetSync } from './sync.js';
 import { plusDialog } from './plus.js';
+import { TEMPLATES, templatePreview } from './templates.js';
+import { editPack, newPackProject, openPack, packVisual, savePack } from './packs.js';
 import { $, $$, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
 
 const MIN_SIZE = 16;
@@ -22,6 +24,8 @@ const SIZE_PRESETS = [
   { name: 'Banner', w: 1500, h: 500 },
 ];
 
+const PACKS = 'packs';
+
 let currentFolder = 'all';
 let host = null;
 let leave = () => {};
@@ -30,19 +34,23 @@ export async function renderHome(root, onLeave = leave) {
   host = root;
   leave = onLeave;
   document.title = 'Blooksmith';
-  const [folders, projects] = await Promise.all([listFolders(), listProjects()]);
+  const [folders, everything] = await Promise.all([listFolders(), listProjects()]);
   folders.sort((a, b) => a.name.localeCompare(b.name));
-  projects.sort((a, b) => b.updatedAt - a.updatedAt);
-  if (currentFolder !== 'all' && !folders.some((f) => f.id === currentFolder)) currentFolder = 'all';
+  everything.sort((a, b) => b.updatedAt - a.updatedAt);
+  const projects = everything.filter((p) => !p.pack);
+  const packs = everything.filter((p) => p.pack);
+  const inPacks = currentFolder === PACKS;
+  if (currentFolder !== 'all' && !inPacks && !folders.some((f) => f.id === currentFolder)) currentFolder = 'all';
 
   const shown = currentFolder === 'all' ? projects : projects.filter((p) => p.folderId === currentFolder);
   const count = (id) => projects.filter((p) => p.folderId === id).length;
-  const title = currentFolder === 'all' ? 'All projects' : folders.find((f) => f.id === currentFolder).name;
+  const title = inPacks ? 'My packs' : (currentFolder === 'all' ? 'All projects' : folders.find((f) => f.id === currentFolder).name);
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
       <a class="brand" href="#/"><span class="brand-mark"><img src="/logo.svg" alt=""></span><b>Blooksmith</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
+      <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Packs</span><em>${packs.length}</em></button>
       <h3>Folders</h3>
       <ul class="folders">
         <li><button class="folder ${currentFolder === 'all' ? 'on' : ''}" data-f="all">${icon('shapes')}<span>All projects</span><em>${projects.length}</em></button></li>
@@ -64,11 +72,28 @@ export async function renderHome(root, onLeave = leave) {
     <main class="home-main">
       ${session.guest ? '<p class="guest-note">You are playing as a guest. Your art disappears when you close this page, so export anything you want to keep.</p>' : ''}
       <h1>${esc(title)}</h1>
-      ${shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState()}
+      ${inPacks ? packsView(packs) : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState())}
     </main>
   </div>`;
 
   $('#new', root).onclick = () => newProjectWizard(folders);
+  $('#packs', root).onclick = () => { currentFolder = PACKS; renderHome(root); };
+  const redraw = () => renderHome(root);
+  $('#newpack', root)?.addEventListener('click', async () => {
+    const doc = newPackProject();
+    await savePack(doc);
+    redraw();
+    editPack(doc, redraw);
+  });
+  $$('.pack-card', root).forEach((c) => {
+    const load = () => getDoc(c.dataset.id);
+    $('.pack-edit', c).onclick = async () => editPack(await load(), redraw);
+    $('.pack-test', c).onclick = async () => {
+      const doc = await load();
+      if (doc.pack.art && doc.pack.blooks.length) openPack(doc);
+      else editPack(doc, redraw);
+    };
+  });
   $('#newfolder', root).onclick = () => createFolder();
   $('#getplus', root)?.addEventListener('click', async () => { if (await plusDialog()) renderHome(root); });
   $('#logout', root).onclick = async () => {
@@ -113,6 +138,15 @@ export async function renderHome(root, onLeave = leave) {
   syncArt().then((changed) => {
     if (changed && root.querySelector('.home')) renderHome(root);
   });
+}
+
+function packsView(packs) {
+  return `<button class="btn primary pack-new" id="newpack">${icon('plus')}<span>New pack</span></button>
+    ${packs.length ? `<div class="pack-cards">${packs.map((p) => `<div class="pack-card" data-id="${p.id}">
+      <button class="pack-edit" title="Edit ${esc(p.name)}">${packVisual(p.thumb)}</button>
+      <b>${esc(p.name)}</b>
+      <button class="btn ghost pack-test">${icon('play')}<span>Test open</span></button>
+    </div>`).join('')}</div>` : '<p class="muted pack-none">Turn your art into a pack, then test open it.</p>'}`;
 }
 
 function card(p) {
@@ -238,17 +272,18 @@ async function moveDialog(meta, folders) {
 function newProjectWizard(folders) {
   const state = {
     name: 'My new art',
-    folderId: currentFolder === 'all' ? null : currentFolder,
+    folderId: currentFolder === 'all' || currentFolder === PACKS ? null : currentFolder,
     animated: null,
     animMode: 'keys',
     width: 1024,
     height: 1024,
     rounded: false,
+    template: null,
   };
   let step = 0;
 
   return dialog((box, close) => {
-    const dots = () => `<ol class="steps">${['Name', 'Type', 'Size'].map((s, i) => `<li class="${i === step ? 'on' : ''} ${i < step ? 'done' : ''}">${s}</li>`).join('')}</ol>`;
+    const dots = () => `<ol class="steps">${['Name', 'Kind', 'Type', 'Finish'].map((s, i) => `<li class="${i === step ? 'on' : ''} ${i < step ? 'done' : ''}">${s}</li>`).join('')}</ol>`;
 
     const stepName = () => {
       box.innerHTML = `${dots()}<h2>What should we call it?</h2>
@@ -274,8 +309,64 @@ function newProjectWizard(folders) {
         state.name = input.value.trim() || 'Untitled';
         state.folderId = $('#pfolder', box).value || null;
         step = 1;
-        stepType();
+        stepKind();
       };
+    };
+
+    const stepKind = () => {
+      box.innerHTML = `${dots()}<h2>What are you making?</h2>
+        <div class="kind-cards">
+          ${Object.entries(TEMPLATES).map(([id, t]) => `<button class="kind-card ${state.template === id ? 'on' : ''}" data-t="${id}">
+            <span class="kind-art">${templatePreview(id)}</span><b>${t.name}</b><small>${t.note}</small>
+          </button>`).join('')}
+          <button class="kind-card ${state.template === null ? 'on' : ''}" data-t="">
+            <span class="kind-art">${icon('image')}</span><b>Anything else</b><small>Pick your own size</small>
+          </button>
+        </div>
+        <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
+      $('[data-back]', box).onclick = () => { step = 0; stepName(); };
+      $$('.kind-card', box).forEach((b) => {
+        b.onclick = () => { state.template = b.dataset.t || null; step = 2; stepType(); };
+      });
+    };
+
+    const create = async (doc) => {
+      try {
+        await saveDoc(doc);
+      } catch {
+        toast('Could not save the project in this browser.', 'warn');
+        return;
+      }
+      close();
+      location.hash = `#/p/${doc.id}`;
+    };
+
+    const createFromTemplate = (overlay) => {
+      const t = TEMPLATES[state.template];
+      const doc = newDoc({ ...state, width: t.width, height: t.height });
+      Object.assign(doc, { template: state.template, overlay, cornerRadius: t.radius, background: t.background });
+      return create(doc);
+    };
+
+    const stepOverlay = () => {
+      const t = TEMPLATES[state.template];
+      box.innerHTML = `${dots()}<h2>${t.overlay.ask}</h2>
+        <p class="muted">${t.overlay.note}</p>
+        <div class="type-cards">
+          <button class="kind-card" data-o="1" autofocus><span class="kind-art big">${templatePreview(state.template, true)}</span><b>Yes, add it</b></button>
+          <button class="kind-card" data-o=""><span class="kind-art big">${templatePreview(state.template, false)}</span><b>No thanks</b></button>
+        </div>
+        <p class="muted small">You can change this later in the Canvas panel.</p>
+        <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
+      $('[data-back]', box).onclick = stepType;
+      $$('[data-o]', box).forEach((b) => { b.onclick = () => createFromTemplate(!!b.dataset.o); });
+    };
+
+    const stepLast = () => {
+      step = 3;
+      if (!state.template) stepSize();
+      else if (TEMPLATES[state.template].overlay) stepOverlay();
+      else createFromTemplate(false);
     };
 
     const stepType = () => {
@@ -289,13 +380,12 @@ function newProjectWizard(folders) {
           </button>
         </div>
         <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
-      $('[data-back]', box).onclick = () => { step = 0; stepName(); };
+      $('[data-back]', box).onclick = () => { step = 1; stepKind(); };
       $$('.type-card', box).forEach((b) => {
         b.onclick = () => {
           state.animated = b.dataset.v === '1';
           if (state.animated) { stepMotion(); return; }
-          step = 2;
-          stepSize();
+          stepLast();
         };
       });
     };
@@ -313,7 +403,7 @@ function newProjectWizard(folders) {
         <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
       $('[data-back]', box).onclick = stepType;
       $$('.type-card', box).forEach((b) => {
-        b.onclick = () => { state.animMode = b.dataset.m; step = 2; stepSize(); };
+        b.onclick = () => { state.animMode = b.dataset.m; stepLast(); };
       });
     };
 
@@ -366,7 +456,7 @@ function newProjectWizard(folders) {
         };
       });
       $('[data-back]', box).onclick = () => {
-        step = 1;
+        step = 2;
         if (state.animated) stepMotion();
         else stepType();
       };
@@ -381,14 +471,7 @@ function newProjectWizard(folders) {
         }
         const doc = newDoc({ ...state, width, height });
         doc.cornerRadius = state.rounded ? Math.round(Math.min(width, height) * ROUNDED_CANVAS) : 0;
-        try {
-          await saveDoc(doc);
-        } catch {
-          toast('Could not save the project in this browser.', 'warn');
-          return;
-        }
-        close();
-        location.hash = `#/p/${doc.id}`;
+        await create(doc);
       };
     };
 

@@ -1,6 +1,7 @@
 // Turns a document into SVG markup. The editor, thumbnails, the bucket tool and
 // export all use this file, so what you see is what you get.
 import { pathD, sample, round, rad, isPages, objectsOn } from './model.js';
+import { overlayMarkup } from './templates.js';
 
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -186,13 +187,13 @@ export function frameClip(doc, prefix = 'frame') {
 
 // animate: true writes a looping animated SVG. Otherwise a single frame.
 // box: draws just the art, with no background or canvas shape, over that area.
-export function exportSVG(doc, { frame = 0, animate = false, box = null } = {}) {
+export function exportSVG(doc, { frame = 0, animate = false, box = null, overlay = true } = {}) {
   if (box) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${box.width}" height="${box.height}" viewBox="${box.x} ${box.y} ${box.width} ${box.height}">${fontStyle(doc)}${layersMarkup(doc, frame)}</svg>`;
   }
   const clip = frameClip(doc);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${doc.width}" height="${doc.height}" viewBox="0 0 ${doc.width} ${doc.height}">`
-    + `<title>${esc(doc.name)}</title>${fontStyle(doc)}${clip.defs}<g${clip.attr}>${backgroundMarkup(doc)}${layersMarkup(doc, frame, { animate })}</g></svg>`;
+    + `<title>${esc(doc.name)}</title>${fontStyle(doc)}${clip.defs}<g${clip.attr}>${backgroundMarkup(doc)}${layersMarkup(doc, frame, { animate })}${overlay ? overlayMarkup(doc) : ''}</g></svg>`;
 }
 
 export const svgDataUrl = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

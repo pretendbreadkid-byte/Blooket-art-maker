@@ -98,6 +98,15 @@ function renderList() {
   grid.append(row);
 }
 
+// The same pictures for the pack maker, read only when one is picked.
+export async function uploadedAssets() {
+  await loadList();
+  return Promise.all(list.map(async (item) => {
+    const href = await picture(item);
+    return { name: item.name, thumb: href, read: async () => href };
+  }));
+}
+
 export function drawUploads(box, onClose) {
   box.innerHTML = `<div class="panel-head"><h3>Uploaded assets</h3>
       <button class="ib blook-close" title="Close" aria-label="Close uploaded assets">${icon('x')}</button></div>

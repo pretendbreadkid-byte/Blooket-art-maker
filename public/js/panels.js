@@ -11,6 +11,7 @@ import {
   canTakeApart, takeApart, stackEnds,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
+import { TEMPLATES } from './templates.js';
 import { isPlus } from './session.js';
 import { plusDialog } from './plus.js';
 import { $, $$, html, icon, swatch, colorPopover } from './ui.js';
@@ -191,6 +192,12 @@ function documentPanel(box) {
     onInput: (v) => { d.cornerRadius = v; refreshFrameCorners(); },
     onChange: commit,
   }));
+  const overlay = TEMPLATES[d.template]?.overlay;
+  if (overlay) {
+    const row = html(`<label class="check"><input type="checkbox" ${d.overlay ? 'checked' : ''}><span>${overlay.name}</span></label>`);
+    $('input', row).onchange = (e) => { d.overlay = e.target.checked; commit(); hooks.stage(); };
+    box.append(row);
+  }
 }
 
 function refreshFrameCorners() {
