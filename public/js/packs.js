@@ -5,15 +5,18 @@ import { newDoc, uid } from './model.js';
 import { esc, exportSVG, svgDataUrl } from './render.js';
 import { fetchBlooks } from './pieces.js';
 import { uploadedAssets } from './uploads.js';
-import { RARITIES, balanceOdds, chanceOf, newPack, pickBlook, whyNotOpen } from './pack-rules.js';
+import {
+  RARITIES, balanceOdds, chanceOf, gemOf, newPack, pickBlook, pullsOf, rarityOf, recordPull, whyNotOpen,
+} from './pack-rules.js';
 import { $, $$, confirmBox, dialog, html, icon, toast } from './ui.js';
 
 const BLOOK_SIZE = 512;
 const ART_SIZE = 800;
 const TILES = 96;
-const CONFETTI = 44;
 const SHAKE_MS = 750;
-const seen = new Map();
+const WAVE_MS_PER_PX = 0.28;
+const WAVE_MS = 700;
+const AMOUNTS = [1, 10, 100];
 
 export const packVisual = (art) => `<span class="pack-visual"><img src="/pack/foil.png" alt="">${art ? `<img class="pack-art" src="${esc(art)}" alt="">` : '<i class="pack-art pack-blank">Pack art</i>'}</span>`;
 
@@ -208,8 +211,9 @@ export function editPack(doc, onChange) {
   }, { wide: true }).then(() => opened);
 }
 
-function blookCard(blook, doc) {
-  const rarity = RARITIES[blook.rarity];
+export function blookCard(blook, doc) {
+  const rarity = rarityOf(blook.rarity);
+  const pulled = pullsOf(doc.pack, blook);
   return dialog((box, close) => {
     box.classList.add('blook-card');
     box.innerHTML = `<button class="blook-card-x" aria-label="Close">${icon('x')}</button>
@@ -218,26 +222,71 @@ function blookCard(blook, doc) {
         <h2>${esc(blook.name)}</h2>
         <p>${esc(doc.name)}</p>
         <div class="blook-card-chips">
-          <span><i style="background:${rarity.color}"></i>${esc(blook.rarity)}</span>
+          <span><img src="${gemOf(blook.rarity)}" alt="">${esc(blook.rarity)}</span>
           <span><i class="token">B</i>${rarity.sells}</span>
           <span>${chanceOf(blook, doc.pack.blooks).toFixed(1)}%</span>
         </div>
+        ${pulled ? `<p class="blook-card-total">${pulled} total</p>` : ''}
       </div>`;
     $('.blook-card-x', box).onclick = () => close();
   }, { wide: true });
 }
 
+/* ---------- My Blooks ---------- */
+
+// Everything that can come out of your packs. Ones you haven't pulled stay hidden.
+export async function drawCollection(host, metas) {
+  const docs = (await Promise.all(metas.map((m) => getDoc(m.id)))).filter((d) => d?.pack.blooks.length);
+  const order = Object.keys(RARITIES);
+  const sorted = (doc) => [...doc.pack.blooks].sort((a, b) => order.indexOf(a.rarity) - order.indexOf(b.rarity));
+  host.innerHTML = docs.length ? docs.map((doc) => `<section class="my-pack" data-id="${doc.id}">
+      <h2>${esc(doc.name)}</h2>
+      <div class="my-grid">${sorted(doc).map((b) => {
+        const pulled = pullsOf(doc.pack, b);
+        return `<button class="my-blook ${pulled ? '' : 'locked'}" data-b="${b.id}" title="${pulled ? esc(b.name) : 'Not pulled yet'}" ${pulled ? '' : 'disabled'}>
+          <img src="${esc(b.picture)}" alt="${pulled ? esc(b.name) : ''}">
+          ${pulled ? `<em style="background:${rarityOf(b.rarity).color}">${pulled}</em>` : icon('lock')}
+        </button>`;
+      }).join('')}</div>
+    </section>`).join('') : '<p class="muted">Add some Blooks to a pack, then test open it.</p>';
+  $$('.my-pack', host).forEach((section) => {
+    const doc = docs.find((d) => d.id === section.dataset.id);
+    $$('.my-blook:not(.locked)', section).forEach((b) => {
+      b.onclick = () => blookCard(doc.pack.blooks.find((x) => x.id === b.dataset.b), doc);
+    });
+  });
+}
+
 /* ---------- Test opening ---------- */
 
-const tiles = () => Array.from({ length: TILES }, () => `<i style="--glow:${(Math.random() * 0.75 + 0.25).toFixed(2)}"></i>`).join('');
+const tiles = () => Array.from({ length: TILES }, () => `<i style="--glow:${(Math.random() * 0.62 + 0.38).toFixed(2)}"></i>`).join('');
 
-function confetti() {
-  return Array.from({ length: CONFETTI }, () => {
-    const turn = Math.random() * 360;
-    const reach = 240 + Math.random() * 420;
-    return `<i style="--x:${Math.round(Math.cos(turn) * reach)}px;--y:${Math.round(Math.sin(turn) * reach)}px;--spin:${Math.round(Math.random() * 720)}deg;animation-delay:${Math.round(Math.random() * 180)}ms"></i>`;
+function gems(name) {
+  const { gems: count } = rarityOf(name);
+  return Array.from({ length: count }, () => {
+    const turn = Math.random() * Math.PI * 2;
+    const reach = 260 + Math.random() * 520;
+    const size = Math.round(44 + Math.random() * 44);
+    return `<img src="${gemOf(name)}" alt="" style="--x:${Math.round(Math.cos(turn) * reach)}px;--y:${Math.round(Math.sin(turn) * reach)}px;--spin:${Math.round((Math.random() - 0.5) * 720)}deg;width:${size}px;animation-delay:${Math.round(Math.random() * 260)}ms">`;
   }).join('');
 }
+
+// The diagonal wave: each tile flips over in turn, starting from the bottom right.
+function measureWave(stage) {
+  const box = stage.getBoundingClientRect();
+  $$('.opener-tiles i', stage).forEach((tile) => {
+    const r = tile.getBoundingClientRect();
+    tile.style.setProperty('--d', `${Math.max(0, Math.round((box.right - r.left + box.bottom - r.top) * WAVE_MS_PER_PX))}ms`);
+  });
+}
+
+function wave(stage, color) {
+  stage.dataset.wave = stage.dataset.wave === 'a' ? 'b' : 'a';
+  if (color) stage.style.setProperty('--rarity', color);
+  stage.classList.toggle('lit', !!color);
+}
+
+const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 export function openPack(doc) {
   const stage = html(`<div class="opener" role="dialog" aria-modal="true" aria-label="Test open ${esc(doc.name)}">
@@ -247,44 +296,92 @@ export function openPack(doc) {
     <div class="opener-body"></div>
   </div>`);
   const body = $('.opener-body', stage);
-  const leave = () => { stage.remove(); removeEventListener('keydown', onKey, true); };
+  const count = $('.opener-count', stage);
+  let amount = 1;
+  let done = 0;
+  let closed = false;
+
+  const leave = () => { closed = true; stage.remove(); removeEventListener('keydown', onKey, true); };
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); leave(); } };
   addEventListener('keydown', onKey, true);
   $('.opener-x', stage).onclick = leave;
 
+  const showCount = () => { count.textContent = `${Math.max(done, 1)}/${amount}`; };
+
   const showPack = () => {
-    stage.classList.remove('revealed');
-    stage.style.removeProperty('--rarity');
-    body.innerHTML = `<button class="opener-pack" aria-label="Open the pack">${packVisual(doc.pack.art)}</button>`;
+    done = 0;
+    wave(stage, null);
+    body.innerHTML = `<button class="opener-pack" aria-label="Open the pack">${packVisual(doc.pack.art)}</button>
+      <div class="opener-amounts">${AMOUNTS.map((n) => `<button class="${n === amount ? 'on' : ''}" data-n="${n}">\u00d7${n}</button>`).join('')}</div>`;
+    showCount();
     $('.opener-pack', body).onclick = tear;
+    $$('.opener-amounts button', body).forEach((b) => {
+      b.onclick = () => {
+        amount = +b.dataset.n;
+        $$('.opener-amounts button', body).forEach((x) => x.classList.toggle('on', x === b));
+        showCount();
+      };
+    });
   };
 
-  const tear = () => {
+  const pull = () => {
+    const blook = pickBlook(doc.pack.blooks, Math.random());
+    const isNew = recordPull(doc.pack, blook);
+    done += 1;
+    return { blook, isNew };
+  };
+
+  const tear = async () => {
     const button = $('.opener-pack', body);
     button.disabled = true;
     button.classList.add('shake');
-    setTimeout(reveal, SHAKE_MS);
+    $('.opener-amounts', body).remove();
+    await wait(SHAKE_MS);
+    next();
   };
 
-  const reveal = () => {
-    const blook = pickBlook(doc.pack.blooks, Math.random());
-    const known = seen.get(doc.id) ?? new Set();
-    const isNew = !known.has(blook.id);
-    known.add(blook.id);
-    seen.set(doc.id, known);
-    stage.style.setProperty('--rarity', RARITIES[blook.rarity].color);
-    stage.classList.add('revealed');
-    body.innerHTML = `<div class="opener-confetti" aria-hidden="true">${confetti()}</div>
-      <div class="reveal-card" style="${doc.pack.back ? `background-image:url('${esc(doc.pack.back)}')` : ''}">
+  const next = async () => {
+    if (stage.classList.contains('lit')) {
+      body.innerHTML = '';
+      wave(stage, null);
+      await wait(WAVE_MS);
+    }
+    if (!closed) reveal(pull());
+  };
+
+  const skip = () => {
+    let last = null;
+    while (done < amount) last = pull();
+    savePack(doc).catch(() => {});
+    reveal(last, true);
+  };
+
+  const reveal = async ({ blook, isNew }, counted = false) => {
+    if (!counted) savePack(doc).catch(() => {});
+    showCount();
+    const rarity = rarityOf(blook.rarity);
+    body.innerHTML = '';
+    stage.dataset.rarity = blook.rarity.toLowerCase();
+    wave(stage, rarity.color);
+    await wait(rarity.intro);
+    if (closed) return;
+    const more = done < amount;
+    body.innerHTML = `<div class="opener-gems" aria-hidden="true">${gems(blook.rarity)}</div>
+      <div class="reveal-card enter-${rarity.entrance}" style="${doc.pack.back ? `background-image:url('${esc(doc.pack.back)}')` : ''}">
         <b class="reveal-name">${esc(blook.name)}</b>
         <b class="reveal-rarity">${esc(blook.rarity)}</b>
         <img src="${esc(blook.picture)}" alt="">
         <b class="reveal-odds">${chanceOf(blook, doc.pack.blooks).toFixed(1)}%${isNew ? ' – NEW!' : ''}</b>
       </div>
-      <button class="btn primary big opener-again">Open another</button>`;
-    $('.opener-again', body).onclick = showPack;
+      <div class="opener-next">
+        <button class="btn primary big opener-again">${more ? 'Next' : 'Open another'}</button>
+        ${more ? '<button class="btn ghost big opener-skip">Skip to the end</button>' : ''}
+      </div>`;
+    $('.opener-again', body).onclick = more ? next : showPack;
+    $('.opener-skip', body)?.addEventListener('click', skip);
   };
 
   showPack();
   document.body.append(stage);
+  measureWave(stage);
 }

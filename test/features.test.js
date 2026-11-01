@@ -469,3 +469,24 @@ test('packs follow the odds, whatever they add up to', async () => {
   assert.match(whyNotOpen({ art: 'x', blooks: [{ odds: 0 }] }), /odds/);
   assert.equal(whyNotOpen({ art: 'x', blooks }), '');
 });
+
+test('every rarity has a gem, and old rarities still work', async () => {
+  const { existsSync } = await import('node:fs');
+  const { RARITIES, gemOf, rarityOf } = await import('../public/js/pack-rules.js');
+  assert.deepEqual(Object.keys(RARITIES), ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Chroma', 'Unique']);
+  for (const name of Object.keys(RARITIES)) assert.ok(existsSync(`public${gemOf(name)}`), name);
+  assert.equal(rarityOf('Mystical'), RARITIES.Common);
+  assert.equal(gemOf('Mystical'), '/rarity/common.svg');
+});
+
+test('pulls are counted, and only the first is new', async () => {
+  const { newPack, pullsOf, recordPull } = await import('../public/js/pack-rules.js');
+  const pack = newPack();
+  const blook = { id: 'a' };
+  assert.equal(pullsOf(pack, blook), 0);
+  assert.equal(recordPull(pack, blook), true);
+  assert.equal(recordPull(pack, blook), false);
+  assert.equal(pullsOf(pack, blook), 2);
+  const older = { art: 'x', blooks: [blook] };
+  assert.equal(recordPull(older, blook), true);
+});

@@ -41,7 +41,7 @@ Then open <http://localhost:5180>.
 
 New projects can start as a Blook, a Banner, a Blook background or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art, and the Canvas panel turns them on or off.
 
-Packs on the home screen turn your art into a pack with a price, pack art, a Blook background, and Blooks with their own rarity and odds. Test open shows what comes out. Packs save to the account like projects do.
+The Test page on the home screen turns your art into a pack with a price, pack art, a Blook background, and Blooks with their own rarity and odds. Test open shows what comes out, and My Blooks keeps track of what you have pulled. Packs and pulls save to the account like projects do.
 
 Other keys: `[` and `]` change brush size, Ctrl+Z undo, Ctrl+Y redo, Ctrl+D duplicate, Delete remove.
 

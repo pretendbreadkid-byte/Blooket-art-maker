@@ -1,15 +1,30 @@
 // The rules of a pack: rarities, odds and what comes out when one is opened.
 
+// gems: how many fly out. intro: how long the build-up lasts, in ms.
+// entrance: how the card arrives. Rarer Blooks make more of a fuss.
 export const RARITIES = {
-  Uncommon: { color: '#4bc22e', odds: 40, sells: 5 },
-  Rare: { color: '#2b6df0', odds: 25, sells: 20 },
-  Epic: { color: '#d11f1f', odds: 15, sells: 75 },
-  Legendary: { color: '#ff910f', odds: 5, sells: 200 },
-  Chroma: { color: '#00ccff', odds: 1, sells: 300 },
-  Mystical: { color: '#a335ee', odds: 0.1, sells: 1000 },
+  Common: { color: '#a9b3b6', odds: 40, sells: 1, gems: 16, intro: 200, entrance: 'pop' },
+  Uncommon: { color: '#48b82c', odds: 30, sells: 5, gems: 34, intro: 250, entrance: 'pop' },
+  Rare: { color: '#0a18d6', odds: 15, sells: 20, gems: 46, intro: 350, entrance: 'bounce' },
+  Epic: { color: '#d3350b', odds: 8, sells: 75, gems: 60, intro: 550, entrance: 'slam' },
+  Legendary: { color: '#ff910f', odds: 3, sells: 200, gems: 80, intro: 800, entrance: 'slam' },
+  Chroma: { color: '#17c4e6', odds: 1, sells: 300, gems: 100, intro: 1100, entrance: 'spin' },
+  Unique: { color: '#00918d', odds: 0.1, sells: 500, gems: 120, intro: 1300, entrance: 'spin' },
 };
 
-export const newPack = () => ({ price: 25, art: null, back: null, blooks: [] });
+export const rarityOf = (name) => RARITIES[name] ?? RARITIES.Common;
+export const gemOf = (name) => `/rarity/${(RARITIES[name] ? name : 'Common').toLowerCase()}.svg`;
+
+export const newPack = () => ({ price: 25, art: null, back: null, blooks: [], pulled: {} });
+
+export const pullsOf = (pack, blook) => pack.pulled?.[blook.id] ?? 0;
+
+// Counts a pull. Returns true the first time this Blook comes out.
+export function recordPull(pack, blook) {
+  pack.pulled ??= {};
+  pack.pulled[blook.id] = pullsOf(pack, blook) + 1;
+  return pack.pulled[blook.id] === 1;
+}
 
 const totalOdds = (blooks) => blooks.reduce((sum, b) => sum + Math.max(0, b.odds), 0);
 

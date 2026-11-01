@@ -8,7 +8,7 @@ import { session, isPlus, logOut } from './session.js';
 import { syncArt, flushUploads, resetSync } from './sync.js';
 import { plusDialog } from './plus.js';
 import { TEMPLATES, templatePreview } from './templates.js';
-import { editPack, newPackProject, openPack, packVisual, savePack } from './packs.js';
+import { drawCollection, editPack, newPackProject, openPack, packVisual, savePack } from './packs.js';
 import { $, $$, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
 
 const MIN_SIZE = 16;
@@ -27,6 +27,7 @@ const SIZE_PRESETS = [
 const PACKS = 'packs';
 
 let currentFolder = 'all';
+let testTab = 'packs';
 let host = null;
 let leave = () => {};
 
@@ -44,13 +45,13 @@ export async function renderHome(root, onLeave = leave) {
 
   const shown = currentFolder === 'all' ? projects : projects.filter((p) => p.folderId === currentFolder);
   const count = (id) => projects.filter((p) => p.folderId === id).length;
-  const title = inPacks ? 'My packs' : (currentFolder === 'all' ? 'All projects' : folders.find((f) => f.id === currentFolder).name);
+  const title = inPacks ? 'Test' : (currentFolder === 'all' ? 'All projects' : folders.find((f) => f.id === currentFolder).name);
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
       <a class="brand" href="#/"><span class="brand-mark"><img src="/logo.svg" alt=""></span><b>Blooksmith</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
-      <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Packs</span><em>${packs.length}</em></button>
+      <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
       <h3>Folders</h3>
       <ul class="folders">
         <li><button class="folder ${currentFolder === 'all' ? 'on' : ''}" data-f="all">${icon('shapes')}<span>All projects</span><em>${projects.length}</em></button></li>
@@ -72,13 +73,16 @@ export async function renderHome(root, onLeave = leave) {
     <main class="home-main">
       ${session.guest ? '<p class="guest-note">You are playing as a guest. Your art disappears when you close this page, so export anything you want to keep.</p>' : ''}
       <h1>${esc(title)}</h1>
-      ${inPacks ? packsView(packs) : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState())}
+      ${inPacks ? testView(packs) : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState())}
     </main>
   </div>`;
 
   $('#new', root).onclick = () => newProjectWizard(folders);
   $('#packs', root).onclick = () => { currentFolder = PACKS; renderHome(root); };
   const redraw = () => renderHome(root);
+  $$('[data-tab]', root).forEach((b) => { b.onclick = () => { testTab = b.dataset.tab; redraw(); }; });
+  const collection = $('#collection', root);
+  if (collection) drawCollection(collection, packs);
   $('#newpack', root)?.addEventListener('click', async () => {
     const doc = newPackProject();
     await savePack(doc);
@@ -138,6 +142,12 @@ export async function renderHome(root, onLeave = leave) {
   syncArt().then((changed) => {
     if (changed && root.querySelector('.home')) renderHome(root);
   });
+}
+
+function testView(packs) {
+  const tabs = [['packs', 'Packs'], ['blooks', 'My Blooks']];
+  return `<div class="test-tabs">${tabs.map(([id, label]) => `<button class="${testTab === id ? 'on' : ''}" data-tab="${id}">${label}</button>`).join('')}</div>
+    ${testTab === 'packs' ? packsView(packs) : '<div class="my-blooks" id="collection"><p>Loading...</p></div>'}`;
 }
 
 function packsView(packs) {
