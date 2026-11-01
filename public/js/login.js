@@ -35,7 +35,7 @@ export function renderLogin(root, onDone) {
     <div class="floaters" aria-hidden="true"></div>
     <section class="welcome-art">
       <div class="welcome-copy">
-        <span class="brand-mark big"><img src="/blooks/toast.svg" alt=""></span>
+        <span class="brand-mark big"><img src="/logo.svg" alt=""></span>
         <h1>Blooksmith</h1>
         <p>Draw it. Warp it. Animate it.</p>
       </div>

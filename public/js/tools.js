@@ -40,8 +40,8 @@ export const TOOLS = {
   hand: { label: 'Move view', key: 'H', hint: 'Drag to move around. You can also hold Space anywhere, and scroll to zoom.' },
 };
 
-// These share one button with a drop-down next to it.
-export const PICK_TOOLS = ['select', 'vertices', 'hand', 'lasso'];
+// Each group shares one button with a drop-down under it.
+export const TOOL_GROUPS = [['select', 'vertices', 'hand', 'lasso'], ['line', 'pencil', 'marker', 'bucket']];
 
 const pickable = (e) => {
   const el = e.target.closest?.('[data-id]');

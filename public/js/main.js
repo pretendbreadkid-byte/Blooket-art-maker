@@ -4,6 +4,7 @@ import { renderAdmin } from './admin.js';
 import { renderLogin } from './login.js';
 import { openEditor, closeEditor } from './editor.js';
 import { session, restoreSession } from './session.js';
+import { resetSync } from './sync.js';
 import { S } from './state.js';
 import { embedFont } from './render.js';
 import { $ } from './ui.js';
@@ -33,5 +34,5 @@ async function loadFonts() {
 
 addEventListener('hashchange', route);
 await loadFonts();
-await restoreSession();
+await restoreSession(() => { resetSync(); route(); });
 route();

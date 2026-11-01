@@ -1,9 +1,10 @@
-// The Blook assets panel: search the pictures, then drag one onto the canvas.
+// The Assets panel: search the pictures, then drag one onto the canvas.
 // Each one arrives as separate pieces held together until you take it apart.
 import { S, hooks, commit, select, addObject, activeLayer } from './state.js';
 import { esc } from './render.js';
 import { fetchBlooks, readPieces, piecesToObjects, piecesFromPicture } from './pieces.js';
 import { startPanelDrag } from './panels.js';
+import { drawUploads } from './uploads.js';
 import { $, html, icon, toast } from './ui.js';
 
 const DROPPED_BLOOK_SIZE = 0.6;
@@ -12,8 +13,9 @@ const MAX_SHOWN = 300;
 let list = null;
 let search = '';
 
-export function toggleBlooks() {
-  S.blooksOpen = !S.blooksOpen;
+export function toggleBlooks(view) {
+  S.blooksOpen = !S.blooksOpen || S.assetView !== view;
+  S.assetView = view;
   hooks.panels();
 }
 
@@ -50,7 +52,7 @@ function renderGrid() {
   const words = search.split(/\s+/).filter(Boolean);
   const found = list.filter((b) => words.every((w) => b.name.toLowerCase().includes(w)));
   grid.innerHTML = '';
-  if (!found.length) { grid.append(html('<p class="muted">No blooks match that.</p>')); return; }
+  if (!found.length) { grid.append(html('<p class="muted">No assets match that.</p>')); return; }
   const row = html('<div class="cat-row"></div>');
   for (const blook of found.slice(0, MAX_SHOWN)) {
     const url = `/blooks/${encodeURIComponent(blook.file)}`;
@@ -70,14 +72,16 @@ function renderGrid() {
 export function drawBlooks() {
   const box = $('#blooks');
   box.hidden = !S.blooksOpen;
-  if (box.hidden || $('.cat-search', box)) return;
-  box.innerHTML = `<div class="panel-head"><h3>Blook assets</h3>
-      <button class="ib blook-close" title="Close" aria-label="Close Blook assets">${icon('x')}</button></div>
-    <label class="cat-search">${icon('search')}<input placeholder="Find a blook" aria-label="Find a blook" value="${esc(search)}"></label>
+  if (box.hidden || box.dataset.view === S.assetView) return;
+  box.dataset.view = S.assetView;
+  if (S.assetView === 'uploads') { drawUploads(box, () => toggleBlooks('uploads')); return; }
+  box.innerHTML = `<div class="panel-head"><h3>Assets</h3>
+      <button class="ib blook-close" title="Close" aria-label="Close assets">${icon('x')}</button></div>
+    <label class="cat-search">${icon('search')}<input placeholder="Find an asset" aria-label="Find an asset" value="${esc(search)}"></label>
     <p class="muted blook-tip">Drag one onto the canvas.</p>
     <div class="cat-grid"><p class="muted">Loading...</p></div>
     <p class="muted blook-tip">Blook art by Blooket, used with permission.</p>`;
-  $('.blook-close', box).onclick = toggleBlooks;
+  $('.blook-close', box).onclick = () => toggleBlooks('blooks');
   $('input', box).oninput = (e) => { search = e.target.value.toLowerCase(); if (list) renderGrid(); };
   const ready = list ? Promise.resolve(list) : fetchBlooks();
   ready.then((blooks) => {

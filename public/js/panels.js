@@ -7,7 +7,7 @@ import { esc } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
-  TOOLS, PICK_TOOLS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
+  TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
   canTakeApart, takeApart, stackEnds,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
@@ -408,14 +408,18 @@ function showHint() {
 
 function toolbarState() {
   $$('#toolbar [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === S.tool));
-  const pick = $('#picktool');
-  if (PICK_TOOLS.includes(S.tool) && pick.dataset.tool !== S.tool) {
-    pick.dataset.tool = S.tool;
-    pick.title = `${TOOLS[S.tool].label} (${TOOLS[S.tool].key})`;
-    pick.innerHTML = `${icon(S.tool)}<span>${TOOLS[S.tool].label}</span>`;
-  }
-  pick.classList.toggle('on', PICK_TOOLS.includes(S.tool));
-  $('#blookbtn').classList.toggle('on', S.blooksOpen);
+  $$('.tool-pick').forEach((box, i) => {
+    const pick = $('[data-tool]', box);
+    const inGroup = TOOL_GROUPS[i].includes(S.tool);
+    if (inGroup && pick.dataset.tool !== S.tool) {
+      pick.dataset.tool = S.tool;
+      pick.title = `${TOOLS[S.tool].label} (${TOOLS[S.tool].key})`;
+      pick.innerHTML = `${icon(S.tool)}<span>${TOOLS[S.tool].label}</span>`;
+    }
+    pick.classList.toggle('on', inGroup);
+  });
+  $('#blookbtn').classList.toggle('on', S.blooksOpen && S.assetView === 'blooks');
+  $('#uploadbtn').classList.toggle('on', S.blooksOpen && S.assetView === 'uploads');
 }
 
 export function drawPanels() {

@@ -23,9 +23,12 @@ const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 2 * 1024 * 1024;
 const MAX_ART_BODY = 16 * 1024 * 1024;
 const MAX_PROJECTS = 300;
+const MAX_UPLOAD_BODY = 12 * 1024 * 1024;
+const MAX_UPLOADS = 200;
 const MAX_NODES = 20000;
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const ACCOUNT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
+const KEEP_AWAKE_MS = 10 * 60 * 1000;
 const TRY_WINDOW_MS = 15 * 60 * 1000;
 const MAX_TRIES = 20;
 
@@ -71,7 +74,7 @@ function saveShapes() {
 /* ---------- Accounts ---------- */
 
 const scrypt = promisify(scryptCallback);
-const sessionSecret = createHash('sha256').update(`blook-session:${adminPassword}`).digest();
+let sessionSecret = createHash('sha256').update(`blook-session:${adminPassword}`).digest();
 const contentsUrl = `${GITHUB_API}/repos/${DATA_REPO}/contents`;
 const usersUrl = `${contentsUrl}/users.json`;
 const githubHeaders = {
@@ -194,6 +197,7 @@ async function login(req, res) {
 // Each account has an index of its projects, and one file per project. They
 // live beside accounts: on this disk, or in the private GitHub repo.
 const artIndexes = new Map();
+const uploadIndexes = new Map();
 const artQueues = new Map();
 const artShas = new Map();
 
@@ -326,6 +330,59 @@ async function art(req, res, path) {
   return send(res, 404, { error: 'Not found.' });
 }
 
+/* ---------- Uploaded assets ---------- */
+
+const PICTURE = /^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
+
+async function uploadIndex(key) {
+  if (!uploadIndexes.has(key)) {
+    const text = await readArtFile(`art/${key}/uploads/index.json`);
+    uploadIndexes.set(key, text ? JSON.parse(text) : []);
+  }
+  return uploadIndexes.get(key);
+}
+
+async function uploads(req, res, path) {
+  const user = currentUser(req);
+  if (!user) return send(res, 401, { error: 'Please log in.' });
+  const key = user.name.toLowerCase();
+
+  if (path === '/api/uploads' && req.method === 'GET') {
+    return send(res, 200, { uploads: await inArtQueue(key, () => uploadIndex(key)) });
+  }
+  const id = path.match(/^\/api\/uploads\/(up-[\w-]{1,40})$/)?.[1];
+  if (!id) return send(res, 404, { error: 'Not found.' });
+  const file = `art/${key}/uploads/${id}.json`;
+
+  if (req.method === 'GET') {
+    const text = await inArtQueue(key, () => readArtFile(file));
+    return text ? send(res, 200, JSON.parse(text)) : send(res, 404, { error: 'That picture could not be found.' });
+  }
+  if (req.method === 'PUT') {
+    const { name, href } = await readJson(req, MAX_UPLOAD_BODY);
+    if (typeof href !== 'string' || !PICTURE.test(href)) return send(res, 400, { error: 'That is not a picture.' });
+    return inArtQueue(key, async () => {
+      const index = await uploadIndex(key);
+      if (index.some((item) => item.id === id)) return send(res, 200, { ok: true });
+      if (index.length >= MAX_UPLOADS) return send(res, 413, { error: `An account can keep up to ${MAX_UPLOADS} pictures.` });
+      await writeArtFile(file, JSON.stringify({ href }));
+      index.unshift({ id, name: cleanText(name, 80, 'Picture') });
+      await writeArtFile(`art/${key}/uploads/index.json`, JSON.stringify(index));
+      return send(res, 200, { ok: true });
+    });
+  }
+  if (req.method === 'DELETE') {
+    return inArtQueue(key, async () => {
+      const index = await uploadIndex(key);
+      await removeArtFile(file);
+      uploadIndexes.set(key, index.filter((item) => item.id !== id));
+      await writeArtFile(`art/${key}/uploads/index.json`, JSON.stringify(uploadIndexes.get(key)));
+      return send(res, 200, { ok: true });
+    });
+  }
+  return send(res, 404, { error: 'Not found.' });
+}
+
 const digest = (s) => createHash('sha256').update(String(s)).digest();
 const passwordMatches = (attempt) => timingSafeEqual(digest(attempt), digest(adminPassword));
 
@@ -414,6 +471,7 @@ async function api(req, res, path) {
   if (req.method === 'POST' && path === '/api/auth/register') return register(req, res);
   if (req.method === 'POST' && path === '/api/auth/login') return login(req, res);
   if (path === '/api/art' || path.startsWith('/api/art/')) return art(req, res, path);
+  if (path === '/api/uploads' || path.startsWith('/api/uploads/')) return uploads(req, res, path);
   if (path === '/api/me' || path === '/api/plus/join') {
     const user = currentUser(req);
     if (!user) return send(res, 401, { error: 'Please log in.' });
@@ -499,10 +557,28 @@ server.on('error', (err) => {
   throw err;
 });
 
+// Render wipes the disk, so without ADMIN_PASSWORD the admin password changes on
+// every restart. Logins are signed with a secret kept beside the accounts instead.
+async function loadSessionSecret() {
+  if (process.env.ADMIN_PASSWORD) return;
+  let secret = await readArtFile('session-secret.txt');
+  if (!secret) {
+    secret = randomBytes(32).toString('hex');
+    await writeArtFile('session-secret.txt', secret);
+  }
+  sessionSecret = createHash('sha256').update(`blook-session:${secret}`).digest();
+}
+
 console.log('Starting Blooksmith...');
 await loadUsers();
+await loadSessionSecret();
 if (TEMPORARY_DISK && !USERS_IN_GITHUB) {
   console.log('Warning: accounts will be lost on restart. Set GITHUB_TOKEN and DATA_REPO to keep them.');
+}
+// Render's free plan sleeps after 15 quiet minutes and shows its own loading page
+// to the next visitor. KEEP_AWAKE=true visits the site from here so it stays up.
+if (process.env.KEEP_AWAKE === 'true' && process.env.RENDER_EXTERNAL_URL) {
+  setInterval(() => { fetch(process.env.RENDER_EXTERNAL_URL).catch(() => {}); }, KEEP_AWAKE_MS);
 }
 server.listen(PORT, HOST, () => {
   console.log(`Running at http://localhost:${PORT}`);

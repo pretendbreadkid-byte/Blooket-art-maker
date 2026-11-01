@@ -34,7 +34,8 @@ Then open <http://localhost:5180>.
 | Text | T | Click and type. |
 | Eraser | E | Rubs out art. |
 | Move view | H | Drag around. Hold Space to do this from any tool. Scroll to zoom. In the drop-down under Select. |
-| Blooks | | Search the Blook assets and drag one onto the canvas. |
+| Assets | | Search the Blook art and drag one onto the canvas. |
+| Uploads | | Upload your own pictures. They stay on your account, ready for any project. |
 
 Other keys: `[` and `]` change brush size, Ctrl+Z undo, Ctrl+Y redo, Ctrl+D duplicate, Delete remove.
 
@@ -111,6 +112,10 @@ Render's free disk is wiped on every restart, so accounts and art need somewhere
 1. Make a new **private** GitHub repo, for example `blook-maker-data`.
 2. Make a [fine-grained token](https://github.com/settings/personal-access-tokens/new) for only that repo, with **Contents: Read and write**.
 3. In Render, add `GITHUB_TOKEN` (the token) and `DATA_REPO` (like `your-name/blook-maker-data`).
+
+### Render's loading page
+
+Render's free plan puts a site to sleep after 15 quiet minutes, then shows its own loading page to the next visitor. A paid Render plan never sleeps. On the free plan, add `KEEP_AWAKE` set to `true` and the site visits itself every 10 minutes to stay up. Free plans get 750 hours a month across every service on the account, and this one service uses about 744, so don't turn it on if you run other free services there.
 
 ## Tests
 

@@ -5,7 +5,7 @@ import {
 import { getDoc, getMeta } from './store.js';
 import { mountStage, drawStage, drawOverlay, fitView, placeFrame, zoomAt } from './stage.js';
 import {
-  TOOLS, PICK_TOOLS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
+  TOOLS, TOOL_GROUPS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
   copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor, flipSelection, reorderSelection,
   finishLine, cancelLine, lineInProgress,
 } from './tools.js';
@@ -21,7 +21,7 @@ import { imageToShape } from './trace.js';
 import { session } from './session.js';
 import { syncArt, flushUploads, syncStatus } from './sync.js';
 import { pathD, pathBounds } from './model.js';
-import { $, icon, menu, toast, dialog, readDataUrl } from './ui.js';
+import { $, $$, icon, menu, toast, dialog, readDataUrl } from './ui.js';
 
 const TEMPLATE = `
 <div class="ed">
@@ -224,24 +224,28 @@ function wireTop(root) {
   file.onchange = () => { importFiles([...file.files]); file.value = ''; };
 
   const bar = $('#toolbar', root);
-  const others = Object.entries(TOOLS).filter(([id]) => !PICK_TOOLS.includes(id));
-  bar.innerHTML = `<div class="tool-pick">
-      <button id="picktool" data-tool="select" title="Select (V)">${icon('select')}<span>Select</span></button>
-      <button id="pickmore" class="tool-more" title="More ways to pick" aria-label="More ways to pick" aria-haspopup="menu">${icon('caret')}</button>
-    </div>
+  const others = Object.entries(TOOLS).filter(([id]) => !TOOL_GROUPS.flat().includes(id));
+  const toolGroup = ([id]) => `<div class="tool-pick">
+      <button data-tool="${id}" title="${TOOLS[id].label} (${TOOLS[id].key})">${icon(id)}<span>${TOOLS[id].label}</span></button>
+      <button class="tool-more" title="More tools" aria-label="More tools" aria-haspopup="menu">${icon('caret')}</button>
+    </div>`;
+  bar.innerHTML = `${TOOL_GROUPS.map(toolGroup).join('')}
     ${others.map(([id, t]) => `<button data-tool="${id}" title="${t.label} (${t.key})">${icon(id)}<span>${t.label}</span></button>`).join('')}
-    <button id="blookbtn" title="Blook assets">${icon('blook')}<span>Blooks</span></button>`;
+    <button id="blookbtn" title="Assets">${icon('file')}<span>Assets</span></button>
+    <button id="uploadbtn" title="Uploaded assets">${icon('upload')}<span>Uploads</span></button>`;
   bar.onclick = (e) => {
     const b = e.target.closest('[data-tool]');
     if (b) setTool(b.dataset.tool);
   };
-  $('#blookbtn', root).onclick = toggleBlooks;
-  const more = $('#pickmore', root);
-  more.onclick = () => {
-    const r = more.getBoundingClientRect();
-    const beside = { getBoundingClientRect: () => ({ left: r.right, right: r.right + 200, top: r.top, bottom: r.top }) };
-    menu(beside, PICK_TOOLS.map((id) => ({ label: `${TOOLS[id].label} (${TOOLS[id].key})`, icon: id, onClick: () => setTool(id) })));
-  };
+  $('#blookbtn', root).onclick = () => toggleBlooks('blooks');
+  $('#uploadbtn', root).onclick = () => toggleBlooks('uploads');
+  $$('.tool-more', root).forEach((more, i) => {
+    more.onclick = () => {
+      const r = more.getBoundingClientRect();
+      const beside = { getBoundingClientRect: () => ({ left: r.right, right: r.right + 200, top: r.top, bottom: r.top }) };
+      menu(beside, TOOL_GROUPS[i].map((id) => ({ label: `${TOOLS[id].label} (${TOOLS[id].key})`, icon: id, onClick: () => setTool(id) })));
+    };
+  });
 
   const wk = $('#wk', root);
   wk.addEventListener('dragover', (e) => { e.preventDefault(); wk.classList.add('dropping'); });

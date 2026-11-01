@@ -31,6 +31,7 @@ export const S = {
   lineSnap: null,
   vertexSpot: null,
   blooksOpen: false,
+  assetView: 'blooks',
 };
 
 // Set by the editor: redraw the canvas, the handles, the panels, the save badge.

@@ -218,3 +218,46 @@ test('art kept in GitHub survives a wiped disk', async () => {
   await stopServer(server);
   rmSync(freshDisk, { recursive: true, force: true });
 });
+
+test('logins last through a restart on a wiped disk with no admin password', async () => {
+  const name = `wake${Date.now() % 100000}`;
+  const disk = () => mkdtempSync(join(tmpdir(), 'blook-disk-'));
+  const github = { GITHUB_TOKEN: 'fake-token', DATA_REPO: 'me/data', GITHUB_API: `http://127.0.0.1:${GITHUB_PORT}`, ADMIN_PASSWORD: '' };
+  let server = await startServer({ ...github, DATA_DIR: disk() });
+  const { token } = await (await fetch(`${BASE}/api/auth/register`, { method: 'POST', body: JSON.stringify({ username: name, password: 'secret12' }) })).json();
+  await stopServer(server);
+  server = await startServer({ ...github, DATA_DIR: disk() });
+  const me = await fetch(`${BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(me.status, 200);
+  await stopServer(server);
+});
+
+test('uploaded pictures stay on the account and only that account', async () => {
+  let server = await startServer();
+  const signUp = async (username) => (await (await fetch(`${BASE}/api/auth/register`, { method: 'POST', body: JSON.stringify({ username, password: 'secret12' }) })).json()).token;
+  const stamp = Date.now() % 100000;
+  const mine = await signUp(`up${stamp}`);
+  const theirs = await signUp(`ot${stamp}`);
+  const ask = (token, method, path, body) => fetch(`${BASE}/api/uploads${path}`, { method, headers: { Authorization: `Bearer ${token}` }, body: body && JSON.stringify(body) });
+  const href = 'data:image/png;base64,iVBORw0KGgo=';
+
+  assert.equal((await fetch(`${BASE}/api/uploads`)).status, 401);
+  assert.equal((await ask(mine, 'PUT', '/up-1', { name: 'Script', href: 'javascript:alert(1)' })).status, 400);
+  assert.equal((await ask(mine, 'PUT', '/up-1', { name: 'Page', href: 'data:text/html;base64,AAAA' })).status, 400);
+  assert.equal((await ask(mine, 'PUT', '/index', { name: 'Index', href })).status, 404);
+  assert.equal((await ask(mine, 'PUT', '/up-1', { name: 'Cat', href })).status, 200);
+
+  await stopServer(server);
+  server = await startServer();
+  assert.deepEqual((await (await ask(mine, 'GET', '')).json()).uploads, [{ id: 'up-1', name: 'Cat' }]);
+  assert.equal((await (await ask(mine, 'GET', '/up-1')).json()).href, href);
+  assert.deepEqual((await (await ask(theirs, 'GET', '')).json()).uploads, []);
+  assert.equal((await ask(theirs, 'GET', '/up-1')).status, 404);
+
+  assert.equal((await ask(mine, 'DELETE', '/up-1')).status, 200);
+  assert.equal((await ask(mine, 'GET', '/up-1')).status, 404);
+  await stopServer(server);
+  server = await startServer();
+  assert.deepEqual((await (await ask(mine, 'GET', '')).json()).uploads, []);
+  await stopServer(server);
+});
