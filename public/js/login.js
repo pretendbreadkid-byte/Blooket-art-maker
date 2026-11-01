@@ -1,23 +1,41 @@
 // The welcome screen: log in, make an account, or play as a guest.
 import { logIn, signUp, playAsGuest } from './session.js';
-import { BASIC_SHAPES, shapeThumb } from './shapes.js';
+import { fetchBlooks } from './pieces.js';
+import { esc } from './render.js';
 import { $, $$, icon } from './ui.js';
 
-const FLOATERS = ['star', 'heart', 'circle', 'hexagon', 'moon', 'burst', 'triangle', 'plus'];
+const FLOATING_BLOOKS = 18;
+const between = (lo, hi) => lo + Math.random() * (hi - lo);
+
+// Real blooks drift up the screen, each at its own size and speed.
+async function floatBlooks(layer) {
+  const blooks = (await fetchBlooks()).filter((b) => !/animation|shape/.test(b.file));
+  const picked = [...blooks].sort(() => Math.random() - 0.5).slice(0, FLOATING_BLOOKS);
+  const lanes = picked.map((_, i) => i).sort(() => Math.random() - 0.5);
+  layer.innerHTML = picked.map((b, i) => {
+    const seconds = between(20, 38);
+    const style = [
+      `left:${((lanes[i] + between(0.1, 0.7)) / picked.length) * 100}%`,
+      `width:${Math.round(between(64, 124))}px`,
+      `animation-duration:${seconds}s`,
+      `animation-delay:${-between(0, seconds)}s`,
+      `--sway:${Math.round(between(-70, 70))}px`,
+      `--spin:${Math.round(between(6, 22))}deg`,
+      `--rest:${Math.round(between(4, 86))}%`,
+    ].join(';');
+    return `<img class="floater" src="/blooks/${esc(encodeURIComponent(b.file))}" alt="" style="${style}">`;
+  }).join('');
+}
 
 export function renderLogin(root, onDone) {
   document.title = 'Welcome · Blook Maker';
   let mode = 'login';
-  const floaters = FLOATERS.map((id, i) => {
-    const shape = BASIC_SHAPES.find((s) => s.id === id);
-    return `<span class="floater f${i}">${shapeThumb(shape)}</span>`;
-  }).join('');
 
   root.innerHTML = `<div class="welcome">
-    <section class="welcome-art" aria-hidden="true">
-      ${floaters}
+    <div class="floaters" aria-hidden="true"></div>
+    <section class="welcome-art">
       <div class="welcome-copy">
-        <span class="brand-mark big">${icon('shapes')}</span>
+        <span class="brand-mark big"><img src="/blooks/toast.svg" alt=""></span>
         <h1>Blook Maker</h1>
         <p>Draw it. Warp it. Animate it.</p>
       </div>
@@ -35,11 +53,12 @@ export function renderLogin(root, onDone) {
         <button class="btn primary big" id="lgo"></button>
         <div class="login-or"><span>or</span></div>
         <button type="button" class="btn ghost big" id="lguest">${icon('play')}<span>Play as guest</span></button>
-        <p class="muted small login-guest">Guests can make art and export it, but nothing gets saved.</p>
+        <p class="muted small login-guest">Guests can make art and export it, but nothing gets saved. With an account, your art follows you to any device.</p>
       </form>
     </section>
   </div>`;
 
+  floatBlooks($('.floaters', root));
   const err = $('.size-err', root);
   const pass = $('#lpass', root);
   const setMode = (next) => {

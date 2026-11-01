@@ -5,6 +5,7 @@ import {
 import { newDoc, uid, clamp } from './model.js';
 import { esc } from './render.js';
 import { session, isPlus, logOut } from './session.js';
+import { syncArt, flushUploads, resetSync } from './sync.js';
 import { plusDialog } from './plus.js';
 import { $, $$, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
 
@@ -40,7 +41,7 @@ export async function renderHome(root, onLeave = leave) {
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
-      <a class="brand" href="#/"><span class="brand-mark">${icon('shapes')}</span><b>Blook Maker</b></a>
+      <a class="brand" href="#/"><span class="brand-mark"><img src="/blooks/toast.svg" alt=""></span><b>Blook Maker</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
       <h3>Folders</h3>
       <ul class="folders">
@@ -70,7 +71,12 @@ export async function renderHome(root, onLeave = leave) {
   $('#new', root).onclick = () => newProjectWizard(folders);
   $('#newfolder', root).onclick = () => createFolder();
   $('#getplus', root)?.addEventListener('click', async () => { if (await plusDialog()) renderHome(root); });
-  $('#logout', root).onclick = () => { logOut(); leave(); };
+  $('#logout', root).onclick = async () => {
+    await flushUploads();
+    resetSync();
+    logOut();
+    leave();
+  };
   $('.empty-new', root)?.addEventListener('click', () => newProjectWizard(folders));
 
   $$('[data-f]', root).forEach((b) => {
@@ -101,6 +107,11 @@ export async function renderHome(root, onLeave = leave) {
       e.preventDefault();
       projectMenu(e.currentTarget, meta, folders);
     };
+  });
+
+  // Shows what is here straight away, then brings in anything from other devices.
+  syncArt().then((changed) => {
+    if (changed && root.querySelector('.home')) renderHome(root);
   });
 }
 

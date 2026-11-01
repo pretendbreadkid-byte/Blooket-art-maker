@@ -16,14 +16,14 @@ function saveToken(token) {
   } catch { /* You just sign in again next time. */ }
 }
 
-async function call(method, url, body) {
+export async function call(method, url, body) {
   const res = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${loadToken() || ''}` },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Something went wrong. Try again.');
+  if (!res.ok) throw Object.assign(new Error(data.error || 'Something went wrong. Try again.'), { status: res.status });
   return data;
 }
 

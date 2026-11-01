@@ -7,6 +7,9 @@ const STORES = ['folders', 'meta', 'docs'];
 let dbPromise = null;
 let memory = null;
 
+// Set by sync.js, which sends changes on to the account.
+export const changes = { doc() {}, removed() {}, folders() {} };
+
 function openDb(name) {
   return new Promise((resolve, reject) => {
     const open = indexedDB.open(name, 1);
@@ -93,10 +96,31 @@ export const listFolders = () => all('folders');
 export const listProjects = () => all('meta');
 export const getDoc = (id) => one('docs', id);
 export const getMeta = (id) => one('meta', id);
-export const saveFolder = (folder) => write([['folders', folder]]);
-export const saveDoc = (doc, thumb = null) => write([['docs', doc], ['meta', metaOf(doc, thumb)]]);
+export async function saveFolder(folder) {
+  await write([['folders', folder]]);
+  changes.folders();
+}
+
+export async function saveDoc(doc, thumb = null) {
+  doc.updatedAt = Date.now();
+  await write([['docs', doc], ['meta', metaOf(doc, thumb)]]);
+  changes.doc(doc.id);
+}
+
 export const saveThumb = (doc, thumb) => write([['meta', metaOf(doc, thumb)]]);
-export const deleteProject = (id) => write([['docs', id, 'delete'], ['meta', id, 'delete']]);
+
+export async function deleteProject(id) {
+  await removeLocal(id);
+  changes.removed(id);
+}
+
+// These two apply what came from the account, so nothing is sent back.
+export const keepRemote = (doc, thumb) => write([['docs', doc], ['meta', metaOf(doc, thumb)]]);
+export const removeLocal = (id) => write([['docs', id, 'delete'], ['meta', id, 'delete']]);
+export const replaceFolders = async (folders) => {
+  const old = await listFolders();
+  await write([...old.map((f) => ['folders', f.id, 'delete']), ...folders.map((f) => ['folders', f])]);
+};
 
 // Projects in a deleted folder move out to "All projects". They are not deleted.
 export async function deleteFolder(id) {
@@ -107,4 +131,5 @@ export async function deleteFolder(id) {
     await saveDoc(doc, meta.thumb);
   }));
   await write([['folders', id, 'delete']]);
+  changes.folders();
 }

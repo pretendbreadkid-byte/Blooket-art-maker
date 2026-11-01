@@ -19,6 +19,7 @@ import { exportDialog } from './export.js';
 import { checkOverflow, resetFitPrompt } from './fit.js';
 import { imageToShape } from './trace.js';
 import { session } from './session.js';
+import { syncArt, flushUploads, syncStatus } from './sync.js';
 import { pathD, pathBounds } from './model.js';
 import { $, icon, menu, toast, dialog, readDataUrl } from './ui.js';
 
@@ -74,7 +75,9 @@ export async function closeEditor() {
   stageWatcher?.disconnect();
   const saving = persist();
   S.doc = null;
+  syncStatus.changed = () => {};
   await saving;
+  flushUploads();
 }
 
 // Keeps the art in view when a panel opens or the window resizes. If you have
@@ -249,7 +252,11 @@ function wireTop(root) {
 }
 
 export async function openEditor(root, id) {
-  const doc = await getDoc(id);
+  let doc = await getDoc(id);
+  if (!doc && session.user) {
+    await syncArt();
+    doc = await getDoc(id);
+  }
   if (!doc) { location.hash = '#/'; toast('That project could not be found.', 'warn'); return; }
   const meta = await getMeta(id);
   openDoc(doc, meta?.thumb || null);
@@ -269,8 +276,9 @@ export async function openEditor(root, id) {
     const el = $('#saved');
     if (!el) return;
     if (session.guest) el.textContent = 'Guest: not saved';
-    else el.textContent = state === 'saving' ? 'Saving…' : 'Saved';
+    else el.textContent = state === 'saving' ? 'Saving…' : syncStatus.label();
   };
+  syncStatus.changed = () => hooks.saved('saved');
 
   mountStage(root);
   wireTop(root);

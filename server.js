@@ -3,7 +3,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt as scryptCallback } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -21,6 +21,8 @@ const PORT = Number(process.env.PORT || 5180);
 const HOST = process.env.HOST || '127.0.0.1';
 
 const MAX_BODY = 2 * 1024 * 1024;
+const MAX_ART_BODY = 16 * 1024 * 1024;
+const MAX_PROJECTS = 300;
 const MAX_NODES = 20000;
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const ACCOUNT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -70,7 +72,8 @@ function saveShapes() {
 
 const scrypt = promisify(scryptCallback);
 const sessionSecret = createHash('sha256').update(`blook-session:${adminPassword}`).digest();
-const usersUrl = `${GITHUB_API}/repos/${DATA_REPO}/contents/users.json`;
+const contentsUrl = `${GITHUB_API}/repos/${DATA_REPO}/contents`;
+const usersUrl = `${contentsUrl}/users.json`;
 const githubHeaders = {
   Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'blook-maker',
 };
@@ -186,6 +189,143 @@ async function login(req, res) {
   return send(res, 200, { token: issueToken(key), user: publicUser(user) });
 }
 
+/* ---------- Art saved to accounts ---------- */
+
+// Each account has an index of its projects, and one file per project. They
+// live beside accounts: on this disk, or in the private GitHub repo.
+const artIndexes = new Map();
+const artQueues = new Map();
+const artShas = new Map();
+
+async function readArtFile(path) {
+  if (!USERS_IN_GITHUB) {
+    const file = join(DATA, path);
+    return existsSync(file) ? readFile(file, 'utf8') : null;
+  }
+  const res = await fetch(`${contentsUrl}/${path}`, { headers: { ...githubHeaders, Accept: 'application/vnd.github.raw+json' } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Could not read art from GitHub (${res.status}).`);
+  return res.text();
+}
+
+async function artSha(path) {
+  if (artShas.has(path)) return artShas.get(path);
+  const res = await fetch(`${contentsUrl}/${path}`, { headers: githubHeaders });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Could not read art from GitHub (${res.status}).`);
+  return (await res.json()).sha;
+}
+
+async function writeArtFile(path, text, retry = true) {
+  if (!USERS_IN_GITHUB) {
+    const file = join(DATA, path);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(`${file}.tmp`, text);
+    renameSync(`${file}.tmp`, file);
+    return;
+  }
+  const sha = await artSha(path);
+  const res = await fetch(`${contentsUrl}/${path}`, {
+    method: 'PUT',
+    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Save art', content: Buffer.from(text).toString('base64'), ...(sha ? { sha } : {}) }),
+  });
+  if ((res.status === 409 || res.status === 422) && retry) {
+    artShas.delete(path);
+    return writeArtFile(path, text, false);
+  }
+  if (!res.ok) throw new Error(`Could not save art to GitHub (${res.status}).`);
+  artShas.set(path, (await res.json()).content.sha);
+}
+
+async function removeArtFile(path) {
+  if (!USERS_IN_GITHUB) { await rm(join(DATA, path), { force: true }); return; }
+  const sha = await artSha(path);
+  if (!sha) return;
+  const res = await fetch(`${contentsUrl}/${path}`, {
+    method: 'DELETE',
+    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Delete art', sha }),
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`Could not delete art from GitHub (${res.status}).`);
+  artShas.delete(path);
+}
+
+async function artIndex(key) {
+  if (!artIndexes.has(key)) {
+    const text = await readArtFile(`art/${key}/index.json`);
+    artIndexes.set(key, text ? JSON.parse(text) : { projects: {}, deleted: {}, folders: [], foldersAt: 0 });
+  }
+  return artIndexes.get(key);
+}
+
+// One change at a time for each account, so two saves never trip over each other.
+function inArtQueue(key, job) {
+  const next = (artQueues.get(key) || Promise.resolve()).catch(() => {}).then(job);
+  artQueues.set(key, next);
+  return next;
+}
+
+async function saveProject(res, key, id, { doc, thumb }) {
+  if (doc?.id !== id || !Array.isArray(doc.layers) || !Number.isFinite(doc.updatedAt)) {
+    return send(res, 400, { error: 'That project is not valid.' });
+  }
+  return inArtQueue(key, async () => {
+    const index = await artIndex(key);
+    if (index.deleted[id] >= doc.updatedAt) return send(res, 410, { error: 'That project was deleted.' });
+    if (index.projects[id] > doc.updatedAt) return send(res, 409, { error: 'A newer copy is already saved.' });
+    if (index.projects[id] === doc.updatedAt) return send(res, 200, { ok: true });
+    if (!index.projects[id] && Object.keys(index.projects).length >= MAX_PROJECTS) {
+      return send(res, 413, { error: `An account can keep up to ${MAX_PROJECTS} projects.` });
+    }
+    await writeArtFile(`art/${key}/${id}.json`, JSON.stringify({ doc, thumb: typeof thumb === 'string' ? thumb : null }));
+    index.projects[id] = doc.updatedAt;
+    delete index.deleted[id];
+    await writeArtFile(`art/${key}/index.json`, JSON.stringify(index));
+    return send(res, 200, { ok: true });
+  });
+}
+
+async function art(req, res, path) {
+  const user = currentUser(req);
+  if (!user) return send(res, 401, { error: 'Please log in.' });
+  const key = user.name.toLowerCase();
+
+  if (path === '/api/art' && req.method === 'GET') return send(res, 200, await artIndex(key));
+  if (path === '/api/art/folders' && req.method === 'PUT') {
+    const { folders, at } = await readJson(req);
+    if (!Array.isArray(folders) || !Number.isFinite(at)) return send(res, 400, { error: 'Bad request.' });
+    const clean = folders.map((f) => ({ id: String(f.id).slice(0, 40), name: cleanText(f.name, 80, 'Folder') }));
+    return inArtQueue(key, async () => {
+      const index = await artIndex(key);
+      if (at > index.foldersAt) {
+        Object.assign(index, { folders: clean, foldersAt: at });
+        await writeArtFile(`art/${key}/index.json`, JSON.stringify(index));
+      }
+      return send(res, 200, { ok: true });
+    });
+  }
+
+  const id = path.match(/^\/api\/art\/([\w-]{1,60})$/)?.[1];
+  if (!id) return send(res, 404, { error: 'Not found.' });
+  if (req.method === 'GET') {
+    const text = await inArtQueue(key, () => readArtFile(`art/${key}/${id}.json`));
+    return text ? send(res, 200, JSON.parse(text)) : send(res, 404, { error: 'That project could not be found.' });
+  }
+  if (req.method === 'PUT') return saveProject(res, key, id, await readJson(req, MAX_ART_BODY));
+  if (req.method === 'DELETE') {
+    return inArtQueue(key, async () => {
+      const index = await artIndex(key);
+      await removeArtFile(`art/${key}/${id}.json`);
+      delete index.projects[id];
+      index.deleted[id] = Date.now();
+      await writeArtFile(`art/${key}/index.json`, JSON.stringify(index));
+      return send(res, 200, { ok: true });
+    });
+  }
+  return send(res, 404, { error: 'Not found.' });
+}
+
 const digest = (s) => createHash('sha256').update(String(s)).digest();
 const passwordMatches = (attempt) => timingSafeEqual(digest(attempt), digest(adminPassword));
 
@@ -206,13 +346,13 @@ function send(res, status, body, type = 'application/json') {
   res.end(type === 'application/json' ? JSON.stringify(body) : body);
 }
 
-function readJson(req) {
+function readJson(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) { reject(Object.assign(new Error('That shape is too big.'), { status: 413 })); req.destroy(); return; }
+      if (size > limit) { reject(Object.assign(new Error('That is too big to save.'), { status: 413 })); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => {
@@ -273,6 +413,7 @@ async function api(req, res, path) {
   if (req.method === 'GET' && path === '/api/blooks') return send(res, 200, { blooks: listBlooks() });
   if (req.method === 'POST' && path === '/api/auth/register') return register(req, res);
   if (req.method === 'POST' && path === '/api/auth/login') return login(req, res);
+  if (path === '/api/art' || path.startsWith('/api/art/')) return art(req, res, path);
   if (path === '/api/me' || path === '/api/plus/join') {
     const user = currentUser(req);
     if (!user) return send(res, 401, { error: 'Please log in.' });

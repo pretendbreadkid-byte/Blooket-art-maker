@@ -89,7 +89,7 @@ Admins can upload SVGs or pictures, and tick **Plus** to make a shape Plus only.
 ## Where things are saved
 
 - **Accounts** are saved in `data/users.json`, or in a private GitHub repo if you set that up (below). Passwords are stored as salted hashes.
-- **Projects and folders** are saved in the browser you use, per account. Logging in on another device will not show them yet. VS Code's preview and Chrome each keep their own copy.
+- **Projects and folders** are saved to your account, so they follow you to any device. Saves reach the server a few seconds after you stop drawing. The browser keeps a copy too, so nothing is lost if the connection drops, and it catches up next time. If the same project changes on two devices, the newest save wins.
 - **Guests** are kept in memory only, so their art is gone when the page closes.
 - **Catalog shapes** are saved in `catalog/shapes.json`, shared with everyone.
 
@@ -101,7 +101,7 @@ Set `HOST=0.0.0.0`, `PORT` and `ADMIN_PASSWORD`, and put it behind HTTPS. By def
 
 ### Keeping accounts on Render
 
-Render's free disk is wiped on every restart, so accounts need somewhere else to live. No database is needed:
+Render's free disk is wiped on every restart, so accounts and art need somewhere else to live. No database is needed:
 
 1. Make a new **private** GitHub repo, for example `blook-maker-data`.
 2. Make a [fine-grained token](https://github.com/settings/personal-access-tokens/new) for only that repo, with **Contents: Read and write**.

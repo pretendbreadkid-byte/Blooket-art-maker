@@ -35,7 +35,7 @@ export const S = {
 // Set by the editor: redraw the canvas, the handles, the panels, the save badge.
 export const hooks = { stage() {}, overlay() {}, panels() {}, timeline() {}, saved() {}, committed() {} };
 
-let undoStack = [], redoStack = [], lastSnapshot = null, saveTimer = null;
+let undoStack = [], redoStack = [], lastSnapshot = null, saveTimer = null, savedSnapshot = null;
 
 export function openDoc(doc, thumb) {
   S.doc = doc;
@@ -50,6 +50,7 @@ export function openDoc(doc, thumb) {
   undoStack = [];
   redoStack = [];
   lastSnapshot = JSON.stringify(doc);
+  savedSnapshot = lastSnapshot;
 }
 
 export const refresh = () => { hooks.stage(); hooks.overlay(); hooks.panels(); hooks.timeline(); };
@@ -98,15 +99,19 @@ export async function persist() {
   clearTimeout(saveTimer);
   const doc = S.doc;
   if (!doc) return;
-  doc.updatedAt = Date.now();
-  await saveDoc(clone(doc), S.thumb);
+  // Just looking at a project must not make it the newest copy on the account.
+  const snapshot = JSON.stringify(doc);
+  if (snapshot === savedSnapshot) { hooks.saved('saved'); return; }
+  savedSnapshot = snapshot;
+  const copy = clone(doc);
+  await saveDoc(copy, S.thumb);
   if (S.doc === doc) hooks.saved('saved');
   const scale = 320 / Math.max(doc.width, doc.height);
   try {
     const svg = exportSVG(doc, { frame: 0 });
     const canvas = await rasterize(svg, Math.max(1, Math.round(doc.width * scale)), Math.max(1, Math.round(doc.height * scale)));
     S.thumb = canvas.toDataURL('image/png');
-    await saveThumb(doc, S.thumb);
+    await saveThumb(copy, S.thumb);
   } catch {
     // A missing thumbnail is not worth interrupting anyone for.
   }
