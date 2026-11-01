@@ -1,4 +1,4 @@
-// Blook Maker server. Serves the app and the shared shapes catalog.
+// Blooksmith server. Serves the app and the shared shapes catalog.
 // No dependencies: run it with `node server.js`.
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt as scryptCallback } from 'node:crypto';
@@ -43,7 +43,7 @@ const USERS_FILE = join(DATA, 'users.json');
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json',
-  '.png': 'image/png', '.ico': 'image/x-icon',
+  '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
 };
 
 mkdirSync(DATA, { recursive: true });
@@ -499,7 +499,7 @@ server.on('error', (err) => {
   throw err;
 });
 
-console.log('Starting Blook Maker...');
+console.log('Starting Blooksmith...');
 await loadUsers();
 if (TEMPORARY_DISK && !USERS_IN_GITHUB) {
   console.log('Warning: accounts will be lost on restart. Set GITHUB_TOKEN and DATA_REPO to keep them.');

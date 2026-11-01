@@ -35,7 +35,7 @@ function baseObject(type, props) {
 
 export const newPath = (props) => baseObject('path', { subpaths: [], fillRule: 'nonzero', ...props });
 export const newText = (props) => baseObject('text', {
-  name: 'Text', text: '', fontFamily: 'Arial', fontSize: 48, bold: false, italic: false, ...props,
+  name: 'Text', text: '', fontFamily: 'Arial', fontSize: 48, bold: false, italic: false, shadow: false, ...props,
 });
 export const newImage = (props) => baseObject('image', { name: 'Image', href: '', w: 100, h: 100, ...props });
 
@@ -171,18 +171,19 @@ export function fitSubpaths(subpaths, width, height) {
   return mapSubpaths(subpaths, (x, y) => ({ x: (x - cx) * sx, y: (y - cy) * sy }));
 }
 
-// Inserts a node halfway along the segment that starts at index i.
-export function splitSegment(sp, i) {
+// Inserts a node part way along the segment that starts at index i. The curve
+// keeps its exact shape.
+export function splitSegment(sp, i, t = 0.5) {
   const N = sp.nodes.length;
   const j = (i + 1) % N;
   const a = sp.nodes[i], b = sp.nodes[j];
   if (!hasOut(a) && !hasIn(b)) {
-    sp.nodes.splice(i + 1, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    sp.nodes.splice(i + 1, 0, { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
     return i + 1;
   }
   const p1x = a.x + (a.ox || 0), p1y = a.y + (a.oy || 0);
   const p2x = b.x + (b.ix || 0), p2y = b.y + (b.iy || 0);
-  const m = (p, q) => (p + q) / 2;
+  const m = (p, q) => lerp(p, q, t);
   const q0x = m(a.x, p1x), q0y = m(a.y, p1y), q1x = m(p1x, p2x), q1y = m(p1y, p2y), q2x = m(p2x, b.x), q2y = m(p2y, b.y);
   const r0x = m(q0x, q1x), r0y = m(q0y, q1y), r1x = m(q1x, q2x), r1y = m(q1y, q2y);
   const x = m(r0x, r1x), y = m(r0y, r1y);
@@ -231,13 +232,58 @@ const allPoses = (obj) => [obj, ...obj.keys.map((k) => k.pose)];
 
 // Adds a point on every keyframe, at the same place on the outline, so the
 // animation can warp to and from it. Returns the new point's index.
-export function addVertex(obj, s, i) {
+export function addVertex(obj, s, i, t = 0.5) {
   let index = i + 1;
   for (const pose of allPoses(obj)) {
     const sp = pose.subpaths?.[s];
-    if (sp && i < sp.nodes.length) index = splitSegment(sp, i);
+    if (sp && i < sp.nodes.length) index = splitSegment(sp, i, t);
   }
   return index;
+}
+
+function segmentPoint(a, b, t) {
+  if (!hasOut(a) && !hasIn(b)) return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+  return {
+    x: cubicAt(a.x, a.x + (a.ox || 0), b.x + (b.ix || 0), b.x, t),
+    y: cubicAt(a.y, a.y + (a.oy || 0), b.y + (b.iy || 0), b.y, t),
+  };
+}
+
+const SPOT_SAMPLES = 24;
+const SPOT_REFINES = 14;
+
+// Finds the closest place on an outline to (x, y). `place` turns the outline's
+// own coordinates into the ones (x, y) is measured in.
+export function nearestOnOutline(subpaths, x, y, place = (px, py) => ({ x: px, y: py })) {
+  let best = null;
+  const dist = (a, b, t) => {
+    const q = segmentPoint(a, b, t);
+    const p = place(q.x, q.y);
+    return { ...p, dist: Math.hypot(p.x - x, p.y - y) };
+  };
+  subpaths.forEach((sp, s) => {
+    const N = sp.nodes.length;
+    const last = sp.closed ? N : N - 1;
+    for (let i = 0; i < last; i++) {
+      const a = sp.nodes[i], b = sp.nodes[(i + 1) % N];
+      let bestT = 0, bestDist = Infinity;
+      for (let k = 0; k <= SPOT_SAMPLES; k++) {
+        const d = dist(a, b, k / SPOT_SAMPLES).dist;
+        if (d < bestDist) { bestDist = d; bestT = k / SPOT_SAMPLES; }
+      }
+      let step = 1 / SPOT_SAMPLES;
+      for (let k = 0; k < SPOT_REFINES; k++) {
+        step /= 2;
+        for (const t of [bestT - step, bestT + step]) {
+          if (t < 0 || t > 1) continue;
+          const d = dist(a, b, t).dist;
+          if (d < bestDist) { bestDist = d; bestT = t; }
+        }
+      }
+      if (!best || bestDist < best.dist) best = { s, i, t: bestT, ...dist(a, b, bestT) };
+    }
+  });
+  return best;
 }
 
 export function removeVertices(obj, keys) {
@@ -563,6 +609,14 @@ export function worldToLocal(o, x, y) {
 export function worldVectorToLocal(o, dx, dy) {
   const a = -rad(o.rotation), c = Math.cos(a), s = Math.sin(a);
   return { x: (dx * c - dy * s) / (o.scaleX || 1), y: (dx * s + dy * c) / (o.scaleY || 1) };
+}
+
+// Mirrors a posed object across a line through (cx, cy). The turn reverses too,
+// so a tilted piece stays in the right place in a flipped group.
+export function flipped(o, axis, cx, cy) {
+  return axis === 'x'
+    ? { x: 2 * cx - o.x, rotation: -o.rotation, scaleX: -o.scaleX }
+    : { y: 2 * cy - o.y, rotation: -o.rotation, scaleY: -o.scaleY };
 }
 
 /* ---------- SVG path parsing ---------- */

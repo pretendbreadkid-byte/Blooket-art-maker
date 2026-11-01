@@ -200,6 +200,7 @@ a { color: inherit; text-decoration: none; }
 .font-row select { height: 34px; padding: 0 6px; border: 1.5px solid var(--line); border-radius: 9px; background: #fff; }
 .tog { width: 34px; height: 34px; border: 1.5px solid var(--line); border-radius: 9px; }
 .tog.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.tog-shadow b { font-family: "Titan One", sans-serif; font-weight: 400; text-shadow: 1px 2px 0 rgba(0, 0, 0, .3); }
 
 .ed-tools { grid-area: tools; display: flex; flex-direction: column; gap: 3px; padding: 8px; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; scrollbar-width: none; }
 .ed-tools button { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 3px; border-radius: 11px; font-size: 10.5px; font-weight: 600; color: var(--muted); }
@@ -256,6 +257,7 @@ body[data-tool=hand] #wk, body.panning #wk { cursor: grab; }
 .vertex.on { fill: var(--brand); stroke: #fff; }
 .v-mid { fill: var(--sun); stroke: var(--brand); stroke-width: 1.5; cursor: copy; opacity: .85; }
 .v-mid:hover { opacity: 1; }
+.v-add { fill: var(--sun); stroke: var(--ink); stroke-width: 2; pointer-events: none !important; }
 .v-stem { stroke: var(--brand); stroke-width: 1.5; pointer-events: none !important; }
 .v-handle { fill: var(--sun); stroke: var(--brand); stroke-width: 2; cursor: pointer; }
 .line-draft { fill: none; stroke: var(--brand); stroke-width: 2.5; pointer-events: none !important; }
@@ -266,7 +268,7 @@ body[data-tool=hand] #wk, body.panning #wk { cursor: grab; }
 .text-edit { position: absolute; transform: translate(-50%, -50%); padding: 2px 6px; line-height: 1.2; text-align: center; background: rgba(255, 255, 255, .92); border: 2px solid var(--brand); border-radius: 6px; outline: 0; resize: none; overflow: hidden; white-space: pre; max-width: 95%; }
 
 .ed-right { grid-area: right; background: var(--panel); border-left: 1px solid var(--line); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-#inspector { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+#inspector { flex: 1 1 0; min-height: 0; overflow-x: hidden; overflow-y: auto; }
 #layers { flex: 0 0 var(--layers-h, auto); max-height: var(--layers-max, 50%); overflow-y: auto; border-bottom: 0; }
 .panel { padding: 14px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
 .panel h3 { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -282,7 +284,8 @@ body[data-tool=hand] #wk, body.panning #wk { cursor: grab; }
 .num-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .num { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .num input { width: 100%; height: 32px; padding: 0 8px; border: 1.5px solid var(--line); border-radius: 8px; color: var(--ink); font-weight: 500; font-size: 13px; background: #fff; }
-.btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.btn-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+.btn-grid .chip { min-width: 0; padding: 0 4px; gap: 4px; font-size: 12px; }
 
 .layer-list { display: flex; flex-direction: column; gap: 4px; }
 .layer { border-radius: 11px; border: 2px solid transparent; background: var(--panel-2); padding: 3px; }
@@ -378,6 +381,7 @@ body[data-tool=hand] #wk, body.panning #wk { cursor: grab; }
 }
 
 /* Breadlet theme */
+@font-face { font-family: "Titan One"; src: url(/fonts/TitanOne.woff2) format("woff2"); font-display: swap; }
 h1, h2, .brand b, .opt-title b, .btn.big, .plus-price, .fit-ask b, .format b, .login-tabs button { font-family: "Titan One", Nunito, "Segoe UI", sans-serif; font-weight: 400; letter-spacing: .01em; }
 h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .btn { border-radius: 8px; }
@@ -392,7 +396,7 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .dlg-back { background: rgba(58, 24, 70, .62); }
 .field input, .field select { background: #fff; }
 .brand { color: #fff; }
-.brand b { font-size: 21px; text-shadow: 0 2px 0 rgba(0, 0, 0, .22); }
+.brand b { font-size: 23px; text-shadow: 2px 3px 0 rgba(0, 0, 0, .24); }
 .brand-mark { display: block; background: none; border: 0; border-radius: 0; width: 42px; height: 42px; }
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .25)); }
 
@@ -403,7 +407,7 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .home-side .ib { color: #ecd4f1; }
 .home-side .ib:hover { background: rgba(255, 255, 255, .2); color: #fff; }
 .home-main { background: var(--pattern), linear-gradient(150deg, #20c9d6, #2f9cec); }
-.home-main h1 { color: #fff; font-size: 44px; text-shadow: 0 4px 0 rgba(0, 0, 0, .2); }
+.home-main h1 { color: #fff; font-size: 44px; text-shadow: 3px 4px 0 rgba(0, 0, 0, .22); }
 .guest-note { max-width: 760px; }
 .empty h2 { color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .2); }
 .empty .muted { color: #fff; font-weight: 700; }
@@ -482,7 +486,7 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .welcome { position: relative; overflow: hidden; display: grid; grid-template-columns: 1.2fr 1fr; min-height: 100%; background: var(--pattern), linear-gradient(150deg, #20c9d6, #2f9cec); }
 .welcome-art { position: relative; z-index: 1; display: grid; place-items: center; padding: 24px; }
 .welcome-copy { text-align: center; color: #fff; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.welcome-copy h1 { font-size: clamp(42px, 7vw, 82px); color: #fff; line-height: 1; text-shadow: 0 6px 0 rgba(0, 0, 0, .2); }
+.welcome-copy h1 { font-size: clamp(42px, 7vw, 82px); color: #fff; line-height: 1; text-shadow: 5px 6px 0 rgba(0, 0, 0, .24); }
 .welcome-copy p { font-size: 21px; font-weight: 800; text-shadow: 0 2px 0 rgba(0, 0, 0, .18); }
 .brand-mark.big { width: 104px; height: 104px; }
 .floaters { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
@@ -527,7 +531,8 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .format.on { border-color: var(--ink); background: var(--sun); }
 .format.on small { color: var(--ink); }
 .format .plus-badge { position: absolute; top: 7px; right: 7px; }
-.pic-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pic-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.pic-art .ico { width: 56px; height: 56px; }
 .pic-choice { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px; border: 2px solid var(--line); border-radius: 14px; text-align: center; }
 .pic-choice:not(:disabled):hover { border-color: var(--ink); background: var(--panel-2); }
 .pic-choice small { color: var(--muted); }

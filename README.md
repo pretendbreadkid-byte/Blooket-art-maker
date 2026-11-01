@@ -1,4 +1,4 @@
-# Blook Maker
+# Blooksmith
 
 A friendly art and animation website. Draw with vector tools, organise projects in folders, and export SVG.
 
@@ -8,7 +8,7 @@ There is nothing to install except [Node.js](https://nodejs.org) 20 or newer.
 
 Press **Ctrl+Shift+B**. This starts the server and opens the app in a tab inside VS Code.
 
-You can also run **Terminal > Run Task > Blook Maker: Preview in VS Code**.
+You can also run **Terminal > Run Task > Blooksmith: Preview in VS Code**.
 
 ## Run it in a normal browser
 
@@ -24,11 +24,12 @@ Then open <http://localhost:5180>.
 | --- | --- | --- |
 | Select | V | Move, resize and turn things. Ctrl+click picks more. Double-click to edit text or points. Right-click for more. |
 | Lasso | L | Draw a loop around things to pick them. In the drop-down under Select. |
-| Vertices | A | Drag points, click a dot to add one, choose Pointed or Rounded, round the corners. In the drop-down under Select. |
+| Vertices | A | Drag points, click anywhere on a line to add a point there, choose Pointed or Rounded, round the corners. In the drop-down under Select. |
 | Line | N | Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect. |
 | Pencil | P | Thin, sharp lines. |
 | Marker | M | Thick, see-through lines. |
 | Shapes | S | Basic shapes, Plus shapes and the uploaded catalog. Click one, or drag it onto the canvas. |
+| Flip | Shift+H, Shift+V | Pick something, then flip it sideways or up and down. Things picked together flip as one. |
 | Bucket | B | Fill a shape, a closed drawing, or the background, with a colour or a gradient. |
 | Text | T | Click and type. |
 | Eraser | E | Rubs out art on the current layer. |
@@ -62,7 +63,9 @@ To add more, copy SVGs into that folder, or run this to tidy the names and skip 
 node scripts/import-blooks.js "C:\path\to\folder"
 ```
 
-**Add picture** can keep a picture as it is, or turn it into a shape with its real outline. Pictures with a plain or see-through background work best.
+**Add picture** can keep a picture as it is, turn it into a shape with its real outline, or take it apart. SVGs come apart along their real pieces, and other pictures split by colour. A picture already on the canvas can be taken apart too: right-click it and choose **Take apart**. Pictures with a plain or see-through background work best.
+
+The text tool has the **Blooket** font, which is Titan One, with an optional chunky shadow. Titan One is by Rodrigo Fuenzalida under the SIL Open Font License, included in `public/fonts/OFL.txt`.
 
 If art goes past the edge, the app offers to expand the canvas: **Perfect fit** wraps tightly around your lines and **Basic fit** just makes it big enough.
 

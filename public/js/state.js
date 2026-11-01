@@ -22,13 +22,14 @@ export const S = {
   sizes: { pencil: 4, marker: 22, eraser: 28, line: 6 },
   shape: BASIC_SHAPES[0],
   catalog: [],
-  font: { fontFamily: 'Arial', fontSize: 64, bold: false, italic: false },
+  font: { fontFamily: 'Arial', fontSize: 64, bold: false, italic: false, shadow: false },
   playing: false,
   onion: false,
   clipboard: null,
   thumb: null,
   line: null,
   lineSnap: null,
+  vertexSpot: null,
   blooksOpen: false,
 };
 

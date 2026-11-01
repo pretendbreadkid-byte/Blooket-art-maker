@@ -3,7 +3,7 @@
 import { S, hooks, commit, select } from './state.js';
 import { newLayer } from './model.js';
 import { esc } from './render.js';
-import { fetchBlooks, readPieces, piecesToObjects } from './pieces.js';
+import { fetchBlooks, readPieces, piecesToObjects, piecesFromPicture } from './pieces.js';
 import { startPanelDrag } from './panels.js';
 import { $, html, icon, toast } from './ui.js';
 
@@ -18,21 +18,33 @@ export function toggleBlooks() {
   hooks.panels();
 }
 
-// Blooks go on their own layer, so they are easy to find and hide.
+// Pieces go on their own layer, so they are easy to find and hide.
+function placePieces(parsed, name, x, y) {
+  const size = Math.min(S.doc.width, S.doc.height) * DROPPED_BLOOK_SIZE;
+  const objects = piecesToObjects(parsed, name, x, y, size);
+  const layer = newLayer(name);
+  const page = S.doc.pages?.[S.frame]?.id;
+  if (page) objects.forEach((o) => { o.page = page; });
+  layer.objects.push(...objects);
+  S.doc.layers.push(layer);
+  select(objects.map((o) => o.id));
+  commit();
+  return objects;
+}
+
+// An uploaded picture, already apart, so each piece can be clicked straight away.
+export async function addPictureApart(href, name, x = S.doc.width / 2, y = S.doc.height / 2) {
+  const objects = placePieces(await piecesFromPicture(href), name, x, y);
+  objects.forEach((o) => { delete o.group; });
+  commit();
+  toast(`${name} came apart into ${objects.length} pieces.`, 'ok');
+}
+
 export async function addBlook(blook, x, y) {
   try {
     const res = await fetch(`/blooks/${encodeURIComponent(blook.file)}`);
     if (!res.ok) throw new Error('missing');
-    const parsed = readPieces(await res.text());
-    const size = Math.min(S.doc.width, S.doc.height) * DROPPED_BLOOK_SIZE;
-    const objects = piecesToObjects(parsed, blook.name, x, y, size);
-    const layer = newLayer(blook.name);
-    const page = S.doc.pages?.[S.frame]?.id;
-    if (page) objects.forEach((o) => { o.page = page; });
-    layer.objects.push(...objects);
-    S.doc.layers.push(layer);
-    select(objects.map((o) => o.id));
-    commit();
+    placePieces(readPieces(await res.text()), blook.name, x, y);
     toast(`${blook.name} added. Right-click it and choose Take apart.`, 'ok');
   } catch {
     toast(`${blook.name} could not be opened.`, 'warn');

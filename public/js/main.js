@@ -5,6 +5,7 @@ import { renderLogin } from './login.js';
 import { openEditor, closeEditor } from './editor.js';
 import { session, restoreSession } from './session.js';
 import { S } from './state.js';
+import { embedFont } from './render.js';
 import { $ } from './ui.js';
 
 const root = $('#app');
@@ -21,6 +22,16 @@ async function route() {
   else await renderHome(root, route);
 }
 
+// Exports carry the Blooket font inside them, so it looks right anywhere.
+async function loadFonts() {
+  try {
+    const bytes = new Uint8Array(await (await fetch('/fonts/TitanOne.woff2')).arrayBuffer());
+    embedFont('Titan One', btoa(String.fromCharCode(...bytes)));
+    await document.fonts.load('64px "Titan One"');
+  } catch { /* Text falls back to a plain font. */ }
+}
+
 addEventListener('hashchange', route);
+await loadFonts();
 await restoreSession();
 route();

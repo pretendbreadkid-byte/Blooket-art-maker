@@ -6,10 +6,10 @@ import { getDoc, getMeta } from './store.js';
 import { mountStage, drawStage, drawOverlay, fitView, placeFrame, zoomAt } from './stage.js';
 import {
   TOOLS, PICK_TOOLS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
-  copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor,
+  copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor, flipSelection,
   finishLine, cancelLine, lineInProgress,
 } from './tools.js';
-import { toggleBlooks } from './blooks.js';
+import { toggleBlooks, addPictureApart } from './blooks.js';
 import { mountSplits } from './splits.js';
 import { drawPanels } from './panels.js';
 import { drawTimeline, setFrame, stop, togglePlay } from './timeline.js';
@@ -147,6 +147,7 @@ function onKey(e) {
     nudge(arrow[0] * step, arrow[1] * step);
     return;
   }
+  if (e.shiftKey && (key === 'h' || key === 'v') && selected().length) { flipSelection(key === 'h' ? 'x' : 'y'); return; }
   const tool = Object.keys(TOOLS).find((t) => TOOLS[t].key.toLowerCase() === key);
   if (tool) setTool(tool);
 }
@@ -168,6 +169,7 @@ async function pictureChoice(file, href) {
           <span class="pic-art">${traced.error ? '' : `<svg viewBox="-56 -56 112 112"><path d="${pathD(traced.subpaths)}" fill="currentColor" fill-rule="evenodd"/></svg>`}</span>
           <b>Turn it into a shape</b><small>${traced.error ? esc(traced.error) : 'Same outline, ready to colour and warp'}</small>
         </button>
+        <button class="pic-choice" data-c="apart"><span class="pic-art">${icon('apart')}</span><b>Take it apart</b><small>Every piece moves on its own</small></button>
       </div>
       <div class="dlg-actions"><button class="btn ghost" data-no>Cancel</button></div>`;
     $('[data-no]', box).onclick = () => close();
@@ -196,6 +198,7 @@ async function importFiles(files, x, y) {
       const choice = await pictureChoice(file, href);
       if (choice?.kind === 'picture') await addImageFromUrl(href, x, y);
       if (choice?.kind === 'shape') addTracedShape(file, choice.traced, x, y);
+      if (choice?.kind === 'apart') await addPictureApart(href, file.name.replace(/\.[^.]+$/, ''), x, y);
     } catch {
       toast(`${file.name} could not be opened.`, 'warn');
     }
@@ -261,7 +264,7 @@ export async function openEditor(root, id) {
   const meta = await getMeta(id);
   openDoc(doc, meta?.thumb || null);
   root.innerHTML = TEMPLATE;
-  document.title = `${doc.name} · Blook Maker`;
+  document.title = `${doc.name} · Blooksmith`;
   S.tool = 'select';
   document.body.dataset.tool = 'select';
 

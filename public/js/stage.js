@@ -179,7 +179,8 @@ function verticesOverlay() {
       }
     });
   });
-  return mids + handles + nodes;
+  const spot = S.vertexSpot ? `<circle class="v-add" cx="${S.vertexSpot.x * z}" cy="${S.vertexSpot.y * z}" r="7"/>` : '';
+  return mids + handles + nodes + spot;
 }
 
 export function drawOverlay() {

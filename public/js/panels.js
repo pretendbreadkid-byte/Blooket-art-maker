@@ -8,14 +8,15 @@ import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, PICK_TOOLS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  hasGroup, takeApart,
+  canTakeApart, takeApart,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { isPlus } from './session.js';
 import { plusDialog } from './plus.js';
 import { $, $$, html, icon, swatch, colorPopover, toast, confirmBox } from './ui.js';
 
-const FONTS = ['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'];
+export const BLOOKET_FONT = 'Titan One';
+const FONTS = [[BLOOKET_FONT, 'Blooket (Titan One)'], ...['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'].map((f) => [f, f])];
 
 function slider({ label, value, min, max, step = 1, unit = '', onInput, onChange }) {
   const row = html(`<label class="slider"><span>${esc(label)}</span>
@@ -88,6 +89,12 @@ function optionBar() {
   const ink = (key, label) => colorButton({ label, value: S[key], onInput: (c) => { S[key] = c; } });
   const paint = (label) => colorButton({ label, value: S.fillGradient || S.fill, allowGradient: true, onInput: setToolFill });
 
+  if (tool === 'select' && selected().length) {
+    add(
+      button('Flip sideways', 'flipx', () => flipSelection('x')),
+      button('Flip up and down', 'flipy', () => flipSelection('y')),
+    );
+  }
   if (tool === 'pencil' || tool === 'marker' || tool === 'eraser' || tool === 'line') {
     if (tool !== 'eraser') add(ink('stroke', 'Colour'));
     add(slider({ label: 'Size', value: S.sizes[tool], min: 1, max: 200, unit: 'px', onInput: (v) => { S.sizes[tool] = v; } }));
@@ -131,12 +138,19 @@ function selectedNodeKind(item) {
 
 function fontControls(target, apply) {
   const box = html(`<div class="font-row">
-    <select aria-label="Font">${FONTS.map((f) => `<option ${f === target.fontFamily ? 'selected' : ''}>${f}</option>`).join('')}</select>
+    <select aria-label="Font">${FONTS.map(([f, label]) => `<option value="${f}" ${f === target.fontFamily ? 'selected' : ''}>${label}</option>`).join('')}</select>
     <button class="tog ${target.bold ? 'on' : ''}" title="Bold"><b>B</b></button>
     <button class="tog ${target.italic ? 'on' : ''}" title="Italic"><i>I</i></button>
+    <button class="tog tog-shadow ${target.shadow ? 'on' : ''}" title="Chunky shadow, like the Blooket logo"><b>S</b></button>
   </div>`);
-  const [bold, italic] = $$('.tog', box);
-  $('select', box).onchange = (e) => apply({ fontFamily: e.target.value });
+  const [bold, italic, shadow] = $$('.tog', box);
+  // Picking the Blooket font brings its shadow with it, like the real logo.
+  $('select', box).onchange = (e) => {
+    const blooket = e.target.value === BLOOKET_FONT;
+    if (blooket) shadow.classList.add('on');
+    apply({ fontFamily: e.target.value, ...(blooket ? { shadow: true } : {}) });
+  };
+  shadow.onclick = () => { shadow.classList.toggle('on'); apply({ shadow: shadow.classList.contains('on') }); };
   bold.onclick = () => { bold.classList.toggle('on'); apply({ bold: bold.classList.contains('on') }); };
   italic.onclick = () => { italic.classList.toggle('on'); apply({ italic: italic.classList.contains('on') }); };
   const wrap = html('<div class="font-wrap"></div>');
@@ -192,7 +206,7 @@ function selectedPanel() {
 
   const single = items.length === 1 ? items[0] : null;
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
-  if (hasGroup()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
+  if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
 
   if (single) {
     const s = posed(single);
@@ -260,8 +274,8 @@ function selectedPanel() {
   order.append(
     button('To front', 'up', () => reorderSelection('front')),
     button('To back', 'down', () => reorderSelection('back')),
-    button('Flip across', 'flipx', () => flipSelection('x')),
-    button('Flip down', 'flipy', () => flipSelection('y')),
+    button('Flip sideways', 'flipx', () => flipSelection('x')),
+    button('Flip up/down', 'flipy', () => flipSelection('y')),
     button('Copy', 'copy', duplicateSelection),
     button('Delete', 'trash', deleteSelection, 'danger'),
   );

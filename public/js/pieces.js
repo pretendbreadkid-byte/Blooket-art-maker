@@ -3,6 +3,7 @@
 // The file's markup is only read, never added to the page.
 import { parseD, mapSubpaths, pathBounds, newPath, newImage, newText, uid } from './model.js';
 import { elementD, GEOMETRY } from './shapes.js';
+import { imageToPieces } from './trace.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -305,6 +306,12 @@ function gradientFor(paint, cx, cy) {
     from: stops[0][1], to: stops[stops.length - 1][1], angle: 90,
     raw: { type: raw.type, coords: raw.coords, stops, matrix, spread: raw.spread },
   };
+}
+
+// SVGs come apart along their real pieces. Other pictures split by colour.
+export async function piecesFromPicture(href) {
+  if (!href.startsWith('data:image/svg')) return imageToPieces(href);
+  return readPieces(await (await fetch(href)).text());
 }
 
 export async function fetchBlooks() {

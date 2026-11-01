@@ -8,12 +8,13 @@ import {
 } from './stage.js';
 import {
   newPath, newText, newImage, clone, pathD, fitSubpaths, strokeToSubpath, addVertex, removeVertices, smoothNode, sharpenNode,
-  pointInPolygon, localToWorld, pathBounds, mapSubpaths, chainSubpaths, objectsOn, isPages, regroup, uid,
+  pointInPolygon, localToWorld, pathBounds, mapSubpaths, chainSubpaths, objectsOn, isPages, regroup, uid, nearestOnOutline, flipped,
   worldToLocal, worldVectorToLocal, rad, simplify,
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
 import { exportSVG, rasterize, esc } from './render.js';
 import { loopSelection } from './timeline.js';
+import { piecesFromPicture, piecesToObjects } from './pieces.js';
 import { toast, menu, $ } from './ui.js';
 
 let drag = null;
@@ -28,7 +29,7 @@ export const setSpaceHeld = (v) => { spaceHeld = v; };
 export const TOOLS = {
   select: { label: 'Select', key: 'V', hint: 'Click to pick something and drag to move it. Ctrl+click picks more. Right-click for more options.' },
   lasso: { label: 'Lasso', key: 'L', hint: 'Draw a loop around things to pick them. Hold Ctrl to add to what you have picked.' },
-  vertices: { label: 'Vertices', key: 'A', hint: 'Click a shape, then drag its points. Click a yellow dot to add a point. Choose Pointed or Rounded up top.' },
+  vertices: { label: 'Vertices', key: 'A', hint: 'Click a shape, then drag its points. Click anywhere on its line to add a point there. Choose Pointed or Rounded up top.' },
   line: { label: 'Line', key: 'N', hint: 'Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect.' },
   pencil: { label: 'Pencil', key: 'P', hint: 'Drag to draw a thin, sharp line.' },
   marker: { label: 'Marker', key: 'M', hint: 'Drag to draw a thick, see-through line.' },
@@ -189,19 +190,43 @@ function finishMarquee() {
 
 /* ---------- Vertices ---------- */
 
+const OUTLINE_REACH_PX = 9;
+
+// The place on the picked shape's line that is under the pointer, if any.
+function outlineSpot(p) {
+  const [item] = selected();
+  if (item?.type !== 'path' || selected().length !== 1) return null;
+  const o = posed(item);
+  const spot = nearestOnOutline(o.subpaths, p.x, p.y, (x, y) => localToWorld(o, x, y));
+  return spot && spot.dist * S.zoom <= OUTLINE_REACH_PX ? spot : null;
+}
+
+function insertPoint(item, s, i, t, p) {
+  const index = addVertex(item, s, i, t);
+  lastPress = { time: 0, x: 0, y: 0 };
+  S.vertexSpot = null;
+  S.nodeSel = new Set([`${s}:${index}`]);
+  if (S.nodeKind === 'rounded') setNodesKind('rounded');
+  refresh();
+  const fresh = posed(item);
+  drag = { type: 'nodes', item, pose: fresh, base: clone(fresh.subpaths), p0: p, moved: true };
+}
+
+function vertexHover(e, p) {
+  const onHandle = e.target.dataset?.n || e.target.dataset?.hd || e.target.dataset?.mid;
+  const spot = onHandle ? null : outlineSpot(p);
+  if (!spot && !S.vertexSpot) return;
+  S.vertexSpot = spot;
+  drawOverlay();
+}
+
 function verticesDown(e, p) {
   const t = e.target.dataset || {};
   const [item] = selected();
   if (item && (t.n || t.hd || t.mid)) {
     if (t.mid) {
       const [sp, i] = t.mid.split(':').map(Number);
-      const index = addVertex(item, sp, i);
-      lastPress = { time: 0, x: 0, y: 0 };
-      S.nodeSel = new Set([`${sp}:${index}`]);
-      if (S.nodeKind === 'rounded') setNodesKind('rounded');
-      refresh();
-      const fresh = posed(item);
-      drag = { type: 'nodes', item, pose: fresh, base: clone(fresh.subpaths), p0: p, moved: true };
+      insertPoint(item, sp, i, 0.5, p);
       return;
     }
     const s = posed(item);
@@ -220,6 +245,8 @@ function verticesDown(e, p) {
     drag = { type: 'nodes', item, pose: s, base: subpaths, p0: p, moved: false };
     return;
   }
+  const spot = outlineSpot(p);
+  if (spot) { insertPoint(item, spot.s, spot.i, spot.t, p); return; }
   const hit = pickable(e);
   if (!hit) { S.nodeSel.clear(); if (!S.sel.size) return; select([]); refresh(); return; }
   if (hit.type !== 'path') { toast('Only shapes and drawings have points to edit.'); return; }
@@ -416,12 +443,49 @@ export function connectSelection() {
 
 /* ---------- Groups ---------- */
 
-export const hasGroup = () => selected().some((o) => o.group);
+export const canTakeApart = () => selected().some((o) => o.group || o.type === 'image');
 
-export function takeApart() {
-  selected().forEach((o) => { delete o.group; });
+// Swaps a picture for its pieces, in the same place and at the same size and turn.
+async function pictureToObjects(image) {
+  const s = posed(image);
+  const parsed = await piecesFromPicture(image.href);
+  const objects = piecesToObjects(parsed, image.name, s.x, s.y, Math.max(parsed.box.width, parsed.box.height));
+  const stretchX = (s.w * s.scaleX) / parsed.box.width, stretchY = (s.h * s.scaleY) / parsed.box.height;
+  const a = rad(s.rotation), c = Math.cos(a), r = Math.sin(a);
+  for (const o of objects) {
+    const dx = (o.x - s.x) * stretchX, dy = (o.y - s.y) * stretchY;
+    Object.assign(o, {
+      x: s.x + dx * c - dy * r, y: s.y + dx * r + dy * c,
+      rotation: o.rotation + s.rotation, scaleX: o.scaleX * stretchX, scaleY: o.scaleY * stretchY, opacity: o.opacity * s.opacity,
+    });
+    delete o.group;
+    if (image.page) o.page = image.page;
+  }
+  return objects;
+}
+
+export async function takeApart() {
+  const items = selected();
+  const made = [];
+  document.body.classList.add('busy');
+  for (const o of items) {
+    delete o.group;
+    if (o.type !== 'image') continue;
+    try {
+      const pieces = await pictureToObjects(o);
+      const layer = layerOf(o.id);
+      layer.objects.splice(layer.objects.indexOf(o), 1, ...pieces);
+      S.sel.delete(o.id);
+      made.push(...pieces);
+    } catch (error) {
+      toast(error.message || 'That picture could not be taken apart.', 'warn');
+    }
+  }
+  document.body.classList.remove('busy');
   commit();
-  toast('Taken apart! Click any piece to move it.', 'ok');
+  if (made.length) select(made.map((o) => o.id));
+  refresh();
+  toast(made.length ? `Taken apart into ${made.length} pieces!` : 'Taken apart! Click any piece to move it.', 'ok');
 }
 
 export function groupSelection() {
@@ -712,7 +776,7 @@ function contextMenu(e) {
   const lines = openLines().length;
   const keyed = S.doc.animated && !isPages(S.doc);
   const special = [
-    ...(hasGroup() ? [{ label: 'Take apart', icon: 'apart', onClick: takeApart }] : []),
+    ...(canTakeApart() ? [{ label: 'Take apart', icon: 'apart', onClick: takeApart }] : []),
     ...(S.sel.size > 1 && !selected().every((o) => o.group && o.group === selected()[0].group) ? [{ label: 'Group together', icon: 'link', onClick: groupSelection }] : []),
     ...(lines ? [{ label: lines > 1 ? 'Connect lines' : 'Close the line', icon: 'link', onClick: connectSelection }] : []),
     ...(keyed ? [{ label: 'Loop back to beginning', icon: 'loop', onClick: loopSelection }] : []),
@@ -726,8 +790,8 @@ function contextMenu(e) {
     null,
     { label: 'Bring to front', icon: 'up', onClick: () => reorderSelection('front') },
     { label: 'Send to back', icon: 'down', onClick: () => reorderSelection('back') },
-    { label: 'Flip across', icon: 'flipx', onClick: () => flipSelection('x') },
-    { label: 'Flip down', icon: 'flipy', onClick: () => flipSelection('y') },
+    { label: 'Flip sideways', icon: 'flipx', onClick: () => flipSelection('x') },
+    { label: 'Flip up and down', icon: 'flipy', onClick: () => flipSelection('y') },
     null,
     { label: 'Delete', icon: 'trash', danger: true, onClick: deleteSelection },
   ]);
@@ -739,6 +803,7 @@ export function setTool(name) {
   closeTextEditor();
   if (S.line) finishLine();
   S.lineSnap = null;
+  S.vertexSpot = null;
   S.tool = name;
   S.nodeSel.clear();
   if (name === 'shapes') S.blooksOpen = false;
@@ -811,11 +876,13 @@ export function reorderSelection(direction) {
   commit();
 }
 
+// Everything picked flips as one, around the middle of the whole selection.
 export function flipSelection(axis) {
-  for (const o of selected()) {
-    const s = posed(o);
-    edit(o, axis === 'x' ? { scaleX: -s.scaleX } : { scaleY: -s.scaleY });
-  }
+  const items = selected();
+  const box = worldBox(items.map((o) => o.id));
+  if (!box) return;
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  for (const o of items) edit(o, flipped(posed(o), axis, cx, cy));
   commit();
 }
 
@@ -887,6 +954,7 @@ function down(e) {
 function move(e) {
   moveBrushRing(e);
   if (S.tool === 'line') lineHover(toDoc(e));
+  if (S.tool === 'vertices' && !drag) vertexHover(e, toDoc(e));
   if (!drag) return;
   if (drag.type === 'pan') {
     S.panX = drag.panX + e.clientX - drag.x;

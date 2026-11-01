@@ -45,6 +45,20 @@ function gradientMarkup(g, id, animate = () => '') {
 
 const fillOf = (o, gradientId) => (o.gradient ? `url(#${gradientId})` : esc(o.fill));
 
+// Fonts stored in the file, because a saved or exported SVG cannot reach the
+// app's own font files.
+const embeddedFonts = new Map();
+export const embedFont = (family, base64) => embeddedFonts.set(family, base64);
+
+function fontStyle(doc) {
+  const used = new Set(doc.layers.flatMap((l) => l.objects).filter((o) => o.type === 'text').map((o) => o.fontFamily));
+  const faces = [...embeddedFonts].filter(([family]) => used.has(family))
+    .map(([family, base64]) => `@font-face{font-family:"${family}";src:url(data:font/woff2;base64,${base64}) format("woff2")}`);
+  return faces.length ? `<style>${faces.join('')}</style>` : '';
+}
+
+const SHADOW_X = 0.045, SHADOW_Y = 0.06;
+
 function body(o, inner = '', gradientId = '') {
   if (o.type === 'path') {
     return `<path d="${pathD(o.subpaths)}" fill="${fillOf(o, gradientId)}" fill-rule="${o.fillRule}" ${strokeAttrs(o)}${lookAttrs(o)}>${inner}</path>`;
@@ -55,7 +69,9 @@ function body(o, inner = '', gradientId = '') {
     const top = (-(lines.length - 1) * height) / 2;
     const spans = lines.map((line, i) => `<tspan x="0" y="${round(top + i * height)}">${esc(line) || ' '}</tspan>`).join('');
     const style = `font-family="${esc(o.fontFamily)}" font-size="${round(o.fontSize)}" font-weight="${o.bold ? 700 : 400}" font-style="${o.italic ? 'italic' : 'normal'}"`;
-    return `<text ${style} text-anchor="middle" dominant-baseline="central" xml:space="preserve" fill="${fillOf(o, gradientId)}" ${strokeAttrs(o)}>${inner}${spans}</text>`;
+    const text = `${style} text-anchor="middle" dominant-baseline="central" xml:space="preserve"`;
+    const shadow = o.shadow ? `<text ${text} fill="#000000" fill-opacity="0.24" transform="translate(${round(o.fontSize * SHADOW_X)} ${round(o.fontSize * SHADOW_Y)})">${spans}</text>` : '';
+    return `${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${strokeAttrs(o)}>${inner}${spans}</text>`;
   }
   return `<image href="${esc(o.href)}" x="${round(-o.w / 2)}" y="${round(-o.h / 2)}" width="${round(o.w)}" height="${round(o.h)}" preserveAspectRatio="none"/>`;
 }
@@ -172,11 +188,11 @@ export function frameClip(doc, prefix = 'frame') {
 // box: draws just the art, with no background or canvas shape, over that area.
 export function exportSVG(doc, { frame = 0, animate = false, box = null } = {}) {
   if (box) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${box.width}" height="${box.height}" viewBox="${box.x} ${box.y} ${box.width} ${box.height}">${layersMarkup(doc, frame)}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${box.width}" height="${box.height}" viewBox="${box.x} ${box.y} ${box.width} ${box.height}">${fontStyle(doc)}${layersMarkup(doc, frame)}</svg>`;
   }
   const clip = frameClip(doc);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${doc.width}" height="${doc.height}" viewBox="0 0 ${doc.width} ${doc.height}">`
-    + `<title>${esc(doc.name)}</title>${clip.defs}<g${clip.attr}>${backgroundMarkup(doc)}${layersMarkup(doc, frame, { animate })}</g></svg>`;
+    + `<title>${esc(doc.name)}</title>${fontStyle(doc)}${clip.defs}<g${clip.attr}>${backgroundMarkup(doc)}${layersMarkup(doc, frame, { animate })}</g></svg>`;
 }
 
 export const svgDataUrl = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

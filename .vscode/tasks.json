@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Blook Maker: Start server",
+      "label": "Blooksmith: Start server",
       "type": "shell",
       "command": "node server.js",
       "isBackground": true,
@@ -12,16 +12,16 @@
         "pattern": { "regexp": "^never-matches$" },
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "^Starting Blook Maker",
+          "beginsPattern": "^Starting Blooksmith",
           "endsPattern": "^Running at"
         }
       }
     },
     {
-      "label": "Blook Maker: Preview in VS Code",
+      "label": "Blooksmith: Preview in VS Code",
       "type": "shell",
       "command": "echo Preview open ${input:openPreview}",
-      "dependsOn": "Blook Maker: Start server",
+      "dependsOn": "Blooksmith: Start server",
       "group": { "kind": "build", "isDefault": true },
       "presentation": { "reveal": "never" },
       "problemMatcher": []

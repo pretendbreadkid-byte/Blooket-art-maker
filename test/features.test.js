@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {
   newDoc, newPath, parseD, pathD, sample, setProps, addVertex, removeVertices, matchSubpaths, pointInPolygon,
   loopBack, chainSubpaths, addPage, removePage, movePage, loopPagesBack, onFrame, regroup,
+  nearestOnOutline, flipped, newText, localToWorld,
 } from '../public/js/model.js';
-import { exportSVG } from '../public/js/render.js';
-import { subjectMask, cleanMask, maskToShape, loopToSubpath } from '../public/js/trace.js';
+import { exportSVG, embedFont } from '../public/js/render.js';
+import { subjectMask, cleanMask, maskToShape, loopToSubpath, pixelsToPieces } from '../public/js/trace.js';
 import { jpegToPdf } from '../public/js/export.js';
 
 const square = () => parseD('M0 0H100V100H0Z');
@@ -350,4 +351,64 @@ test('copies of a group get a group of their own', () => {
   assert.notEqual(a.group, 'x');
   assert.notEqual(c.group, a.group);
   assert.equal(d.group, undefined);
+});
+
+test('a point can go anywhere on a straight line', () => {
+  const { obj } = animated();
+  const index = addVertex(obj, 0, 0, 0.25);
+  assert.deepEqual([obj.subpaths[0].nodes[index].x, obj.subpaths[0].nodes[index].y], [25, 0]);
+});
+
+test('a point added anywhere on a curve leaves the curve the same shape', () => {
+  const curve = () => [{ closed: false, nodes: [{ x: 0, y: 0, ox: 30, oy: 60 }, { x: 100, y: 0, ix: -30, iy: 60 }] }];
+  const before = newPath({ subpaths: curve() });
+  const after = newPath({ subpaths: curve() });
+  addVertex(after, 0, 0, 0.3);
+  const spot = nearestOnOutline(before.subpaths, 30, 40);
+  const again = nearestOnOutline(after.subpaths, spot.x, spot.y);
+  assert.ok(again.dist < 0.01);
+});
+
+test('the closest spot on an outline is found exactly', () => {
+  const spot = nearestOnOutline(square(), 37, -5);
+  assert.deepEqual([spot.s, spot.i], [0, 0]);
+  assert.ok(Math.abs(spot.t - 0.37) < 0.001);
+  assert.ok(Math.abs(spot.dist - 5) < 0.001);
+});
+
+test('flipping a group mirrors every piece around the same middle', () => {
+  const o = newPath({ x: 80, y: 30, rotation: 20, scaleX: 2, scaleY: 1, subpaths: square() });
+  const point = localToWorld(o, 10, 5);
+  const sideways = { ...o, ...flipped(o, 'x', 50, 50) };
+  const a = localToWorld(sideways, 10, 5);
+  assert.ok(Math.abs(a.x - (100 - point.x)) < 1e-9 && Math.abs(a.y - point.y) < 1e-9);
+  const down = { ...o, ...flipped(o, 'y', 50, 50) };
+  const b = localToWorld(down, 10, 5);
+  assert.ok(Math.abs(b.x - point.x) < 1e-9 && Math.abs(b.y - (100 - point.y)) < 1e-9);
+});
+
+test('text can have a chunky shadow and the font travels with the export', () => {
+  embedFont('Titan One', 'QUJD');
+  const doc = newDoc({ name: 't', width: 100, height: 100 });
+  assert.ok(!exportSVG(doc).includes('@font-face'));
+  doc.layers[0].objects.push(newText({ text: 'Hi', fontFamily: 'Titan One', fill: '#ffffff', shadow: true }));
+  const svg = exportSVG(doc);
+  assert.match(svg, /@font-face\{font-family:"Titan One";src:url\(data:font\/woff2;base64,QUJD\)/);
+  assert.equal(svg.match(/<text/g).length, 2);
+  assert.match(svg, /fill-opacity="0.24"/);
+});
+
+test('a picture splits into one piece per patch of colour', () => {
+  const size = 60;
+  const rgba = new Uint8ClampedArray(size * size * 4);
+  const paint = (x, y) => {
+    if (x >= 10 && x < 30 && y >= 10 && y < 50) return [230, 30, 30, 255];
+    if (x >= 30 && x < 50 && y >= 10 && y < 50) return [30, 30, 230, 255];
+    return [0, 0, 0, 0];
+  };
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) rgba.set(paint(x, y), (y * size + x) * 4);
+  const { pieces, box } = pixelsToPieces(rgba, size, size);
+  assert.equal(pieces.length, 2);
+  assert.equal(box.width, size);
+  assert.deepEqual(pieces.map((p) => p.fill.color).sort(), ['#1e1ee6', '#e61e1e']);
 });
