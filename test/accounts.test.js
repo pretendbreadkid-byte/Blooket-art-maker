@@ -48,6 +48,7 @@ before(async () => {
         res.writeHead(200).end(raw ? Buffer.from(remoteFile.content, 'base64') : JSON.stringify(remoteFile));
         return;
       }
+      if (req.url.includes('/readonly/')) { res.writeHead(404).end('{}'); return; }
       const body = JSON.parse(Buffer.concat(chunks).toString());
       if (remoteFile && body.sha !== remoteFile.sha) { res.writeHead(409).end('{}'); return; }
       if (req.method === 'DELETE') { remoteFiles.delete(req.url); res.writeHead(200).end('{}'); return; }
@@ -259,5 +260,11 @@ test('uploaded pictures stay on the account and only that account', async () => 
   await stopServer(server);
   server = await startServer();
   assert.deepEqual((await (await ask(mine, 'GET', '')).json()).uploads, []);
+  await stopServer(server);
+});
+
+test('a storage repo that cannot be written to does not stop the site starting', async () => {
+  const server = await startServer({ GITHUB_TOKEN: 'fake-token', DATA_REPO: 'me/readonly/tree/main', GITHUB_API: `http://127.0.0.1:${GITHUB_PORT}`, ADMIN_PASSWORD: '', DATA_DIR: mkdtempSync(join(tmpdir(), 'blook-disk-')) });
+  assert.equal((await fetch(`${BASE}/api/blooks`)).status, 200);
   await stopServer(server);
 });

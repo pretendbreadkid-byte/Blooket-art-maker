@@ -561,12 +561,17 @@ server.on('error', (err) => {
 // every restart. Logins are signed with a secret kept beside the accounts instead.
 async function loadSessionSecret() {
   if (process.env.ADMIN_PASSWORD) return;
-  let secret = await readArtFile('session-secret.txt');
-  if (!secret) {
-    secret = randomBytes(32).toString('hex');
-    await writeArtFile('session-secret.txt', secret);
+  try {
+    let secret = await readArtFile('session-secret.txt');
+    if (!secret) {
+      secret = randomBytes(32).toString('hex');
+      await writeArtFile('session-secret.txt', secret);
+    }
+    sessionSecret = createHash('sha256').update(`blook-session:${secret}`).digest();
+  } catch (error) {
+    // Better a site that signs people out on restart than one that won't start.
+    console.log(`Warning: logins will not last through a restart. ${error.message}`);
   }
-  sessionSecret = createHash('sha256').update(`blook-session:${secret}`).digest();
 }
 
 console.log('Starting Blooksmith...');
