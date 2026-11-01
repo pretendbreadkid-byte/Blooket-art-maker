@@ -6,7 +6,7 @@ import { getDoc, getMeta } from './store.js';
 import { mountStage, drawStage, drawOverlay, fitView, placeFrame, zoomAt } from './stage.js';
 import {
   TOOLS, PICK_TOOLS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
-  copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor, flipSelection,
+  copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor, flipSelection, reorderSelection,
   finishLine, cancelLine, lineInProgress,
 } from './tools.js';
 import { toggleBlooks, addPictureApart } from './blooks.js';
@@ -55,8 +55,6 @@ const TEMPLATE = `
   </main>
   <aside class="ed-right">
     <section id="inspector" class="panel"></section>
-    <div class="split split-layers" data-split="layers" title="Drag to resize. Double-click to reset."></div>
-    <section id="layers" class="panel"></section>
   </aside>
   <section class="ed-time" id="timeline" hidden></section>
   <div class="split split-side" data-split="side" title="Drag to resize. Double-click to reset."></div>
@@ -109,6 +107,8 @@ function onKey(e) {
     const actions = {
       z: () => (e.shiftKey ? redo() : undo()), y: redo, d: duplicateSelection,
       c: copySelection, v: pasteClipboard, s: persist,
+      ']': () => reorderSelection('up'), '[': () => reorderSelection('down'),
+      '}': () => reorderSelection('front'), '{': () => reorderSelection('back'),
       x: () => { copySelection(); deleteSelection(); },
       a: () => {
         S.sel = new Set(visibleObjects().map((o) => o.id));

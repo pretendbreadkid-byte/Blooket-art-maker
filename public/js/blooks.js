@@ -1,7 +1,6 @@
 // The Blook assets panel: search the pictures, then drag one onto the canvas.
 // Each one arrives as separate pieces held together until you take it apart.
-import { S, hooks, commit, select } from './state.js';
-import { newLayer } from './model.js';
+import { S, hooks, commit, select, addObject, activeLayer } from './state.js';
 import { esc } from './render.js';
 import { fetchBlooks, readPieces, piecesToObjects, piecesFromPicture } from './pieces.js';
 import { startPanelDrag } from './panels.js';
@@ -18,15 +17,10 @@ export function toggleBlooks() {
   hooks.panels();
 }
 
-// Pieces go on their own layer, so they are easy to find and hide.
 function placePieces(parsed, name, x, y) {
   const size = Math.min(S.doc.width, S.doc.height) * DROPPED_BLOOK_SIZE;
   const objects = piecesToObjects(parsed, name, x, y, size);
-  const layer = newLayer(name);
-  const page = S.doc.pages?.[S.frame]?.id;
-  if (page) objects.forEach((o) => { o.page = page; });
-  layer.objects.push(...objects);
-  S.doc.layers.push(layer);
+  objects.forEach((o) => addObject(activeLayer(), o));
   select(objects.map((o) => o.id));
   commit();
   return objects;

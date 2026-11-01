@@ -11,6 +11,21 @@ export const round = (v, places = 2) => +(+v).toFixed(places);
 export const rad = (deg) => (deg * Math.PI) / 180;
 export const lerp = (a, b, t) => a + (b - a) * t;
 
+// All art lives in one stack, in drawing order. Each object is its own step in it.
+export function flattenLayers(doc) {
+  const [first, ...others] = doc.layers;
+  if (!others.length && first.opacity === 1 && first.visible && !first.locked) return;
+  for (const layer of doc.layers) {
+    if (layer.opacity === 1) continue;
+    for (const o of layer.objects) {
+      o.opacity *= layer.opacity;
+      for (const k of o.keys) if (k.pose.opacity !== undefined) k.pose.opacity *= layer.opacity;
+    }
+  }
+  doc.layers = [{ ...first, opacity: 1, visible: true, locked: false, objects: doc.layers.flatMap((l) => l.objects) }];
+  doc.activeLayerId = first.id;
+}
+
 export const newLayer = (name) => ({ id: uid('l'), name, visible: true, locked: false, opacity: 1, objects: [] });
 
 // animMode: 'keys' slides between keyframes, 'pages' flips between whole drawings.

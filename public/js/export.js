@@ -93,7 +93,7 @@ export function exportDialog() {
     const paint = () => {
       const animated = doc.animated && format === 'svg';
       box.innerHTML = `<h2>Export</h2>
-        <p class="muted">${doc.width} × ${doc.height} px. Hidden layers are left out.</p>
+        <p class="muted">${doc.width} × ${doc.height} px.</p>
         <label class="field"><span>File name</span><input id="xname" value="${esc($('#xname', box)?.value ?? safe)}"></label>
         <div class="format-grid">${FORMATS.map((f) => `<button class="format ${f.id === format ? 'on' : ''}" data-f="${f.id}">
           <b>${f.label}</b><small>${f.note}</small>${f.plus && !isPlus() ? '<span class="plus-badge">PLUS</span>' : ''}

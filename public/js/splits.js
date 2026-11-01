@@ -7,7 +7,6 @@ const SPLITS = {
   right: { css: '--right-w', min: 200, max: () => innerWidth * 0.5, read: (e, box) => box.right - e.clientX },
   side: { css: '--side-w', min: 170, max: () => innerWidth * 0.5, read: (e, box) => e.clientX - box.left },
   time: { css: '--time-h', min: 70, max: () => innerHeight * 0.65, read: (e, box) => box.bottom - e.clientY },
-  layers: { css: '--layers-h', min: 70, max: () => innerHeight * 0.7, read: (e, box) => box.bottom - e.clientY },
 };
 
 function loadSizes() {
@@ -23,9 +22,6 @@ function apply(ed, sizes) {
     if (sizes[name]) ed.style.setProperty(split.css, `${sizes[name]}px`);
     else ed.style.removeProperty(split.css);
   }
-  // Once you size the Layers panel yourself, it can be taller than half the column.
-  if (sizes.layers) ed.style.setProperty('--layers-max', 'none');
-  else ed.style.removeProperty('--layers-max');
 }
 
 // The timeline's height is its body, so the bars above it are taken away.
@@ -33,7 +29,6 @@ const sizeTarget = (name, handle, ed) => ({
   right: () => ed.getBoundingClientRect(),
   side: () => ($$('.ed-catalog:not([hidden])', ed)[0] || ed).getBoundingClientRect(),
   time: () => ed.getBoundingClientRect(),
-  layers: () => handle.parentElement.getBoundingClientRect(),
 }[name]());
 
 function timelineExtra(ed) {

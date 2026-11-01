@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   newDoc, newPath, parseD, pathD, sample, setProps, addVertex, removeVertices, matchSubpaths, pointInPolygon,
   loopBack, chainSubpaths, addPage, removePage, movePage, loopPagesBack, onFrame, regroup,
-  nearestOnOutline, flipped, newText, localToWorld,
+  nearestOnOutline, flipped, newText, localToWorld, flattenLayers, newLayer,
 } from '../public/js/model.js';
 import { exportSVG, embedFont } from '../public/js/render.js';
 import { subjectMask, cleanMask, maskToShape, loopToSubpath, pixelsToPieces } from '../public/js/trace.js';
@@ -411,4 +411,30 @@ test('a picture splits into one piece per patch of colour', () => {
   assert.equal(pieces.length, 2);
   assert.equal(box.width, size);
   assert.deepEqual(pieces.map((p) => p.fill.color).sort(), ['#1e1ee6', '#e61e1e']);
+});
+
+test('old projects flatten into one stack in the same order', () => {
+  const doc = newDoc({ name: 't', animated: true });
+  const top = newLayer('Top');
+  top.opacity = 0.5;
+  top.locked = true;
+  doc.layers.push(top);
+  const under = newPath({ name: 'under', subpaths: square() });
+  const over = newPath({ name: 'over', subpaths: square(), opacity: 0.8, keys: [{ f: 0, pose: { opacity: 0.8 } }] });
+  doc.layers[0].objects.push(under);
+  top.objects.push(over);
+  flattenLayers(doc);
+  assert.equal(doc.layers.length, 1);
+  assert.deepEqual(doc.layers[0].objects.map((o) => o.name), ['under', 'over']);
+  assert.equal(doc.activeLayerId, doc.layers[0].id);
+  assert.ok(Math.abs(over.opacity - 0.4) < 1e-9);
+  assert.ok(Math.abs(over.keys[0].pose.opacity - 0.4) < 1e-9);
+  assert.equal(doc.layers[0].locked, false);
+});
+
+test('flattening a project that is already flat changes nothing', () => {
+  const doc = newDoc({ name: 't' });
+  const before = JSON.stringify(doc);
+  flattenLayers(doc);
+  assert.equal(JSON.stringify(doc), before);
 });

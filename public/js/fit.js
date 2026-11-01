@@ -21,7 +21,6 @@ export const resetFitPrompt = () => { dismissed = null; };
 function artBounds({ skipAnimated }) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const layer of S.doc.layers) {
-    if (!layer.visible) continue;
     for (const raw of layer.objects) {
       if (skipAnimated && raw.keys.length) continue;
       const b = localBox(raw.id);

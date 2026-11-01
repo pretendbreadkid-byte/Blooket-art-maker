@@ -36,26 +36,17 @@ export const TOOLS = {
   shapes: { label: 'Shapes', key: 'S', hint: 'Pick a shape, then drag on the canvas to draw it. Or just click to drop one in.' },
   bucket: { label: 'Bucket', key: 'B', hint: 'Click inside a shape or a closed drawing to fill it with colour.' },
   text: { label: 'Text', key: 'T', hint: 'Click on the canvas and start typing.' },
-  eraser: { label: 'Eraser', key: 'E', hint: 'Drag over your art to rub it out. It only erases the layer you have picked.' },
+  eraser: { label: 'Eraser', key: 'E', hint: 'Drag over your art to rub it out.' },
   hand: { label: 'Move view', key: 'H', hint: 'Drag to move around. You can also hold Space anywhere, and scroll to zoom.' },
 };
 
-const DRAWING = new Set(['line', 'pencil', 'marker', 'shapes', 'text', 'eraser', 'bucket']);
 // These share one button with a drop-down next to it.
 export const PICK_TOOLS = ['select', 'vertices', 'hand', 'lasso'];
-
-export function layerReady() {
-  const layer = activeLayer();
-  if (layer.locked) { toast('This layer is locked. Unlock it in the Layers panel.', 'warn'); return false; }
-  if (!layer.visible) { toast('This layer is hidden. Show it in the Layers panel.', 'warn'); return false; }
-  return true;
-}
 
 const pickable = (e) => {
   const el = e.target.closest?.('[data-id]');
   if (!el) return null;
-  const o = findObj(el.dataset.id);
-  return o && !layerOf(o.id).locked ? o : null;
+  return findObj(el.dataset.id) || null;
 };
 
 /* ---------- Select ---------- */
@@ -177,12 +168,9 @@ function finishMarquee() {
   const r = drag.rect;
   if (!r) return;
   const ids = [];
-  for (const layer of S.doc.layers) {
-    if (!layer.visible || layer.locked) continue;
-    for (const o of layer.objects) {
-      const b = worldBox([o.id]);
-      if (b && b.x < r.x + r.w && b.x + b.width > r.x && b.y < r.y + r.h && b.y + b.height > r.y) ids.push(o.id);
-    }
+  for (const o of visibleObjects()) {
+    const b = worldBox([o.id]);
+    if (b && b.x < r.x + r.w && b.x + b.width > r.x && b.y < r.y + r.h && b.y + b.height > r.y) ids.push(o.id);
   }
   select(ids);
   refresh();
@@ -319,7 +307,7 @@ export function deleteNodes() {
 const SNAP_PX = 12;
 const LINE_DRAG_PX = 6;
 
-// Open lines on this layer that a new line could connect to.
+// Open lines that a new line could connect to.
 const looseLines = () => objectsOn(S.doc, activeLayer(), S.frame)
   .filter((o) => o.type === 'path' && !o.erase.length && o.subpaths.some((sp) => !sp.closed));
 
@@ -553,7 +541,7 @@ function eraseAlong(pts) {
     }
     touched++;
   }
-  if (!touched) toast('Nothing to erase here on this layer.');
+  if (!touched) toast('Nothing to erase here.');
   commit();
 }
 
@@ -582,7 +570,6 @@ function previewShape(p, e) {
 }
 
 export function addShape(shape, cx, cy, w, h) {
-  if (!layerReady()) return;
   const subpaths = fitSubpaths(shape.subpaths, w, h);
   const obj = newPath({ name: shape.name, x: cx, y: cy, subpaths, fillRule: shape.fillRule, ...shapePaint(shape) });
   addObject(activeLayer(), obj);
@@ -615,18 +602,13 @@ async function bucket(e, p) {
     commit();
     return;
   }
-  for (const layer of [...doc.layers].reverse()) {
-    if (!layer.visible || layer.locked) continue;
-    for (const o of [...layer.objects].reverse()) {
-      if (o.type !== 'path' || o.fill !== 'none' || !o.subpaths.every((sp) => sp.closed)) continue;
-      const el = objectEl(o.id)?.querySelector('path');
-      if (el && isInFill(el, e)) { edit(o, fillPatch()); commit(); return; }
-    }
+  for (const o of [...visibleObjects()].reverse()) {
+    if (o.type !== 'path' || o.fill !== 'none' || !o.subpaths.every((sp) => sp.closed)) continue;
+    const el = objectEl(o.id)?.querySelector('path');
+    if (el && isInFill(el, e)) { edit(o, fillPatch()); commit(); return; }
   }
   if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return;
-  const blank = !doc.layers.some((l) => l.visible && l.objects.length);
-  if (blank) { fillBackground(); return; }
-  if (!layerReady()) return;
+  if (!visibleObjects().length) { fillBackground(); return; }
 
   const scale = Math.min(2, 1800 / Math.max(doc.width, doc.height));
   const w = Math.round(doc.width * scale), h = Math.round(doc.height * scale);
@@ -715,7 +697,6 @@ export function closeTextEditor() {
 function textDown(e, p) {
   const hit = pickable(e);
   if (hit?.type === 'text') { select([hit.id]); refresh(); openTextEditor(hit); return; }
-  if (!layerReady()) return;
   const obj = newText({ x: p.x, y: p.y, ...fillPatch(), ...S.font });
   addObject(activeLayer(), obj);
   select([obj.id]);
@@ -788,8 +769,10 @@ function contextMenu(e) {
     ...(S.clipboard?.length ? [paste] : []),
     { label: 'Duplicate', icon: 'copy', onClick: duplicateSelection },
     null,
-    { label: 'Bring to front', icon: 'up', onClick: () => reorderSelection('front') },
-    { label: 'Send to back', icon: 'down', onClick: () => reorderSelection('back') },
+    { label: 'Forward', icon: 'forward', onClick: () => reorderSelection('up') },
+    { label: 'Backward', icon: 'backward', onClick: () => reorderSelection('down') },
+    { label: 'Front', icon: 'front', onClick: () => reorderSelection('front') },
+    { label: 'Back', icon: 'toback', onClick: () => reorderSelection('back') },
     { label: 'Flip sideways', icon: 'flipx', onClick: () => flipSelection('x') },
     { label: 'Flip up and down', icon: 'flipy', onClick: () => flipSelection('y') },
     null,
@@ -840,7 +823,7 @@ export function copySelection() {
 }
 
 export function pasteClipboard() {
-  if (!S.clipboard?.length || !layerReady()) return;
+  if (!S.clipboard?.length) return;
   const ids = [];
   const copies = S.clipboard.map((o) => {
     const copy = { ...clone(o), id: `${o.id}c${Math.random().toString(36).slice(2, 7)}` };
@@ -855,24 +838,36 @@ export function pasteClipboard() {
   commit();
 }
 
+// Whether what is picked already sits at the very top or bottom of what shows.
+export function stackEnds() {
+  const shown = visibleObjects();
+  const count = shown.filter((o) => S.sel.has(o.id)).length;
+  return {
+    atFront: shown.slice(shown.length - count).every((o) => S.sel.has(o.id)),
+    atBack: shown.slice(0, count).every((o) => S.sel.has(o.id)),
+  };
+}
+
+// Only art that shows now counts, so a step always changes what you see.
 export function reorderSelection(direction) {
-  for (const layer of S.doc.layers) {
-    const list = layer.objects;
-    const chosen = list.filter((o) => S.sel.has(o.id));
-    if (!chosen.length) continue;
-    const rest = list.filter((o) => !S.sel.has(o.id));
-    if (direction === 'front') layer.objects = [...rest, ...chosen];
-    else if (direction === 'back') layer.objects = [...chosen, ...rest];
-    else {
-      const step = direction === 'up' ? 1 : -1;
-      const order = direction === 'up' ? [...list].reverse() : list;
-      for (const o of order) {
-        if (!S.sel.has(o.id)) continue;
-        const i = list.indexOf(o), j = i + step;
-        if (j >= 0 && j < list.length && !S.sel.has(list[j].id)) { list[i] = list[j]; list[j] = o; }
-      }
+  const layer = activeLayer();
+  const shown = visibleObjects();
+  const hidden = layer.objects.filter((o) => !shown.includes(o));
+  const chosen = shown.filter((o) => S.sel.has(o.id));
+  if (!chosen.length) return;
+  const rest = shown.filter((o) => !S.sel.has(o.id));
+  let order = shown;
+  if (direction === 'front') order = [...rest, ...chosen];
+  else if (direction === 'back') order = [...chosen, ...rest];
+  else {
+    const step = direction === 'up' ? 1 : -1;
+    for (const o of direction === 'up' ? [...shown].reverse() : [...shown]) {
+      if (!S.sel.has(o.id)) continue;
+      const i = shown.indexOf(o), j = i + step;
+      if (j >= 0 && j < shown.length && !S.sel.has(shown[j].id)) { shown[i] = shown[j]; shown[j] = o; }
     }
   }
+  layer.objects = [...hidden, ...order];
   commit();
 }
 
@@ -895,7 +890,6 @@ export function nudge(dx, dy) {
 }
 
 export async function addImageFromUrl(href, x, y) {
-  if (!layerReady()) return;
   const img = new Image();
   img.src = href;
   await img.decode();
@@ -940,7 +934,6 @@ function down(e) {
   if (isDoublePress(e) && doublePress(e)) return;
   document.body.classList.add('busy');
   const p = toDoc(e);
-  if (DRAWING.has(S.tool) && S.tool !== 'bucket' && S.tool !== 'text' && !layerReady()) return;
   if (S.tool === 'select') selectDown(e, p);
   else if (S.tool === 'lasso') startLasso(p, e);
   else if (S.tool === 'vertices') verticesDown(e, p);

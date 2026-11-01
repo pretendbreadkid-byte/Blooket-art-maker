@@ -1,19 +1,19 @@
 // The option bar, the Selected panel, the Layers panel and the shapes catalog.
 import {
-  S, hooks, refresh, liveRefresh, commit, activeLayer, selected, posed, edit, select, canUndo, canRedo, paintPatch, setToolFill,
+  S, hooks, liveRefresh, commit, selected, posed, edit, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
-import { newLayer, clone, uid, pathBounds, objectsOn, regroup } from './model.js';
-import { layerMarkup, esc } from './render.js';
+import { clone, pathBounds } from './model.js';
+import { esc } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, PICK_TOOLS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart,
+  canTakeApart, takeApart, stackEnds,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { isPlus } from './session.js';
 import { plusDialog } from './plus.js';
-import { $, $$, html, icon, swatch, colorPopover, toast, confirmBox } from './ui.js';
+import { $, $$, html, icon, swatch, colorPopover } from './ui.js';
 
 export const BLOOKET_FONT = 'Titan One';
 const FONTS = [[BLOOKET_FONT, 'Blooket (Titan One)'], ...['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'].map((f) => [f, f])];
@@ -198,6 +198,39 @@ function refreshFrameCorners() {
   hooks.stage();
 }
 
+// Pieces keep their differences: a faint shadow in a Blook stays fainter than
+// the rest when the whole Blook fades.
+function opacitySlider(items) {
+  const start = items.map((o) => posed(o).opacity);
+  const strongest = Math.max(...start);
+  return slider({
+    label: 'Opacity', value: Math.round(strongest * 100), min: 0, max: 100, unit: '%',
+    onInput: (v) => {
+      items.forEach((o, i) => edit(o, { opacity: strongest ? (start[i] / strongest) * (v / 100) : v / 100 }));
+      liveRefresh();
+    },
+    onChange: commit,
+  });
+}
+
+function arrangeRow() {
+  const { atFront, atBack } = stackEnds();
+  const row = html('<div class="arrange"></div>');
+  const step = (label, name, where, off) => {
+    const b = html(`<button class="arrange-btn" title="${label}" ${off ? 'disabled' : ''}>${icon(name)}<span>${label}</span></button>`);
+    b.onclick = () => reorderSelection(where);
+    return b;
+  };
+  row.append(
+    step('Forward', 'forward', 'up', atFront),
+    step('Backward', 'backward', 'down', atBack),
+    html('<i></i>'),
+    step('Front', 'front', 'front', atFront),
+    step('Back', 'toback', 'back', atBack),
+  );
+  return row;
+}
+
 function selectedPanel() {
   const box = $('#inspector');
   box.innerHTML = '';
@@ -207,6 +240,7 @@ function selectedPanel() {
   const single = items.length === 1 ? items[0] : null;
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
+  box.append(opacitySlider(items), arrangeRow());
 
   if (single) {
     const s = posed(single);
@@ -263,195 +297,14 @@ function selectedPanel() {
     }));
   }
 
-  const op = posed(items[0]);
-  box.append(slider({
-    label: 'See-through', value: Math.round(op.opacity * 100), min: 0, max: 100, unit: '%',
-    onInput: (v) => { items.forEach((o) => edit(o, { opacity: v / 100 })); liveRefresh(); },
-    onChange: commit,
-  }));
-
   const order = html('<div class="btn-grid"></div>');
   order.append(
-    button('To front', 'up', () => reorderSelection('front')),
-    button('To back', 'down', () => reorderSelection('back')),
     button('Flip sideways', 'flipx', () => flipSelection('x')),
     button('Flip up/down', 'flipy', () => flipSelection('y')),
     button('Copy', 'copy', duplicateSelection),
     button('Delete', 'trash', deleteSelection, 'danger'),
   );
   box.append(order);
-}
-
-/* ---------- Layers panel ---------- */
-
-let draggingLayer = null;
-const expanded = new Set();
-
-function layerRow(layer) {
-  const active = layer.id === S.doc.activeLayerId;
-  const open = expanded.has(layer.id);
-  const d = S.doc;
-  const row = html(`<li class="layer ${active ? 'on' : ''}" draggable="true" data-id="${layer.id}">
-    <div class="layer-main">
-      <button class="ib" data-a="expand" title="Show what is on this layer"><span class="chev ${open ? 'open' : ''}">${icon('chevron')}</span></button>
-      <span class="layer-thumb"><svg viewBox="0 0 ${d.width} ${d.height}">${layerMarkup(layer, S.frame, { prefix: `t${layer.id}`, doc: d })}</svg></span>
-      <span class="layer-name" title="Double-click to rename">${esc(layer.name)}</span>
-      <button class="ib" data-a="vis" title="${layer.visible ? 'Hide layer' : 'Show layer'}">${icon(layer.visible ? 'eye' : 'eyeoff')}</button>
-      <button class="ib ${layer.locked ? 'hot' : ''}" data-a="lock" title="${layer.locked ? 'Unlock layer' : 'Lock layer'}">${icon(layer.locked ? 'lock' : 'unlock')}</button>
-    </div>
-  </li>`);
-
-  if (active) {
-    row.append(slider({
-      label: 'See-through', value: Math.round(layer.opacity * 100), min: 0, max: 100, unit: '%',
-      onInput: (v) => { layer.opacity = v / 100; hooks.stage(); },
-      onChange: commit,
-    }));
-  }
-  if (open) {
-    const list = html('<ul class="obj-list"></ul>');
-    const shown = objectsOn(S.doc, layer, S.frame);
-    for (const o of [...shown].reverse()) {
-      const item = html(`<li class="${S.sel.has(o.id) ? 'on' : ''}"><button>${esc(o.name)}</button></li>`);
-      $('button', item).onclick = (e) => {
-        e.stopPropagation();
-        if (S.tool !== 'select' && S.tool !== 'vertices') S.tool = 'select';
-        select([o.id]);
-        refresh();
-      };
-      list.append(item);
-    }
-    if (!shown.length) list.append(html('<li class="muted">Nothing here yet</li>'));
-    row.append(list);
-  }
-
-  row.addEventListener('click', (e) => {
-    const action = e.target.closest('[data-a]')?.dataset.a;
-    if (action === 'expand') { expanded.has(layer.id) ? expanded.delete(layer.id) : expanded.add(layer.id); hooks.panels(); return; }
-    if (action === 'vis') { layer.visible = !layer.visible; commit(); return; }
-    if (action === 'lock') {
-      layer.locked = !layer.locked;
-      if (layer.locked) layer.objects.forEach((o) => S.sel.delete(o.id));
-      commit();
-      return;
-    }
-    if (e.target.closest('input,.obj-list')) return;
-    if (S.doc.activeLayerId !== layer.id) { S.doc.activeLayerId = layer.id; refresh(); }
-  });
-
-  $('.layer-name', row).addEventListener('dblclick', (e) => {
-    const name = e.currentTarget;
-    const input = html(`<input class="layer-rename" maxlength="40" value="${esc(layer.name)}">`);
-    name.replaceWith(input);
-    input.focus();
-    input.select();
-    let done = false;
-    const finish = (save) => {
-      if (done) return;
-      done = true;
-      if (save && input.value.trim()) layer.name = input.value.trim();
-      commit();
-    };
-    input.onblur = () => finish(true);
-    input.onkeydown = (ev) => {
-      ev.stopPropagation();
-      if (ev.key === 'Enter') finish(true);
-      if (ev.key === 'Escape') finish(false);
-    };
-  });
-
-  row.addEventListener('dragstart', (e) => {
-    draggingLayer = layer.id;
-    e.dataTransfer.effectAllowed = 'move';
-    row.classList.add('dragging');
-  });
-  row.addEventListener('dragend', () => { draggingLayer = null; row.classList.remove('dragging'); });
-  row.addEventListener('dragover', (e) => {
-    if (!draggingLayer || draggingLayer === layer.id) return;
-    e.preventDefault();
-    row.classList.add('drop');
-  });
-  row.addEventListener('dragleave', () => row.classList.remove('drop'));
-  row.addEventListener('drop', (e) => {
-    e.preventDefault();
-    row.classList.remove('drop');
-    const list = S.doc.layers;
-    const from = list.findIndex((l) => l.id === draggingLayer);
-    const to = list.findIndex((l) => l.id === layer.id);
-    if (from < 0 || to < 0) return;
-    list.splice(to, 0, list.splice(from, 1)[0]);
-    commit();
-  });
-  return row;
-}
-
-function moveLayer(step) {
-  const list = S.doc.layers;
-  const i = list.indexOf(activeLayer()), j = i + step;
-  if (j < 0 || j >= list.length) return;
-  [list[i], list[j]] = [list[j], list[i]];
-  commit();
-}
-
-function addLayer() {
-  const list = S.doc.layers;
-  const layer = newLayer(`Layer ${list.length + 1}`);
-  list.splice(list.indexOf(activeLayer()) + 1, 0, layer);
-  S.doc.activeLayerId = layer.id;
-  commit();
-}
-
-function duplicateLayer() {
-  const list = S.doc.layers;
-  const source = activeLayer();
-  const copy = clone(source);
-  copy.id = uid('l');
-  copy.name = `${source.name} copy`;
-  copy.objects.forEach((o) => { o.id = uid('o'); });
-  regroup(copy.objects);
-  list.splice(list.indexOf(source) + 1, 0, copy);
-  S.doc.activeLayerId = copy.id;
-  commit();
-}
-
-async function deleteLayer() {
-  const list = S.doc.layers;
-  if (list.length === 1) { toast('You need at least one layer.', 'warn'); return; }
-  const layer = activeLayer();
-  if (layer.objects.length) {
-    const ok = await confirmBox({
-      title: 'Delete this layer?', message: `"${layer.name}" and everything on it will be removed. You can undo this.`,
-      action: 'Delete layer', danger: true,
-    });
-    if (!ok) return;
-  }
-  const i = list.indexOf(layer);
-  list.splice(i, 1);
-  layer.objects.forEach((o) => S.sel.delete(o.id));
-  S.doc.activeLayerId = list[Math.max(0, i - 1)].id;
-  commit();
-}
-
-function layersPanel() {
-  const box = $('#layers');
-  box.innerHTML = '';
-  const head = html('<div class="panel-head"><h3>Layers</h3><div class="ib-row"></div></div>');
-  const mini = (label, ic, fn) => {
-    const b = html(`<button class="ib" title="${label}" aria-label="${label}">${icon(ic)}</button>`);
-    b.onclick = fn;
-    return b;
-  };
-  $('.ib-row', head).append(
-    mini('Add layer', 'plus', addLayer),
-    mini('Copy layer', 'copy', duplicateLayer),
-    mini('Move layer up', 'up', () => moveLayer(1)),
-    mini('Move layer down', 'down', () => moveLayer(-1)),
-    mini('Delete layer', 'trash', deleteLayer),
-  );
-  box.append(head);
-  const list = html('<ul class="layer-list"></ul>');
-  for (const layer of [...S.doc.layers].reverse()) list.append(layerRow(layer));
-  box.append(list);
 }
 
 /* ---------- Shapes catalog ---------- */
@@ -568,7 +421,6 @@ function toolbarState() {
 export function drawPanels() {
   optionBar();
   selectedPanel();
-  layersPanel();
   catalogPanel();
   drawBlooks();
   toolbarState();

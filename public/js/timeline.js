@@ -307,7 +307,7 @@ export function drawTimeline() {
   box.append(header());
 
   const body = html('<div class="time-body"></div>');
-  const names = html('<div class="time-names"><div class="time-corner">On this layer</div></div>');
+  const names = html('<div class="time-names"><div class="time-corner">Pieces</div></div>');
   const width = d.frames * CELL;
   const rail = html(`<div class="time-rail" id="rail" style="width:${width}px"></div>`);
 

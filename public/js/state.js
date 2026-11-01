@@ -1,5 +1,5 @@
 // Editor state, undo history and saving.
-import { clone, clamp, sample, setProps, isPages, objectsOn } from './model.js';
+import { clone, clamp, sample, setProps, isPages, objectsOn, flattenLayers } from './model.js';
 import { BASIC_SHAPES } from './shapes.js';
 import { exportSVG, rasterize } from './render.js';
 import { saveDoc, saveThumb } from './store.js';
@@ -39,6 +39,7 @@ export const hooks = { stage() {}, overlay() {}, panels() {}, timeline() {}, sav
 let undoStack = [], redoStack = [], lastSnapshot = null, saveTimer = null, savedSnapshot = null;
 
 export function openDoc(doc, thumb) {
+  flattenLayers(doc);
   S.doc = doc;
   S.thumb = thumb;
   S.frame = 0;
@@ -62,8 +63,8 @@ export const allObjects = () => S.doc.layers.flatMap((l) => l.objects);
 export const findObj = (id) => allObjects().find((o) => o.id === id);
 export const layerOf = (id) => S.doc.layers.find((l) => l.objects.some((o) => o.id === id));
 export const selected = () => [...S.sel].map(findObj).filter(Boolean);
-export const visibleObjects = () => S.doc.layers.filter((l) => l.visible && !l.locked).flatMap((l) => objectsOn(S.doc, l, S.frame));
-// Puts new art on a layer. In a page animation it goes on the page showing now.
+export const visibleObjects = () => objectsOn(S.doc, activeLayer(), S.frame);
+// Puts new art on top of the stack. In a page animation it goes on the page showing now.
 export function addObject(layer, obj) {
   if (isPages(S.doc)) obj.page = S.doc.pages[S.frame].id;
   layer.objects.push(obj);
