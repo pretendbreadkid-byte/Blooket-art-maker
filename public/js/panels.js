@@ -3,18 +3,20 @@ import {
   S, hooks, liveRefresh, commit, selected, posed, edit, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
 import { clone, pathBounds } from './model.js';
+import { TEXTURES, MOVES, newTexture, patternMarkup } from './textures.js';
+import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
 import { esc } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds,
+  canTakeApart, takeApart, stackEnds, shapeLook,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { TEMPLATES } from './templates.js';
 import { isPlus } from './session.js';
 import { plusDialog } from './plus.js';
-import { $, $$, html, icon, swatch, colorPopover } from './ui.js';
+import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
 
 export const BLOOKET_FONT = 'Titan One';
 const FONTS = [[BLOOKET_FONT, 'Blooket (Titan One)'], ...['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'].map((f) => [f, f])];
@@ -54,7 +56,9 @@ function button(label, iconName, onClick, extra = '') {
 
 /* ---------- Option bar ---------- */
 
-function roundingSlider(item) {
+// inside: for outlines, rounds the inner edge of each corner. The outline's
+// centre needs half its width more rounding than that.
+function roundingSlider(item, inside = false) {
   const nodes = () => {
     const s = posed(item);
     const list = [];
@@ -67,12 +71,15 @@ function roundingSlider(item) {
   const b = pathBounds(s.subpaths);
   const max = Math.ceil(Math.max(b.width, b.height) / 2) || 1;
   const first = nodes()[0];
-  const current = first ? Math.round(s.subpaths[first[0]].nodes[first[1]].r || 0) : 0;
+  const half = inside ? s.strokeWidth / 2 : 0;
+  const r = first ? s.subpaths[first[0]].nodes[first[1]].r || 0 : 0;
+  const current = Math.round(Math.max(0, r - half));
   return slider({
-    label: 'Round corners', value: current, min: 0, max,
+    label: inside ? 'Round inside corners' : 'Round corners', value: current, min: 0, max,
     onInput: (v) => {
       const subpaths = clone(posed(item).subpaths);
-      for (const [a, i] of nodes()) subpaths[a].nodes[i].r = v;
+      const width = inside ? posed(item).strokeWidth / 2 : 0;
+      for (const [a, i] of nodes()) subpaths[a].nodes[i].r = v ? v + width : 0;
       edit(item, { subpaths });
       liveRefresh();
     },
@@ -101,8 +108,17 @@ function optionBar() {
     add(slider({ label: 'Size', value: S.sizes[tool], min: 1, max: 200, unit: 'px', onInput: (v) => { S.sizes[tool] = v; } }));
     if (tool === 'line') add(html('<span class="muted">To move a point later, use Vertices. To fill a closed line, use the Bucket.</span>'));
   } else if (tool === 'shapes') {
-    add(paint('Fill'), ink('stroke', 'Outline'));
-    add(slider({ label: 'Outline size', value: S.shapeOutline, min: 0, max: 60, unit: 'px', onInput: (v) => { S.shapeOutline = v; } }));
+    // Shows the colours the next shape gets. Picking one stops copying the last shape.
+    const look = shapeLook();
+    const mine = () => {
+      if (!S.lastShapeId) return;
+      Object.assign(S, { fill: look.fill, fillGradient: look.gradient, stroke: look.stroke, shapeOutline: look.strokeWidth, lastShapeId: null });
+    };
+    add(
+      colorButton({ label: 'Fill', value: look.gradient || look.fill, allowNone: true, allowGradient: true, onInput: (c) => { mine(); setToolFill(c); } }),
+      colorButton({ label: 'Outline', value: look.stroke, onInput: (c) => { mine(); S.stroke = c; } }),
+    );
+    add(slider({ label: 'Outline size', value: look.strokeWidth, min: 0, max: 60, unit: 'px', onInput: (v) => { mine(); S.shapeOutline = v; } }));
   } else if (tool === 'bucket') {
     add(paint('Colour'));
   } else if (tool === 'text') {
@@ -187,6 +203,7 @@ function documentPanel(box) {
     },
     onDone: commit,
   }));
+  box.append(textureControls(() => d.bgTexture, (tex) => { d.bgTexture = tex; hooks.stage(); }, 'Background texture', d.bgGradient?.from || d.background));
   box.append(slider({
     label: 'Round canvas corners', value: Math.round(d.cornerRadius || 0), min: 0, max: Math.floor(Math.min(d.width, d.height) / 2), unit: 'px',
     onInput: (v) => { d.cornerRadius = v; refreshFrameCorners(); },
@@ -294,7 +311,20 @@ function selectedPanel() {
     }));
   }
 
-  if (single && hasCorners(posed(single))) box.append(roundingSlider(single));
+  if (paintable.length) {
+    const look = posed(paintable[0]);
+    box.append(textureControls(() => posed(paintable[0]).texture, (tex) => {
+      paintable.forEach((o) => { o.texture = tex ? clone(tex) : null; });
+      liveRefresh();
+    }, paintable.length > 1 ? 'Texture for all of these' : 'Texture', look.fill !== 'none' ? (look.gradient?.from || look.fill) : look.stroke));
+  }
+  box.append(colorSwaps(items));
+
+  if (single && hasCorners(posed(single))) {
+    box.append(roundingSlider(single));
+    const s = posed(single);
+    if (s.fill === 'none' && s.stroke !== 'none' && s.strokeWidth > 0) box.append(roundingSlider(single, true));
+  }
 
   if (single?.type === 'text') {
     box.append(fontControls(single, (patch, done) => {
@@ -312,6 +342,122 @@ function selectedPanel() {
     button('Delete', 'trash', deleteSelection, 'danger'),
   );
   box.append(order);
+}
+
+/* ---------- Textures ---------- */
+
+const TEXTURE_PICTURE_SIZE = 256;
+const textureThumb = (kind) => (kind === 'none'
+  ? '<svg viewBox="0 0 30 30"><path d="M6 24L24 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>'
+  : `<svg viewBox="0 0 30 30"><defs>${patternMarkup({ ...newTexture(kind), color: '#43204f', size: 10, opacity: 1 }, `thumb-${kind}`, null, 0)}</defs>${kind === 'picture'
+    ? '<path d="M5 22l6-7 5 5 3-3 6 5M20 10a2 2 0 1 0 .1 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
+    : `<rect width="30" height="30" fill="url(#thumb-${kind})"/>`}</svg>`);
+
+async function smallPicture(file) {
+  const img = new Image();
+  img.src = await readDataUrl(file);
+  await img.decode();
+  const scale = Math.min(1, TEXTURE_PICTURE_SIZE / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = Object.assign(document.createElement('canvas'), { width: Math.round(img.naturalWidth * scale), height: Math.round(img.naturalHeight * scale) });
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}
+
+// A new texture starts in black or white, whichever shows up on what's under it.
+function contrastFor(color) {
+  const hex = normalColor(color);
+  if (!hex) return '#ffffff';
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return 0.299 * r + 0.587 * g + 0.114 * b > 170 ? '#000000' : '#ffffff';
+}
+
+// current() reads the texture now. apply(texture or null) sets it. under is the colour beneath.
+function textureControls(current, apply, label, under) {
+  const box = html('<div class="texture"></div>');
+  const set = (patch, done) => {
+    const tex = current();
+    apply(patch === null ? null : { ...(tex || { ...newTexture(), color: contrastFor(under) }), ...patch });
+    if (done) { commit(); draw(); }
+  };
+  const draw = () => {
+    const tex = current();
+    const kind = tex?.kind || 'none';
+    box.innerHTML = `<span class="sub">${esc(label)}</span>
+      <div class="tex-pick">${['none', ...Object.keys(TEXTURES)].map((k) => `<button class="tex-btn ${k === kind ? 'on' : ''}" data-k="${k}" title="${k === 'none' ? 'No texture' : TEXTURES[k].name}" aria-label="${k === 'none' ? 'No texture' : TEXTURES[k].name}">${textureThumb(k)}</button>`).join('')}</div>
+      <input type="file" accept="image/*,.svg" hidden>`;
+    const file = $('input[type=file]', box);
+    $$('.tex-btn', box).forEach((b) => {
+      b.onclick = () => {
+        if (b.dataset.k === 'none') set(null, true);
+        else if (b.dataset.k === 'picture') file.click();
+        else set({ kind: b.dataset.k, href: undefined }, true);
+      };
+    });
+    file.onchange = async () => {
+      const [picked] = file.files;
+      file.value = '';
+      if (!picked) return;
+      try { set({ kind: 'picture', href: await smallPicture(picked) }, true); } catch { toast(`${picked.name} could not be opened.`, 'warn'); }
+    };
+    if (!tex) return;
+    if (kind !== 'picture') box.append(colorButton({ label: 'Texture colour', value: tex.color, onInput: (c) => set({ color: c }), onDone: commit }));
+    box.append(
+      slider({ label: 'Size', value: tex.size, min: 6, max: 300, unit: 'px', onInput: (v) => set({ size: v }), onChange: commit }),
+      slider({ label: 'Strength', value: Math.round(tex.opacity * 100), min: 5, max: 100, unit: '%', onInput: (v) => set({ opacity: v / 100 }), onChange: commit }),
+      slider({ label: 'Turn', value: tex.angle, min: 0, max: 180, unit: '°', onInput: (v) => set({ angle: v }), onChange: commit }),
+    );
+    if (S.doc.animated) {
+      const moves = html(`<label class="tex-move"><span>Moves</span><select>${Object.entries(MOVES).map(([k, m]) => `<option value="${k}" ${k === tex.move ? 'selected' : ''}>${m.name}</option>`).join('')}</select>
+        <select aria-label="Speed" ${tex.move === 'none' ? 'disabled' : ''}>${[1, 2, 3, 4].map((n) => `<option value="${n}" ${n === tex.speed ? 'selected' : ''}>${['Slow', 'Steady', 'Fast', 'Very fast'][n - 1]}</option>`).join('')}</select></label>`);
+      const [where, speed] = $$('select', moves);
+      where.onchange = () => set({ move: where.value }, true);
+      speed.onchange = () => set({ speed: +speed.value }, true);
+      box.append(moves);
+    }
+  };
+  draw();
+  return box;
+}
+
+/* ---------- Swapping colours ---------- */
+
+const pictureCache = new Map();
+
+// Every colour in the picked art. Click one to change it everywhere at once.
+function colorSwaps(items) {
+  const box = html('<div class="swaps"><span class="sub">Swap colours</span><div class="swap-row"></div></div>');
+  const row = $('.swap-row', box);
+  const add = (color, picture) => {
+    let now = color;
+    const b = html(`<button class="swap" title="Change ${color}">${swatch(color)}</button>`);
+    b.onclick = () => colorPopover(b, {
+      value: now,
+      onInput: (c) => {
+        if (!picture) { swapColor(items, now, c); liveRefresh(); }
+        now = c;
+        b.innerHTML = swatch(c);
+      },
+      onDone: async () => {
+        if (picture && now !== color) {
+          try { await recolorPictures(items, color, now); } catch { toast('That picture could not be recoloured.', 'warn'); }
+          liveRefresh();
+        }
+        commit();
+      },
+    });
+    row.append(b);
+  };
+  colorsIn(items).forEach((c) => add(c, false));
+  const pictures = items.filter((o) => o.type === 'image');
+  if (pictures.length) {
+    const key = pictures.map((o) => o.href.length + o.href.slice(-64)).join('|');
+    const ready = pictureCache.get(key) || pictureColors(pictures).catch(() => []);
+    if (pictureCache.size > 20) pictureCache.clear();
+    pictureCache.set(key, ready);
+    ready.then((colors) => colors.forEach((c) => add(c, true)));
+  }
+  if (!row.children.length && !pictures.length) return html('<span></span>');
+  return box;
 }
 
 /* ---------- Shapes catalog ---------- */

@@ -490,3 +490,51 @@ test('pulls are counted, and only the first is new', async () => {
   const older = { art: 'x', blooks: [blook] };
   assert.equal(recordPull(older, blook), true);
 });
+
+test('a texture sits over the fill, lines up across the canvas, and outlines get it on the line', async () => {
+  const { newTexture } = await import('../public/js/textures.js');
+  const doc = newDoc({ name: 't', width: 200, height: 200 });
+  const filled = newPath({ subpaths: square(), fill: '#ff0000', x: 40, y: 10, texture: newTexture('dots') });
+  const outline = newPath({ subpaths: square(), fill: 'none', stroke: '#000000', strokeWidth: 8, texture: newTexture('stripes') });
+  doc.layers[0].objects.push(filled, outline);
+  const svg = exportSVG(doc);
+  assert.equal((svg.match(/<pattern /g) || []).length, 2);
+  assert.match(svg, /patternTransform="scale\(1 1\) rotate\(0\) translate\(-40 -10\) rotate\(0\)/);
+  assert.match(svg, /fill="url\(#erase-[^"]+-tex\)" stroke="none"/);
+  assert.match(svg, /fill="none" stroke="url\(#erase-[^"]+-tex\)"/);
+  doc.bgTexture = newTexture('checks');
+  assert.match(exportSVG(doc), /fill="url\(#frame-bgtex\)"/);
+});
+
+test('a moving texture slides a whole tile each loop, so the loop never jumps', async () => {
+  const { newTexture, textureOffset } = await import('../public/js/textures.js');
+  const doc = newDoc({ name: 't', animated: true, width: 200, height: 200 });
+  const tex = { ...newTexture('dots'), size: 40, move: 'right', speed: 2 };
+  assert.deepEqual(textureOffset(tex, 0, doc), [0, 0]);
+  assert.deepEqual(textureOffset(tex, doc.frames / 2, doc), [40, 0]);
+  assert.deepEqual(textureOffset(tex, doc.frames, doc), [0, 0]);
+  assert.deepEqual(textureOffset(tex, 10, newDoc({ name: 'still' })), [0, 0]);
+  doc.layers[0].objects.push(newPath({ subpaths: square(), fill: '#000000', texture: tex }));
+  assert.match(exportSVG(doc, { animate: true }), /<animateTransform attributeName="patternTransform" type="translate" additive="sum" from="0 0" to="80 0" dur="4s"/);
+});
+
+test('swapping a colour reaches fills, outlines, gradients, keyframes, textures and SVG pictures', async () => {
+  const { colorsIn, swapColor, svgOf } = await import('../public/js/recolor.js');
+  const { newTexture } = await import('../public/js/textures.js');
+  const { doc, obj } = animated();
+  obj.stroke = '#00F';
+  obj.gradient = { from: '#000000', to: '#ffffff', angle: 0 };
+  obj.texture = { ...newTexture('dots'), color: '#000' };
+  setProps(doc, obj, 10, { fill: '#000000' });
+  const { newImage } = await import('../public/js/model.js');
+  const picture = newImage({ href: `data:image/svg+xml;base64,${btoa('<svg><rect fill="#000000"/><rect fill="#00ff00"/></svg>')}` });
+  assert.deepEqual(colorsIn([obj, picture]).slice(0, 1), ['#000000']);
+  assert.ok(colorsIn([obj, picture]).includes('#0000ff'));
+  swapColor([obj, picture], '#000000', '#123456');
+  assert.equal(obj.fill, '#123456');
+  assert.equal(obj.gradient.from, '#123456');
+  assert.equal(obj.texture.color, '#123456');
+  assert.ok(obj.keys.every((k) => k.pose.fill === '#123456'));
+  assert.equal(obj.stroke, '#00F');
+  assert.equal(svgOf(picture.href), '<svg><rect fill="#123456"/><rect fill="#00ff00"/></svg>');
+});

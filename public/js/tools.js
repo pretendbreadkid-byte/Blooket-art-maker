@@ -549,9 +549,21 @@ function eraseAlong(pts) {
 
 const DEFAULT_SHAPE_SIZE = 0.25;
 
-function shapePaint(shape) {
-  if (shape.lineOnly) return { fill: 'none', stroke: S.stroke, strokeWidth: Math.max(S.shapeOutline, 6) };
+// The shape placed last, as it looks now, or the Shapes tool's own colours.
+export function shapeLook() {
+  const last = S.lastShapeId && findObj(S.lastShapeId);
+  if (last?.type === 'path') {
+    const l = posed(last);
+    return { fill: l.fill, gradient: l.gradient ? clone(l.gradient) : null, stroke: l.stroke, strokeWidth: l.strokeWidth || 0 };
+  }
   return { ...fillPatch(), stroke: S.stroke, strokeWidth: S.shapeOutline };
+}
+
+function shapePaint(shape) {
+  const look = shapeLook();
+  if (!shape.lineOnly) return look;
+  const line = look.stroke !== 'none' && look.strokeWidth ? look.stroke : look.fill;
+  return { fill: 'none', stroke: line === 'none' ? S.stroke : line, strokeWidth: Math.max(look.strokeWidth, 6) };
 }
 
 function shapeRect(p, e) {
@@ -573,6 +585,7 @@ export function addShape(shape, cx, cy, w, h) {
   const subpaths = fitSubpaths(shape.subpaths, w, h);
   const obj = newPath({ name: shape.name, x: cx, y: cy, subpaths, fillRule: shape.fillRule, ...shapePaint(shape) });
   addObject(activeLayer(), obj);
+  S.lastShapeId = obj.id;
   select([obj.id]);
   setTool('select');
   commit();

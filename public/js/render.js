@@ -2,6 +2,7 @@
 // export all use this file, so what you see is what you get.
 import { pathD, sample, round, rad, isPages, objectsOn } from './model.js';
 import { overlayMarkup } from './templates.js';
+import { patternMarkup } from './textures.js';
 
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -60,9 +61,19 @@ function fontStyle(doc) {
 
 const SHADOW_X = 0.045, SHADOW_Y = 0.06;
 
-function body(o, inner = '', gradientId = '') {
+// A texture is the same outline drawn again on top, filled with the pattern.
+// Outline-only shapes get it on their outline instead.
+function texturePaint(o, textureId) {
+  if (o.fill !== 'none') return `fill="url(#${textureId})" stroke="none"`;
+  return `fill="none" ${strokeAttrs({ ...o, stroke: `url(#${textureId})` })}`;
+}
+
+function body(o, inner = '', gradientId = '', textureId = '', textureInner = '') {
+  const textured = textureId && o.texture;
   if (o.type === 'path') {
-    return `<path d="${pathD(o.subpaths)}" fill="${fillOf(o, gradientId)}" fill-rule="${o.fillRule}" ${strokeAttrs(o)}${lookAttrs(o)}>${inner}</path>`;
+    const d = pathD(o.subpaths);
+    return `<path d="${d}" fill="${fillOf(o, gradientId)}" fill-rule="${o.fillRule}" ${strokeAttrs(o)}${lookAttrs(o)}>${inner}</path>`
+      + (textured ? `<path d="${d}" fill-rule="${o.fillRule}" ${texturePaint(o, textureId)}>${textureInner}</path>` : '');
   }
   if (o.type === 'text') {
     const lines = o.text.split('\n');
@@ -72,7 +83,8 @@ function body(o, inner = '', gradientId = '') {
     const style = `font-family="${esc(o.fontFamily)}" font-size="${round(o.fontSize)}" font-weight="${o.bold ? 700 : 400}" font-style="${o.italic ? 'italic' : 'normal'}"`;
     const text = `${style} text-anchor="middle" dominant-baseline="central" xml:space="preserve"`;
     const shadow = o.shadow ? `<text ${text} fill="#000000" fill-opacity="0.24" transform="translate(${round(o.fontSize * SHADOW_X)} ${round(o.fontSize * SHADOW_Y)})">${spans}</text>` : '';
-    return `${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${strokeAttrs(o)}>${inner}${spans}</text>`;
+    return `${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${strokeAttrs(o)}>${inner}${spans}</text>`
+      + (textured ? `<text ${text} ${texturePaint(o, textureId)}>${spans}</text>` : '');
   }
   return `<image href="${esc(o.href)}" x="${round(-o.w / 2)}" y="${round(-o.h / 2)}" width="${round(o.w)}" height="${round(o.h)}" preserveAspectRatio="none"/>`;
 }
@@ -99,9 +111,11 @@ function objectMarkup(raw, frame, opt) {
   const masked = raw.erase?.length > 0;
   const tag = opt.editor ? ` data-id="${raw.id}"` : '';
   const gradientId = `${maskId}-paint`;
+  const textureId = `${maskId}-tex`;
   const clip = clipsOf(raw, maskId);
-  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + clip.defs;
-  return `<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body(o, '', gradientId)}${clip.close}</g></g>`;
+  const texture = o.texture && o.type !== 'image' ? patternMarkup(o.texture, textureId, o, frame, opt) : '';
+  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs;
+  return `<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${clip.close}</g></g>`;
 }
 
 // One object in an animated export, sampled once per frame.
@@ -118,9 +132,9 @@ function animatedObject(raw, doc, opt) {
   };
   const motion = (type, fn) => `<animateTransform attributeName="transform" type="${type}" additive="sum" values="${samples.map(fn).join(';')}" dur="${dur}" repeatCount="indefinite"/>`;
 
+  const shape = raw.type === 'path' ? animate('d', (s) => pathD(s.subpaths, { uniform: true })) : '';
   const inner = animate('fill', (s) => s.fill) + animate('stroke', (s) => s.stroke)
-    + animate('stroke-width', (s) => round(s.strokeWidth))
-    + (raw.type === 'path' ? animate('d', (s) => pathD(s.subpaths, { uniform: true })) : '');
+    + animate('stroke-width', (s) => round(s.strokeWidth)) + shape;
 
   const first = samples[0];
   const maskId = `${opt.prefix || 'erase'}-${raw.id}`;
@@ -129,14 +143,16 @@ function animatedObject(raw, doc, opt) {
   const painted = samples.find((s) => s.gradient)?.gradient;
   const gradientTag = (attr, fn) => animate(attr, (s) => fn(s.gradient || painted));
   const clip = clipsOf(raw, maskId);
+  const textureId = `${maskId}-tex`;
+  const texture = raw.texture && raw.type !== 'image' ? patternMarkup(raw.texture, textureId, first, 0, opt) : '';
   return `<g opacity="${round(first.opacity, 3)}">`
     + motion('translate', (s) => `${round(s.x)} ${round(s.y)}`)
     + motion('rotate', (s) => round(s.rotation))
     + motion('scale', (s) => `${round(s.scaleX, 4)} ${round(s.scaleY, 4)}`)
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
-    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + clip.defs
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId)}${clip.close}</g></g>`;
+    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${clip.close}</g></g>`;
 }
 
 export function layerMarkup(layer, frame, opt = {}) {
@@ -166,13 +182,14 @@ export function layersMarkup(doc, frame, opt = {}) {
   return doc.layers.filter((l) => l.visible).map((l) => layerMarkup(l, frame, { ...opt, doc })).join('');
 }
 
-export function backgroundMarkup(doc, prefix = 'frame') {
+export function backgroundMarkup(doc, prefix = 'frame', frame = 0, opt = {}) {
+  const texture = doc.bgTexture ? `${patternMarkup(doc.bgTexture, `${prefix}-bgtex`, null, frame, { ...opt, doc })}<rect width="${doc.width}" height="${doc.height}" fill="url(#${prefix}-bgtex)"/>` : '';
   if (doc.bgGradient) {
     const id = `${prefix}-bg`;
-    return `${gradientMarkup(doc.bgGradient, id)}<rect width="${doc.width}" height="${doc.height}" fill="url(#${id})"/>`;
+    return `${gradientMarkup(doc.bgGradient, id)}<rect width="${doc.width}" height="${doc.height}" fill="url(#${id})"/>${texture}`;
   }
-  if (!doc.background || doc.background === 'none') return '';
-  return `<rect width="${doc.width}" height="${doc.height}" fill="${esc(doc.background)}"/>`;
+  if (!doc.background || doc.background === 'none') return texture;
+  return `<rect width="${doc.width}" height="${doc.height}" fill="${esc(doc.background)}"/>${texture}`;
 }
 
 // Rounded canvases are cut to shape with a clip around all the art.
@@ -193,7 +210,7 @@ export function exportSVG(doc, { frame = 0, animate = false, box = null, overlay
   }
   const clip = frameClip(doc);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${doc.width}" height="${doc.height}" viewBox="0 0 ${doc.width} ${doc.height}">`
-    + `<title>${esc(doc.name)}</title>${fontStyle(doc)}${clip.defs}<g${clip.attr}>${backgroundMarkup(doc)}${layersMarkup(doc, frame, { animate })}${overlay ? overlayMarkup(doc) : ''}</g></svg>`;
+    + `<title>${esc(doc.name)}</title>${fontStyle(doc)}${clip.defs}<g${clip.attr}>${backgroundMarkup(doc, 'frame', frame, { animate })}${layersMarkup(doc, frame, { animate })}${overlay ? overlayMarkup(doc) : ''}</g></svg>`;
 }
 
 export const svgDataUrl = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

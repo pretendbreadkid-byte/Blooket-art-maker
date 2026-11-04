@@ -19,6 +19,8 @@ export const S = {
   stroke: '#1f1b3a',
   nodeKind: 'pointed',
   shapeOutline: 0,
+  // New shapes copy the look of the one placed last, until a colour is picked.
+  lastShapeId: null,
   sizes: { pencil: 4, marker: 22, eraser: 28, line: 6 },
   shape: BASIC_SHAPES[0],
   catalog: [],

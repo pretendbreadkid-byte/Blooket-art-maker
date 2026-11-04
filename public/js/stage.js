@@ -61,7 +61,7 @@ export function drawStage() {
     ? `<g opacity="0.3" pointer-events="none">${layersMarkup(d, S.frame - 1, { prefix: 'onion' })}</g>`
     : '';
   const clip = frameClip(d, 'stage');
-  art.innerHTML = `${clip.defs}<g${clip.attr}>${backgroundMarkup(d, 'stage')}${ghost}${layersMarkup(d, S.frame, { editor: true, prefix: 'stage' })}${overlayMarkup(d)}</g><g id="live" pointer-events="none"></g>`;
+  art.innerHTML = `${clip.defs}<g${clip.attr}>${backgroundMarkup(d, 'stage', S.frame)}${ghost}${layersMarkup(d, S.frame, { editor: true, prefix: 'stage' })}${overlayMarkup(d)}</g><g id="live" pointer-events="none"></g>`;
 }
 
 export const liveLayer = () => $('#live', art);
