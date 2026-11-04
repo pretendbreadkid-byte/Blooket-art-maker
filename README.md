@@ -38,6 +38,7 @@ Then open <http://localhost:5180>.
 | Uploads | | Upload your own pictures. They stay on your account, ready for any project. |
 | Textures | | Dots, stripes, checks, grid, waves, sparkles or your own picture, on some pieces, a whole Blook or the background. In an animation they can slide. |
 | Swap colours | | Change one colour everywhere in the picked art, including SVG and other pictures. |
+| Blur | | Soften any picked art, from 0 to 60 px. In an animation it can blur in and out. |
 
 ## Templates and packs
 

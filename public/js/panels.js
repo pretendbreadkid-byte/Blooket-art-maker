@@ -237,6 +237,14 @@ function opacitySlider(items) {
   });
 }
 
+function blurSlider(items) {
+  return slider({
+    label: 'Blur', value: Math.round(Math.max(...items.map((o) => posed(o).blur || 0))), min: 0, max: 60, unit: 'px',
+    onInput: (v) => { items.forEach((o) => edit(o, { blur: v })); liveRefresh(); },
+    onChange: commit,
+  });
+}
+
 function arrangeRow() {
   const { atFront, atBack } = stackEnds();
   const row = html('<div class="arrange"></div>');
@@ -264,7 +272,7 @@ function selectedPanel() {
   const single = items.length === 1 ? items[0] : null;
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
-  box.append(opacitySlider(items), arrangeRow());
+  box.append(opacitySlider(items), blurSlider(items), arrangeRow());
 
   if (single) {
     const s = posed(single);

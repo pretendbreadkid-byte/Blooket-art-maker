@@ -101,6 +101,30 @@ test('gradients export at any angle and animate', () => {
   assert.ok(svg.includes('attributeName="x1"'));
 });
 
+test('blur exports, ignores the piece scale, and animates', () => {
+  const { doc, obj } = animated();
+  assert.ok(!exportSVG(doc).includes('feGaussianBlur'));
+  obj.scaleX = obj.scaleY = 3;
+  obj.blur = 8;
+  const still = exportSVG(doc);
+  assert.ok(still.includes('stdDeviation="8"'), still);
+  assert.ok(/<g filter="url\(#[^"]+-blur\)"><filter[^>]+><feGaussianBlur[^>]*><\/feGaussianBlur><\/filter><g transform=/.test(still), still);
+  setProps(doc, obj, 0, { blur: 0 });
+  setProps(doc, obj, 20, { blur: 10 });
+  assert.equal(sample(obj, 10).blur, 5);
+  const moving = exportSVG(doc, { animate: true });
+  assert.ok(moving.includes('attributeName="stdDeviation"'), moving);
+});
+
+test('art from before blur still animates without one', () => {
+  const { doc, obj } = animated();
+  setProps(doc, obj, 20, { x: 50 });
+  delete obj.keys[0].pose.blur;
+  delete obj.keys[1].pose.blur;
+  assert.ok(!Number.isNaN(sample(obj, 10).x));
+  assert.ok(!exportSVG(doc, { animate: true }).includes('feGaussianBlur'));
+});
+
 test('a rounded canvas clips everything, a square one adds nothing', () => {
   const { doc } = animated();
   assert.ok(!exportSVG(doc).includes('clip-path'));

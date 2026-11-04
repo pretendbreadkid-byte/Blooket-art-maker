@@ -358,7 +358,7 @@ export function strokeToSubpath(points, tolerance = 0.8) {
 
 /* ---------- Keyframes ---------- */
 
-export const POSE_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity', 'fill', 'gradient', 'stroke', 'strokeWidth', 'subpaths'];
+export const POSE_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity', 'blur', 'fill', 'gradient', 'stroke', 'strokeWidth', 'subpaths'];
 
 export const EASINGS = {
   linear: { label: 'Steady', fn: (t) => t },
@@ -407,6 +407,8 @@ function lerpSubpaths(a, b, t) {
 function lerpPose(a, b, t) {
   const out = {};
   for (const k of POSE_PROPS) {
+    // Older art has no blur, so a missing one counts as none.
+    if (k === 'blur' && (a.blur || b.blur)) { out.blur = lerp(a.blur || 0, b.blur || 0, t); continue; }
     if (a[k] === undefined) continue;
     if (k === 'fill' || k === 'stroke') out[k] = lerpColor(a[k], b[k], t);
     else if (k === 'gradient') out[k] = lerpGradient(a[k], b[k], t);

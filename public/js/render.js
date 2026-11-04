@@ -105,6 +105,14 @@ function clipsOf(o, id) {
   };
 }
 
+// Blur is measured on the canvas, so it sits outside the piece's own scale.
+// values: an animated blur, one stdDeviation per frame.
+function blurred(markup, id, amount, values = '') {
+  if (!(amount > 0) && !values) return markup;
+  const half = MASK_SIZE / 2;
+  return `<g filter="url(#${id})"><filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}"><feGaussianBlur stdDeviation="${round(amount || 0, 2)}">${values}</feGaussianBlur></filter>${markup}</g>`;
+}
+
 function objectMarkup(raw, frame, opt) {
   const o = sample(raw, frame);
   const maskId = `${opt.prefix || 'erase'}-${raw.id}`;
@@ -115,7 +123,7 @@ function objectMarkup(raw, frame, opt) {
   const clip = clipsOf(raw, maskId);
   const texture = o.texture && o.type !== 'image' ? patternMarkup(o.texture, textureId, o, frame, opt) : '';
   const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs;
-  return `<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${clip.close}</g></g>`;
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -145,14 +153,15 @@ function animatedObject(raw, doc, opt) {
   const clip = clipsOf(raw, maskId);
   const textureId = `${maskId}-tex`;
   const texture = raw.texture && raw.type !== 'image' ? patternMarkup(raw.texture, textureId, first, 0, opt) : '';
-  return `<g opacity="${round(first.opacity, 3)}">`
+  const blurs = animate('stdDeviation', (s) => round(s.blur || 0, 2));
+  return blurred(`<g opacity="${round(first.opacity, 3)}">`
     + motion('translate', (s) => `${round(s.x)} ${round(s.y)}`)
     + motion('rotate', (s) => round(s.rotation))
     + motion('scale', (s) => `${round(s.scaleX, 4)} ${round(s.scaleY, 4)}`)
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
     + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${clip.close}</g></g>`;
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
 }
 
 export function layerMarkup(layer, frame, opt = {}) {
