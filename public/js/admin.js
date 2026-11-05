@@ -2,6 +2,7 @@
 import { svgToShape, shapeThumb } from './shapes.js';
 import { imageToShape } from './trace.js';
 import { esc } from './render.js';
+import { marketArt, shopPack } from './packs.js';
 import { $, $$, icon, toast, confirmBox, readText, readDataUrl } from './ui.js';
 
 const TOKEN_KEY = 'blook-admin-token';
@@ -84,13 +85,64 @@ async function uploadFiles(root, files) {
   renderManager(root);
 }
 
+// Packs people sent in. Waiting ones come first; nothing shows in Community
+// until it is approved here.
+function communitySection(packs) {
+  const waiting = packs.filter((p) => p.status !== 'approved');
+  const approved = packs.filter((p) => p.status === 'approved');
+  const row = (p) => `<li class="review" data-id="${p.id}">
+      <span class="review-art">${marketArt({ art: p.cover, icon: p.icon, color: p.color })}</span>
+      <span class="review-text"><b>${esc(p.name)}</b><small>by ${esc(p.author)} · ${p.price} tokens</small>
+        <em class="${p.status === 'approved' ? 'ok' : ''}">${p.status === 'approved' ? 'In Community' : 'Waiting'}</em></span>
+      <button class="btn ghost" data-look>${icon('eye')}<span>Try it</span></button>
+      ${p.status === 'approved' ? '' : `<button class="btn primary" data-approve>${icon('check')}<span>Approve</span></button>`}
+      <button class="ib" data-remove aria-label="Remove ${esc(p.name)}" title="Remove">${icon('trash')}</button>
+    </li>`;
+  return `<h2>Community packs</h2>
+    ${packs.length ? '' : '<p class="muted">When people send packs to Community, they wait here for you to approve them.</p>'}
+    ${waiting.length ? `<h3 class="review-head">Waiting (${waiting.length})</h3><ul class="review-list">${waiting.map(row).join('')}</ul>` : ''}
+    ${approved.length ? `<h3 class="review-head">In Community (${approved.length})</h3><ul class="review-list">${approved.map(row).join('')}</ul>` : ''}`;
+}
+
+function wireCommunity(root) {
+  const act = async (job, done) => {
+    try {
+      await job();
+      if (done) toast(done, 'ok');
+      renderManager(root);
+    } catch (error) {
+      if (error.status === 401) renderLogin(root);
+      else toast(error.message, 'warn');
+    }
+  };
+  $$('.review', root).forEach((row) => {
+    const id = row.dataset.id;
+    $('[data-look]', row).onclick = () => act(async () => {
+      const { name, author, pack } = await call('GET', `/api/community/${id}`);
+      shopPack({ id, name, author, community: true, preview: true, pack: { ...pack, pulled: {} } });
+    });
+    $('[data-approve]', row)?.addEventListener('click', () => act(() => call('POST', `/api/admin/community/${id}/approve`), 'Approved. It is in Community now.'));
+    $('[data-remove]', row).onclick = async () => {
+      const name = $('b', row).textContent;
+      const ok = await confirmBox({ title: 'Remove this pack?', message: `"${name}" will be taken out of Community.`, action: 'Remove', danger: true });
+      if (ok) act(() => call('DELETE', `/api/admin/community/${id}`), 'Removed.');
+    };
+  });
+}
+
 async function renderManager(root) {
-  const { shapes = [], temporary = false, accountsTemporary = false } = await call('GET', '/api/shapes');
+  const [{ shapes = [], temporary = false, accountsTemporary = false }, { packs = [] }] = await Promise.all([
+    call('GET', '/api/shapes'),
+    call('GET', '/api/admin/community').catch((error) => {
+      if (error.status === 401) throw error;
+      return { packs: [] };
+    }),
+  ]);
   const lastCategory = shapes[shapes.length - 1]?.category || 'Uploaded';
   root.innerHTML = `<div class="admin">
     <header class="admin-top">
       <a class="btn ghost" href="#/">${icon('back')}<span>Back</span></a>
-      <h1>Shapes catalog</h1>
+      <h1>Admin</h1>
       <div class="grow"></div>
       <button class="btn ghost" id="signout">Sign out</button>
     </header>
@@ -108,6 +160,7 @@ async function renderManager(root) {
         <label class="check"><input type="checkbox" id="uplus"><span>Plus only</span></label>
       </div>
     </section>
+    ${communitySection(packs)}
     <h2>${shapes.length} uploaded shape${shapes.length === 1 ? '' : 's'}</h2>
     ${shapes.length ? '' : '<p class="muted">The built-in basic shapes are always there. Shapes you upload here show up in everyone\'s Shapes panel.</p>'}
     <ul class="admin-list">
@@ -122,6 +175,7 @@ async function renderManager(root) {
   </div>`;
 
   $('#signout', root).onclick = () => { setToken(null); renderLogin(root); };
+  wireCommunity(root);
   const input = $('#ufile', root), drop = $('#drop', root);
   input.onchange = () => uploadFiles(root, [...input.files]);
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });

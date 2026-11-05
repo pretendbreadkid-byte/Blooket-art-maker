@@ -102,3 +102,49 @@ test('only numbers survive in uploaded geometry', async () => {
   assert.equal((await api('POST', '/api/shapes', bad)).status, 400);
   assert.equal((await api('POST', '/api/shapes', { name: 'empty' })).status, 400);
 });
+
+test('packs sent to Community wait for an admin, then everyone can open them', async () => {
+  const pic = `data:image/png;base64,${Buffer.from('fake').toString('base64')}`;
+  const as = (auth) => (method, path, body) => fetch(BASE + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const anyone = as(null);
+  const signup = await (await anyone('POST', '/api/auth/register', { username: 'packmaker', password: 'hunter22' })).json();
+  const maker = as(signup.token);
+  const sent = {
+    source: 'p-1', name: 'Fall Pack', cover: pic,
+    pack: { price: 25, color: '#e5731a', art: pic, icon: pic, blooks: [{ id: 'b1', name: 'Leaf', picture: pic, rarity: 'Rare', odds: 100, extra: 'x' }] },
+  };
+  assert.equal((await anyone('POST', '/api/community', sent)).status, 401, 'guests cannot send');
+  assert.equal((await maker('POST', '/api/community', { ...sent, pack: { ...sent.pack, blooks: [] } })).status, 400);
+  assert.equal((await maker('POST', '/api/community', { ...sent, pack: { ...sent.pack, art: 'javascript:alert(1)' } })).status, 400);
+  const created = await maker('POST', '/api/community', sent);
+  assert.equal(created.status, 200);
+  const { pack } = await created.json();
+  assert.equal(pack.status, 'pending');
+
+  assert.deepEqual((await (await anyone('GET', '/api/community')).json()).packs, [], 'not shown before approval');
+  assert.equal((await anyone('GET', `/api/community/${pack.id}`)).status, 404);
+  assert.equal((await (await maker('GET', '/api/community/mine')).json()).packs[0].status, 'pending');
+  assert.equal((await maker('POST', `/api/admin/community/${pack.id}/approve`)).status, 401, 'only admins approve');
+
+  const { token: admin } = await (await anyone('POST', '/api/admin/login', { password: PASSWORD })).json();
+  const boss = as(admin);
+  assert.equal((await (await boss('GET', '/api/admin/community')).json()).packs.length, 1);
+  assert.equal((await boss('POST', `/api/admin/community/${pack.id}/approve`)).status, 200);
+
+  const listed = (await (await anyone('GET', '/api/community')).json()).packs;
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].author, 'packmaker');
+  const full = await (await anyone('GET', `/api/community/${pack.id}`)).json();
+  assert.equal(full.pack.blooks[0].name, 'Leaf');
+  assert.equal(full.pack.blooks[0].extra, undefined, 'only known fields are kept');
+
+  // Sending it again replaces it, and it waits again.
+  await maker('POST', '/api/community', { ...sent, name: 'Fall Pack 2' });
+  assert.deepEqual((await (await anyone('GET', '/api/community')).json()).packs, []);
+  assert.equal((await boss('DELETE', `/api/admin/community/${pack.id}`)).status, 200);
+  assert.equal((await (await boss('GET', '/api/admin/community')).json()).packs.length, 0);
+});

@@ -383,6 +383,132 @@ async function uploads(req, res, path) {
   return send(res, 404, { error: 'Not found.' });
 }
 
+/* ---------- Community packs ---------- */
+
+// Anyone with an account can send a pack in. It waits until an admin approves
+// it, then everyone sees it in Community. Re-sending a pack replaces it and it
+// waits again.
+const RARITY_NAMES = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Chroma', 'Unique'];
+const MAX_PACK_BLOOKS = 60;
+const MAX_SENT_PACKS = 20;
+const MAX_COMMUNITY = 500;
+const COMMUNITY_INDEX = 'community/index.json';
+let community = null;
+
+async function communityIndex() {
+  if (!community) {
+    const text = await readArtFile(COMMUNITY_INDEX);
+    community = text ? JSON.parse(text) : { packs: [] };
+  }
+  return community;
+}
+
+const picture = (v) => (typeof v === 'string' && PICTURE.test(v) ? v : null);
+
+function cleanPack(input) {
+  const pack = input?.pack;
+  const cover = picture(input?.cover), art = picture(pack?.art);
+  if (!cover || !art) throw Object.assign(new Error('The pack needs its art.'), { status: 400 });
+  if (!Array.isArray(pack.blooks) || !pack.blooks.length) throw Object.assign(new Error('The pack needs at least one Blook.'), { status: 400 });
+  if (pack.blooks.length > MAX_PACK_BLOOKS) throw Object.assign(new Error(`A pack can have up to ${MAX_PACK_BLOOKS} Blooks.`), { status: 400 });
+  const blooks = pack.blooks.map((b, i) => {
+    const pictureOf = picture(b?.picture);
+    if (!pictureOf) throw Object.assign(new Error('Every Blook needs a picture.'), { status: 400 });
+    const odds = Number(b.odds);
+    return {
+      id: /^[\w-]{1,40}$/.test(b.id) ? b.id : `b${i}`,
+      name: cleanText(b.name, 40, 'Blook'),
+      picture: pictureOf,
+      rarity: RARITY_NAMES.includes(b.rarity) ? b.rarity : 'Common',
+      odds: Number.isFinite(odds) ? Math.min(100, Math.max(0, odds)) : 0,
+    };
+  });
+  if (!blooks.some((b) => b.odds > 0)) throw Object.assign(new Error('At least one Blook needs odds above 0.'), { status: 400 });
+  const price = Math.round(Number(pack.price));
+  return {
+    name: cleanText(input.name, 60, 'Pack'),
+    cover,
+    pack: {
+      price: Number.isFinite(price) ? Math.min(1000000, Math.max(0, price)) : 25,
+      color: /^#[0-9a-f]{6}$/i.test(pack.color) ? pack.color : '#e5731a',
+      art, back: picture(pack.back), icon: picture(pack.icon), blooks,
+    },
+  };
+}
+
+const listing = ({ id, name, author, price, color, cover, icon, status, at }) => ({ id, name, author, price, color, cover, icon, status, at });
+
+async function communityApi(req, res, path) {
+  if (path === '/api/community' && req.method === 'GET') {
+    const { packs } = await inArtQueue('community', communityIndex);
+    return send(res, 200, { packs: packs.filter((p) => p.status === 'approved').map(listing) });
+  }
+  if (path === '/api/community/mine' && req.method === 'GET') {
+    const user = currentUser(req);
+    if (!user) return send(res, 401, { error: 'Please log in.' });
+    const { packs } = await inArtQueue('community', communityIndex);
+    return send(res, 200, { packs: packs.filter((p) => p.authorKey === user.name.toLowerCase()).map(listing) });
+  }
+  if (path === '/api/community' && req.method === 'POST') {
+    const user = currentUser(req);
+    if (!user) return send(res, 401, { error: 'Make an account to share packs with the community.' });
+    const body = await readJson(req, MAX_ART_BODY);
+    const clean = cleanPack(body);
+    const key = user.name.toLowerCase();
+    const source = String(body.source || '').slice(0, 60);
+    const id = `c-${createHash('sha256').update(`${key}/${source}`).digest('hex').slice(0, 16)}`;
+    return inArtQueue('community', async () => {
+      const index = await communityIndex();
+      const mine = index.packs.filter((p) => p.authorKey === key);
+      const existing = index.packs.find((p) => p.id === id);
+      if (!existing && mine.length >= MAX_SENT_PACKS) return send(res, 413, { error: `You can share up to ${MAX_SENT_PACKS} packs.` });
+      if (!existing && index.packs.length >= MAX_COMMUNITY) return send(res, 413, { error: 'Community is full right now.' });
+      await writeArtFile(`community/${id}.json`, JSON.stringify({ id, name: clean.name, author: user.name, pack: clean.pack }));
+      const entry = {
+        id, name: clean.name, author: user.name, authorKey: key, price: clean.pack.price, color: clean.pack.color,
+        cover: clean.cover, icon: clean.pack.icon, status: 'pending', at: Date.now(),
+      };
+      index.packs = [entry, ...index.packs.filter((p) => p.id !== id)];
+      await writeArtFile(COMMUNITY_INDEX, JSON.stringify(index));
+      return send(res, 200, { pack: listing(entry) });
+    });
+  }
+  const id = path.match(/^\/api\/community\/(c-[0-9a-f]{16})$/)?.[1];
+  if (id && req.method === 'GET') {
+    const index = await inArtQueue('community', communityIndex);
+    const entry = index.packs.find((p) => p.id === id);
+    if (!entry || (entry.status !== 'approved' && !isAdmin(req))) return send(res, 404, { error: 'That pack could not be found.' });
+    const text = await inArtQueue('community', () => readArtFile(`community/${id}.json`));
+    return text ? send(res, 200, JSON.parse(text)) : send(res, 404, { error: 'That pack could not be found.' });
+  }
+  return send(res, 404, { error: 'Not found.' });
+}
+
+// For admins: everything that was sent in, then approve or remove it.
+async function communityAdmin(req, res, path) {
+  if (path === '/api/admin/community' && req.method === 'GET') {
+    const { packs } = await inArtQueue('community', communityIndex);
+    return send(res, 200, { packs: packs.map(listing) });
+  }
+  const [, id, action] = path.match(/^\/api\/admin\/community\/(c-[0-9a-f]{16})(\/approve)?$/) || [];
+  if (!id) return send(res, 404, { error: 'Not found.' });
+  return inArtQueue('community', async () => {
+    const index = await communityIndex();
+    const entry = index.packs.find((p) => p.id === id);
+    if (!entry) return send(res, 404, { error: 'That pack could not be found.' });
+    if (action && req.method === 'POST') {
+      entry.status = 'approved';
+    } else if (!action && req.method === 'DELETE') {
+      await removeArtFile(`community/${id}.json`);
+      index.packs = index.packs.filter((p) => p.id !== id);
+    } else {
+      return send(res, 404, { error: 'Not found.' });
+    }
+    await writeArtFile(COMMUNITY_INDEX, JSON.stringify(index));
+    return send(res, 200, { ok: true });
+  });
+}
+
 const digest = (s) => createHash('sha256').update(String(s)).digest();
 const passwordMatches = (attempt) => timingSafeEqual(digest(attempt), digest(adminPassword));
 
@@ -472,6 +598,7 @@ async function api(req, res, path) {
   if (req.method === 'POST' && path === '/api/auth/login') return login(req, res);
   if (path === '/api/art' || path.startsWith('/api/art/')) return art(req, res, path);
   if (path === '/api/uploads' || path.startsWith('/api/uploads/')) return uploads(req, res, path);
+  if (path === '/api/community' || path.startsWith('/api/community/')) return communityApi(req, res, path);
   if (path === '/api/me' || path === '/api/plus/join') {
     const user = currentUser(req);
     if (!user) return send(res, 401, { error: 'Please log in.' });
@@ -498,6 +625,7 @@ async function api(req, res, path) {
   }
 
   if (!isAdmin(req)) return send(res, 401, { error: 'Please sign in as an admin.' });
+  if (path.startsWith('/api/admin/community')) return communityAdmin(req, res, path);
 
   if (req.method === 'POST' && path === '/api/shapes') {
     const shape = { id: 's' + randomBytes(6).toString('hex'), ...cleanShape(await readJson(req)) };

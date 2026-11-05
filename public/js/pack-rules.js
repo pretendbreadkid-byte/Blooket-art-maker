@@ -33,7 +33,7 @@ export const RARITIES = {
 export const rarityOf = (name) => RARITIES[name] ?? RARITIES.Common;
 export const gemOf = (name) => `/rarity/${(RARITIES[name] ? name : 'Common').toLowerCase()}.svg`;
 
-export const newPack = () => ({ price: 25, art: null, back: null, blooks: [], pulled: {} });
+export const newPack = () => ({ price: 25, color: '#e5731a', art: null, back: null, icon: null, blooks: [], pulled: {} });
 
 export const pullsOf = (pack, blook) => pack.pulled?.[blook.id] ?? 0;
 

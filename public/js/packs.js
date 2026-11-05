@@ -9,6 +9,7 @@ import {
   RARITIES, balanceOdds, chanceOf, gemOf, newPack, pickBlook, pullsOf, rarityOf, recordPull, whyNotOpen,
 } from './pack-rules.js';
 import { confettiLayer } from './confetti.js';
+import { call, session } from './session.js';
 import { $, $$, confirmBox, dialog, html, icon, toast } from './ui.js';
 
 const BLOOK_SIZE = 512;
@@ -17,7 +18,10 @@ const TILES = 96;
 const SHAKE_MS = 750;
 const WAVE_MS_PER_PX = 0.28;
 const WAVE_MS = 700;
-const AMOUNTS = [1, 10, 100];
+const COVER_SIZE = 360;
+const ICON_SIZE = 256;
+const MAX_BUY = 1000;
+const PULLS_KEY = 'blook-community-pulls';
 
 export const packVisual = (art) => `<span class="pack-visual"><img src="/pack/foil.png" alt="">${art ? `<img class="pack-art" src="${esc(art)}" alt="">` : '<i class="pack-art pack-blank">Pack art</i>'}</span>`;
 
@@ -82,8 +86,124 @@ function chooseAsset(title, template, max) {
 
 /* ---------- The pack editor ---------- */
 
+// Community packs aren't yours to change, so only what you pulled from them is
+// kept, in this browser.
 export async function savePack(doc) {
+  if (doc.preview) return;
+  if (doc.community) { saveCommunityPulls(doc.id, doc.pack.pulled); return; }
   await saveDoc(doc, doc.pack.art);
+}
+
+/* ---------- The Market ---------- */
+
+const token = '<img class="token-img" src="/token.svg" alt="Tokens">';
+
+// The pack on its coloured card, with the pack's icon faint in the corner.
+export const marketArt = ({ art, icon: iconArt, color }) => `<span class="market-art" style="--pack:${esc(color || '#e5731a')}">
+    ${packVisual(art)}${iconArt ? `<i class="market-icon" style="--icon:url('${esc(iconArt)}')"></i>` : ''}</span>`;
+
+export const marketCard = (info) => `<div class="market-card" data-id="${esc(info.id)}" style="--pack:${esc(info.color || '#e5731a')}" title="${esc(info.name)}${info.author ? ` by ${esc(info.author)}` : ''}">
+    <button class="market-open" aria-label="Open ${esc(info.name)}">${marketArt(info)}<span class="market-price">${token}<b>${info.price}</b></span></button>
+    ${info.editable ? `<button class="market-edit" title="Edit ${esc(info.name)}" aria-label="Edit ${esc(info.name)}">${icon('pencil')}</button>` : ''}
+  </div>`;
+
+const STEPS = [-1, 1, 5, 10];
+const PRESETS = [1, 5, 10, 25, 50, 100];
+
+// Like Blooket's: pick how many to open, or look at the drop rates first.
+// Resolves to the amount, or nothing when closed.
+export function buyDialog(doc) {
+  const pack = doc.pack;
+  let amount = 1;
+  let rates = false;
+  return dialog((box, close) => {
+    box.classList.add('buy-dlg');
+    const ratesList = () => {
+      const order = Object.keys(RARITIES);
+      return [...pack.blooks].sort((a, b) => order.indexOf(b.rarity) - order.indexOf(a.rarity) || b.odds - a.odds).map((b) => `<li>
+        <img class="buy-rate-pic" src="${esc(b.picture)}" alt="">
+        <b>${esc(b.name)}</b>
+        <span class="buy-rate-rarity" style="color:${rarityOf(b.rarity).color}"><img src="${gemOf(b.rarity)}" alt="">${esc(b.rarity)}</span>
+        <em>${chanceOf(b, pack.blooks).toFixed(chanceOf(b, pack.blooks) < 1 ? 2 : 1)}%</em>
+      </li>`).join('');
+    };
+    const draw = () => {
+      box.innerHTML = `<button class="buy-x" aria-label="Close">${icon('x')}</button>
+        <div class="buy">
+          <div class="buy-art">${marketArt(pack)}</div>
+          <div class="buy-side">
+            <h2>${esc(doc.name)}</h2>
+            ${doc.author ? `<p class="buy-by">by ${esc(doc.author)}</p>` : ''}
+            <button class="buy-chip buy-rates">${rates ? 'Hide Drop Rates' : 'Show Drop Rates'}</button>
+            ${rates ? `<ul class="buy-rate-list">${ratesList()}</ul>` : `
+            <span class="buy-chip buy-price">${token}${pack.price}</span>
+            <label class="buy-qty"><span>Purchase Quantity:</span><input type="number" min="1" max="${MAX_BUY}" value="${amount}" aria-label="Purchase quantity"></label>
+            <div class="buy-steps">${STEPS.map((n) => `<button class="buy-chip" data-add="${n}" ${amount + n < 1 || amount + n > MAX_BUY ? 'disabled' : ''}>${n < 0 ? '−' : '+'}${Math.abs(n)}</button>`).join('')}</div>
+            <div class="buy-steps">${PRESETS.map((n) => `<button class="buy-chip" data-set="${n}" ${amount === n ? 'disabled' : ''}>${n}</button>`).join('')}
+              <button class="buy-chip" data-set="1" title="Back to 1" aria-label="Back to 1" ${amount === 1 ? 'disabled' : ''}>${icon('loop')}</button></div>
+            <button class="buy-go">Buy ${amount} for ${token}${(pack.price * amount).toLocaleString()}</button>`}
+          </div>
+        </div>`;
+      $('.buy-x', box).onclick = () => close();
+      $('.buy-rates', box).onclick = () => { rates = !rates; draw(); };
+      if (rates) return;
+      const set = (n) => { amount = Math.min(MAX_BUY, Math.max(1, Math.round(n) || 1)); draw(); };
+      $$('[data-add]', box).forEach((b) => { b.onclick = () => set(amount + +b.dataset.add); });
+      $$('[data-set]', box).forEach((b) => { b.onclick = () => set(+b.dataset.set); });
+      const qty = $('.buy-qty input', box);
+      qty.onchange = () => set(+qty.value);
+      qty.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); set(+qty.value); } };
+      $('.buy-go', box).onclick = () => close(amount);
+    };
+    draw();
+  }, { wide: true });
+}
+
+// The buy screen, then the opener. "Open more" at the end comes back here.
+export async function shopPack(doc) {
+  const amount = await buyDialog(doc);
+  if (amount) openPack(doc, amount, () => shopPack(doc));
+}
+
+/* ---------- Community ---------- */
+
+function communityPulls() {
+  try { return JSON.parse(localStorage.getItem(PULLS_KEY)) || {}; } catch { return {}; }
+}
+
+function saveCommunityPulls(id, pulled) {
+  const all = communityPulls();
+  all[id] = pulled;
+  try { localStorage.setItem(PULLS_KEY, JSON.stringify(all)); } catch { /* Pulls just won't be remembered. */ }
+}
+
+export const fetchCommunity = async () => (await call('GET', '/api/community')).packs;
+export const fetchMySent = async () => (await call('GET', '/api/community/mine')).packs;
+
+// A community pack, shaped like one of your own so the opener can use it.
+export async function communityDoc(id) {
+  const { name, author, pack } = await call('GET', `/api/community/${id}`);
+  return { id, name, author, community: true, pack: { ...pack, pulled: communityPulls()[id] || {} } };
+}
+
+// Community packs you have pulled something from, for My Blooks.
+export async function pulledCommunityDocs() {
+  const ids = Object.entries(communityPulls()).filter(([, pulled]) => Object.keys(pulled || {}).length).map(([id]) => id);
+  return (await Promise.all(ids.map((id) => communityDoc(id).catch(() => null)))).filter(Boolean);
+}
+
+async function sendToCommunity(doc) {
+  if (session.guest || !session.user) { toast('Make an account to share packs with the community.', 'warn'); return; }
+  const { price, color, art, back, icon: iconArt, blooks } = doc.pack;
+  try {
+    await call('POST', '/api/community', {
+      source: doc.id, name: doc.name, cover: await toPicture(art, COVER_SIZE),
+      pack: { price, color, art, back, icon: iconArt, blooks },
+    });
+    toast('Sent! An admin will check it, then it shows up in Community.', 'ok');
+  } catch (error) {
+    toast(error.message, 'warn');
+  }
 }
 
 export function newPackProject() {
@@ -108,9 +228,15 @@ export function editPack(doc, onChange) {
       box.innerHTML = `<h2>Make your pack</h2>
         <div class="pack-maker">
           <div class="pack-side">
-            <button type="button" class="pack-pick" id="packart" title="Choose the pack art">${packVisual(pack.art)}</button>
+            <button type="button" class="pack-pick" id="packart" title="Choose the pack art">${marketArt({ ...pack, color: pack.color || newPack().color })}</button>
             <label class="field"><span>Pack name</span><input id="packname" maxlength="60" value="${esc(doc.name)}"></label>
             <label class="field"><span>Price in tokens</span><input id="packprice" type="number" min="0" max="1000000" value="${pack.price}"></label>
+            <div class="pack-looks">
+              <label class="field"><span>Card colour</span><input id="packcolor" type="color" value="${esc(pack.color || newPack().color)}"></label>
+              <span class="field"><span>Icon</span>
+                <button type="button" class="icon-pick" id="packicon" title="Choose the icon for the card's corner" style="--pack:${esc(pack.color || newPack().color)}">
+                  ${pack.icon ? `<i class="market-icon" style="--icon:url('${esc(pack.icon)}')"></i>` : icon('iconsq')}</button></span>
+            </div>
             <span class="field"><span>Blook background</span>
               <button type="button" class="back-pick" id="packback">${pack.back ? `<img src="${esc(pack.back)}" alt="">` : '<i>Choose a background</i>'}</button></span>
           </div>
@@ -130,6 +256,7 @@ export function editPack(doc, onChange) {
         <p class="size-err" role="alert" hidden></p>
         <div class="dlg-actions">
           <button type="button" class="btn ghost danger" id="packdelete">${icon('trash')}<span>Delete</span></button>
+          ${session.guest ? '' : `<button type="button" class="btn ghost" id="packsend" title="Admins check it, then everyone can open it in Community">${icon('send')}<span>Send to Community</span></button>`}
           <button type="button" class="btn ghost" id="packopen">${icon('play')}<span>Test open</span></button>
           <button type="button" class="btn primary" id="packdone">Save</button>
         </div>`;
@@ -139,6 +266,7 @@ export function editPack(doc, onChange) {
     const readForm = () => {
       doc.name = $('#packname', box).value;
       pack.price = Math.max(0, Math.round(+$('#packprice', box).value) || 0);
+      pack.color = $('#packcolor', box).value;
       $$('.pack-row', box).forEach((row) => {
         const blook = pack.blooks.find((b) => b.id === row.dataset.b);
         blook.name = $('.pack-name', row).value.trim() || 'Blook';
@@ -154,6 +282,27 @@ export function editPack(doc, onChange) {
         if (asset) pack.art = asset.href;
         draw();
       };
+      $('#packcolor', box).oninput = (e) => {
+        $$('.market-art, .icon-pick', box).forEach((el) => el.style.setProperty('--pack', e.target.value));
+      };
+      $('#packicon', box).onclick = async () => {
+        readForm();
+        const asset = await chooseAsset('Choose the icon', 'icon', ICON_SIZE);
+        if (asset) pack.icon = asset.href;
+        draw();
+      };
+      $('#packsend', box)?.addEventListener('click', async () => {
+        readForm();
+        const why = whyNotOpen(pack);
+        if (why) {
+          const err = $('.size-err', box);
+          err.textContent = why;
+          err.hidden = false;
+          return;
+        }
+        await keep();
+        await sendToCommunity(doc);
+      });
       $('#packback', box).onclick = async () => {
         readForm();
         const asset = await chooseAsset('Choose the Blook background', 'background', BLOOK_SIZE);
@@ -198,7 +347,8 @@ export function editPack(doc, onChange) {
         }
         opened = true;
         await keep();
-        openPack(doc);
+        close();
+        shopPack(doc);
       };
       $('#packdelete', box).onclick = async () => {
         const sure = await confirmBox({ title: 'Delete this pack?', message: `"${doc.name}" will be gone for good. Your art stays.`, action: 'Delete', danger: true });
@@ -224,7 +374,7 @@ export function blookCard(blook, doc) {
         <p>${esc(doc.name)}</p>
         <div class="blook-card-chips">
           <span><img src="${gemOf(blook.rarity)}" alt="">${esc(blook.rarity)}</span>
-          <span><i class="token">B</i>${rarity.sells}</span>
+          <span>${token}${rarity.sells}</span>
           <span>${chanceOf(blook, doc.pack.blooks).toFixed(1)}%</span>
         </div>
         ${pulled ? `<p class="blook-card-total">${pulled} total</p>` : ''}
@@ -236,12 +386,13 @@ export function blookCard(blook, doc) {
 /* ---------- My Blooks ---------- */
 
 // Everything that can come out of your packs. Ones you haven't pulled stay hidden.
-export async function drawCollection(host, metas) {
-  const docs = (await Promise.all(metas.map((m) => getDoc(m.id)))).filter((d) => d?.pack.blooks.length);
+// docs: your packs, and community packs you have pulled from.
+export async function drawCollection(host, packDocs) {
+  const docs = packDocs.filter((d) => d?.pack.blooks.length);
   const order = Object.keys(RARITIES);
   const sorted = (doc) => [...doc.pack.blooks].sort((a, b) => order.indexOf(a.rarity) - order.indexOf(b.rarity));
   host.innerHTML = docs.length ? docs.map((doc) => `<section class="my-pack" data-id="${doc.id}">
-      <h2>${esc(doc.name)}</h2>
+      <h2>${esc(doc.name)}${doc.author ? ` <small>by ${esc(doc.author)}</small>` : ''}</h2>
       <div class="my-grid">${sorted(doc).map((b) => {
         const pulled = pullsOf(doc.pack, b);
         return `<button class="my-blook ${pulled ? '' : 'locked'}" data-b="${b.id}" title="${pulled ? esc(b.name) : 'Not pulled yet'}" ${pulled ? '' : 'disabled'}>
@@ -291,7 +442,9 @@ function wave(stage, color) {
 
 const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
-export function openPack(doc) {
+// amount: how many were bought. again: what "Open more" does at the end,
+// usually the buy screen again.
+export function openPack(doc, amount = 1, again = null) {
   const stage = html(`<div class="opener" role="dialog" aria-modal="true" aria-label="Test open ${esc(doc.name)}">
     <div class="opener-tiles" aria-hidden="true">${tiles()}</div>
     <button class="opener-x" aria-label="Close">${icon('x')}</button>
@@ -301,7 +454,6 @@ export function openPack(doc) {
   const body = $('.opener-body', stage);
   const count = $('.opener-count', stage);
   const confetti = confettiLayer(stage);
-  let amount = 1;
   let done = 0;
   let closed = false;
 
@@ -316,16 +468,9 @@ export function openPack(doc) {
     done = 0;
     wave(stage, null);
     body.innerHTML = `<button class="opener-pack" aria-label="Open the pack">${packVisual(doc.pack.art)}</button>
-      <div class="opener-amounts">${AMOUNTS.map((n) => `<button class="${n === amount ? 'on' : ''}" data-n="${n}">\u00d7${n}</button>`).join('')}</div>`;
+      <p class="opener-tap">Click the pack to open it</p>`;
     showCount();
     $('.opener-pack', body).onclick = tear;
-    $$('.opener-amounts button', body).forEach((b) => {
-      b.onclick = () => {
-        amount = +b.dataset.n;
-        $$('.opener-amounts button', body).forEach((x) => x.classList.toggle('on', x === b));
-        showCount();
-      };
-    });
   };
 
   const pull = () => {
@@ -339,7 +484,7 @@ export function openPack(doc) {
     const button = $('.opener-pack', body);
     button.disabled = true;
     button.classList.add('shake');
-    $('.opener-amounts', body).remove();
+    $('.opener-tap', body)?.remove();
     await wait(SHAKE_MS);
     next();
   };
@@ -378,11 +523,15 @@ export function openPack(doc) {
         <b class="reveal-odds">${chanceOf(blook, doc.pack.blooks).toFixed(1)}%${isNew ? ' – NEW!' : ''}</b>
       </div>
       <div class="opener-next">
-        <button class="btn primary big opener-again">${more ? 'Next' : 'Open another'}</button>
+        <button class="btn primary big opener-again">${more ? 'Next' : 'Open more'}</button>
         ${more ? '<button class="btn ghost big opener-skip">Skip to the end</button>' : ''}
       </div>`;
     celebrate(confetti, blook.rarity);
-    $('.opener-again', body).onclick = more ? next : () => { confetti.stop(); showPack(); };
+    $('.opener-again', body).onclick = more ? next : () => {
+      if (again) { leave(); again(); return; }
+      confetti.stop();
+      showPack();
+    };
     $('.opener-skip', body)?.addEventListener('click', skip);
   };
 

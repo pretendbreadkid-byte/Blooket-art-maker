@@ -43,9 +43,13 @@ Then open <http://localhost:5180>.
 
 ## Templates and packs
 
-New projects can start as a Blook, a Banner, a Blook background or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art. The Canvas panel turns them on or off, sizes them, and makes them darker or lighter.
+New projects can start as a Blook, a Banner, a Blook background, an Icon (Blook size with sharp corners, for the corner of a pack card) or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art. The Canvas panel turns them on or off, sizes them, and makes them darker or lighter.
 
-The Test page on the home screen turns your art into a pack with a price, pack art, a Blook background, and Blooks with their own rarity and odds. Test open shows what comes out, and My Blooks keeps track of what you have pulled. Packs and pulls save to the account like projects do.
+The home screen sorts projects into groups by what they were made as: Blooks, Banners, Backgrounds, Icons, Pack art and Other art. Each group has its own New button for that kind.
+
+The Test page looks like Blooket's Market. Your packs shows each pack on a card in the colour you picked, with its icon faint in the corner and its price. Click a pack to choose how many to open, or Show Drop Rates to see every Blook's chance. My Blooks keeps track of what you have pulled. Packs and pulls save to the account like projects do.
+
+Community: in the pack maker, Send to Community shares a pack. It waits on the admin page until an admin approves it, then everyone can open it in the Community tab. Sending it again replaces it, and it waits again. Pulls from community packs are remembered in your browser.
 
 Other keys: `[` and `]` change brush size, Ctrl+Z undo, Ctrl+Y redo, Ctrl+D duplicate, Delete remove.
 

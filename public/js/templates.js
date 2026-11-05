@@ -29,6 +29,11 @@ export const TEMPLATES = {
   background: {
     name: 'Blook background', note: 'What shows behind a Blook', width: 452, height: 461, radius: 0, background: '#2ca7e7', words: ['Blook', 'Background'],
   },
+  // The little picture in a pack card's corner. Its shape shows as a faint
+  // silhouette, so it starts see-through.
+  icon: {
+    name: 'Icon', note: 'Blook size with sharp corners, for the corner of a pack card', width: 512, height: 512, radius: 0, background: 'none', preview: '#b9a6c9', words: ['Icon'],
+  },
   pack: {
     name: 'Pack art', note: 'The picture on the front of a pack', width: 1131, height: 929, radius: 0, background: '#2ca3e8', words: ['Your Pack', 'Art Here'],
     overlay: {
@@ -60,5 +65,5 @@ export function templatePreview(id, withOverlay = true) {
   const clip = `template-${id}-${withOverlay ? 'on' : 'off'}`;
   const overlay = withOverlay && t.overlay ? t.overlay.markup({ size: 1, strength: t.overlay.strength }) : '';
   return `<svg class="template-art" viewBox="0 0 ${t.width} ${t.height}" aria-hidden="true"><clipPath id="${clip}"><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></clipPath>
-    <g clip-path="url(#${clip})"><rect width="${t.width}" height="${t.height}" fill="${t.background}"/>${text}${overlay}</g></svg>`;
+    <g clip-path="url(#${clip})"><rect width="${t.width}" height="${t.height}" fill="${t.preview || t.background}"/>${text}${overlay}</g></svg>`;
 }

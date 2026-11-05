@@ -8,7 +8,10 @@ import { session, isPlus, logOut } from './session.js';
 import { syncArt, flushUploads, resetSync } from './sync.js';
 import { plusDialog } from './plus.js';
 import { TEMPLATES, templatePreview } from './templates.js';
-import { drawCollection, editPack, newPackProject, openPack, packVisual, savePack } from './packs.js';
+import {
+  drawCollection, editPack, newPackProject, savePack, marketCard, shopPack, fetchCommunity, fetchMySent, communityDoc, pulledCommunityDocs,
+} from './packs.js';
+import { whyNotOpen } from './pack-rules.js';
 import { $, $$, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
 
 const MIN_SIZE = 16;
@@ -26,6 +29,19 @@ const SIZE_PRESETS = [
 
 const PACKS = 'packs';
 
+// Projects sort themselves into these by what they were made as.
+const GROUPS = [
+  { id: 'blook', name: 'Blooks', icon: 'blook' },
+  { id: 'banner', name: 'Banners', icon: 'banner' },
+  { id: 'background', name: 'Backgrounds', icon: 'backdrop' },
+  { id: 'icon', name: 'Icons', icon: 'iconsq' },
+  { id: 'pack', name: 'Pack art', icon: 'pack' },
+  { id: 'other', name: 'Other art', icon: 'image', made: 'Art' },
+];
+const groupOf = (p) => (TEMPLATES[p.template] ? p.template : 'other');
+const TEST_TITLES = { packs: 'Your packs', community: 'Community packs', blooks: 'My Blooks' };
+const TEST_TABS = [['packs', 'Your packs'], ['community', 'Community'], ['blooks', 'My Blooks']];
+
 let currentFolder = 'all';
 let testTab = 'packs';
 let host = null;
@@ -41,20 +57,36 @@ export async function renderHome(root, onLeave = leave) {
   const projects = everything.filter((p) => !p.pack);
   const packs = everything.filter((p) => p.pack);
   const inPacks = currentFolder === PACKS;
-  if (currentFolder !== 'all' && !inPacks && !folders.some((f) => f.id === currentFolder)) currentFolder = 'all';
+  const group = GROUPS.find((g) => currentFolder === `group:${g.id}`);
+  if (currentFolder !== 'all' && !inPacks && !group && !folders.some((f) => f.id === currentFolder)) currentFolder = 'all';
 
-  const shown = currentFolder === 'all' ? projects : projects.filter((p) => p.folderId === currentFolder);
+  const shown = currentFolder === 'all' ? projects
+    : group ? projects.filter((p) => groupOf(p) === group.id) : projects.filter((p) => p.folderId === currentFolder);
   const count = (id) => projects.filter((p) => p.folderId === id).length;
-  const title = inPacks ? 'Test' : (currentFolder === 'all' ? 'All projects' : folders.find((f) => f.id === currentFolder).name);
+  const inGroup = (id) => projects.filter((p) => groupOf(p) === id).length;
+  // Other art only shows up once there is some.
+  const groups = GROUPS.filter((g) => g.id !== 'other' || inGroup('other'));
+  const title = inPacks ? TEST_TITLES[testTab] : group ? group.name
+    : (currentFolder === 'all' ? 'All projects' : folders.find((f) => f.id === currentFolder).name);
+  const made = group ? (group.made || TEMPLATES[group.id].name) : '';
+  const head = inPacks
+    ? `<div class="page-head"><h1>${esc(title)}</h1><div class="test-tabs">${TEST_TABS.map(([id, label]) => `<button class="${testTab === id ? 'on' : ''}" data-tab="${id}">${label}</button>`).join('')}</div></div>`
+    : `<div class="page-head"><h1>${esc(title)}</h1>${group ? `<button class="btn primary" id="newingroup">${icon('plus')}<span>New ${esc(made)}</span></button>` : ''}</div>`;
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
       <a class="brand" href="#/"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
       <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
-      <h3>Folders</h3>
       <ul class="folders">
         <li><button class="folder ${currentFolder === 'all' ? 'on' : ''}" data-f="all">${icon('shapes')}<span>All projects</span><em>${projects.length}</em></button></li>
+      </ul>
+      <h3>Groups</h3>
+      <ul class="folders">
+        ${groups.map((g) => `<li><button class="folder ${group === g ? 'on' : ''}" data-g="${g.id}">${icon(g.icon)}<span>${g.name}</span><em>${inGroup(g.id)}</em></button></li>`).join('')}
+      </ul>
+      <h3>Folders</h3>
+      <ul class="folders">
         ${folders.map((f) => `<li class="folder-row">
           <button class="folder ${currentFolder === f.id ? 'on' : ''}" data-f="${f.id}">${icon('folder')}<span>${esc(f.name)}</span><em>${count(f.id)}</em></button>
           <button class="ib folder-more" data-more="${f.id}" aria-label="Folder options for ${esc(f.name)}">${icon('dots')}</button>
@@ -68,36 +100,23 @@ export async function renderHome(root, onLeave = leave) {
         <span class="who-name"><b>${esc(session.user?.name || 'Guest')}</b>${isPlus() ? '<span class="plus-badge">PLUS</span>' : ''}</span>
         <button class="ib" id="logout" title="${session.guest ? 'Back to the welcome screen' : 'Log out'}" aria-label="Log out">${icon('logout')}</button>
       </div>
-      <a class="admin-link" href="#/admin">${icon('shield')}<span>Admin: shapes catalog</span></a>
+      <a class="admin-link" href="#/admin">${icon('shield')}<span>Admin: shapes and Community</span></a>
     </aside>
     <main class="home-main">
       ${session.guest ? '<p class="guest-note">You are playing as a guest. Your art disappears when you close this page, so export anything you want to keep.</p>' : ''}
-      <h1>${esc(title)}</h1>
-      ${inPacks ? testView(packs) : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState())}
+      ${head}
+      ${inPacks ? testView() : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState(group && made))}
     </main>
   </div>`;
 
   $('#new', root).onclick = () => newProjectWizard(folders);
+  const newHere = () => newProjectWizard(folders, group.id === 'other' ? null : group.id);
+  $('#newingroup', root)?.addEventListener('click', newHere);
+  $$('[data-g]', root).forEach((b) => { b.onclick = () => { currentFolder = `group:${b.dataset.g}`; renderHome(root); }; });
   $('#packs', root).onclick = () => { currentFolder = PACKS; renderHome(root); };
   const redraw = () => renderHome(root);
   $$('[data-tab]', root).forEach((b) => { b.onclick = () => { testTab = b.dataset.tab; redraw(); }; });
-  const collection = $('#collection', root);
-  if (collection) drawCollection(collection, packs);
-  $('#newpack', root)?.addEventListener('click', async () => {
-    const doc = newPackProject();
-    await savePack(doc);
-    redraw();
-    editPack(doc, redraw);
-  });
-  $$('.pack-card', root).forEach((c) => {
-    const load = () => getDoc(c.dataset.id);
-    $('.pack-edit', c).onclick = async () => editPack(await load(), redraw);
-    $('.pack-test', c).onclick = async () => {
-      const doc = await load();
-      if (doc.pack.art && doc.pack.blooks.length) openPack(doc);
-      else editPack(doc, redraw);
-    };
-  });
+  if (inPacks) fillTest($('#market', root), packs, redraw);
   $('#newfolder', root).onclick = () => createFolder();
   $('#getplus', root)?.addEventListener('click', async () => { if (await plusDialog()) renderHome(root); });
   $('#logout', root).onclick = async () => {
@@ -106,7 +125,7 @@ export async function renderHome(root, onLeave = leave) {
     logOut();
     leave();
   };
-  $('.empty-new', root)?.addEventListener('click', () => newProjectWizard(folders));
+  $('.empty-new', root)?.addEventListener('click', () => (group ? newHere() : newProjectWizard(folders)));
 
   $$('[data-f]', root).forEach((b) => {
     b.onclick = () => { currentFolder = b.dataset.f; renderHome(root); };
@@ -144,19 +163,56 @@ export async function renderHome(root, onLeave = leave) {
   });
 }
 
-function testView(packs) {
-  const tabs = [['packs', 'Packs'], ['blooks', 'My Blooks']];
-  return `<div class="test-tabs">${tabs.map(([id, label]) => `<button class="${testTab === id ? 'on' : ''}" data-tab="${id}">${label}</button>`).join('')}</div>
-    ${testTab === 'packs' ? packsView(packs) : '<div class="my-blooks" id="collection"><p>Loading...</p></div>'}`;
+function testView() {
+  return `<div id="market" class="${testTab === 'blooks' ? 'my-blooks' : 'market'}"><p class="market-note">Loading...</p></div>`;
 }
 
-function packsView(packs) {
-  return `<button class="btn primary pack-new" id="newpack">${icon('plus')}<span>New pack</span></button>
-    ${packs.length ? `<div class="pack-cards">${packs.map((p) => `<div class="pack-card" data-id="${p.id}">
-      <button class="pack-edit" title="Edit ${esc(p.name)}">${packVisual(p.thumb)}</button>
-      <b>${esc(p.name)}</b>
-      <button class="btn ghost pack-test">${icon('play')}<span>Test open</span></button>
-    </div>`).join('')}</div>` : '<p class="muted pack-none">Turn your art into a pack, then test open it.</p>'}`;
+// Your packs, Community packs, or every Blook you have pulled.
+async function fillTest(host, packs, redraw) {
+  const tab = testTab;
+  const live = () => host.isConnected && testTab === tab;
+  const mine = (await Promise.all(packs.map((p) => getDoc(p.id)))).filter(Boolean);
+  if (tab === 'blooks') {
+    const community = await pulledCommunityDocs().catch(() => []);
+    if (live()) drawCollection(host, [...mine, ...community]);
+    return;
+  }
+  if (tab === 'packs') {
+    host.innerHTML = `<div class="market-grid">
+      <button class="market-new" id="newpack">${icon('plus')}<b>New pack</b></button>
+      ${mine.map((doc) => marketCard({ ...doc.pack, id: doc.id, name: doc.name, editable: true })).join('')}
+    </div>${mine.length ? '' : '<p class="market-note">Turn your art into a pack, then test open it.</p>'}`;
+    $('#newpack', host).onclick = async () => {
+      const doc = newPackProject();
+      await savePack(doc);
+      redraw();
+      editPack(doc, redraw);
+    };
+    $$('.market-card', host).forEach((c) => {
+      const doc = mine.find((d) => d.id === c.dataset.id);
+      $('.market-edit', c).onclick = () => editPack(doc, redraw);
+      $('.market-open', c).onclick = () => (whyNotOpen(doc.pack) ? editPack(doc, redraw) : shopPack(doc));
+    });
+    return;
+  }
+  try {
+    const [shared, sent] = await Promise.all([fetchCommunity(), session.user ? fetchMySent().catch(() => []) : []]);
+    if (!live()) return;
+    const waiting = sent.filter((p) => p.status !== 'approved').length;
+    const note = session.user
+      ? (waiting ? `${waiting} of your packs ${waiting === 1 ? 'is' : 'are'} waiting for an admin to approve ${waiting === 1 ? 'it' : 'them'}.` : 'Share your own: open one of your packs and choose Send to Community.')
+      : 'Make an account to share your own packs here.';
+    host.innerHTML = `<p class="market-note">${note}</p>${shared.length
+      ? `<div class="market-grid">${shared.map((p) => marketCard({ ...p, art: p.cover })).join('')}</div>`
+      : '<p class="market-note">No community packs yet. Be the first!</p>'}`;
+    $$('.market-card', host).forEach((c) => {
+      $('.market-open', c).onclick = async () => {
+        try { shopPack(await communityDoc(c.dataset.id)); } catch (error) { toast(error.message, 'warn'); }
+      };
+    });
+  } catch (error) {
+    if (live()) host.innerHTML = `<p class="market-note">Community could not load. ${esc(error.message)}</p>`;
+  }
 }
 
 function card(p) {
@@ -170,12 +226,12 @@ function card(p) {
   </a>`;
 }
 
-function emptyState() {
+function emptyState(made = '') {
   return `<div class="empty">
     <div class="empty-art">${icon('pencil')}</div>
     <h2>Nothing here yet</h2>
-    <p class="muted">Start a new project and make something great.</p>
-    <button class="btn primary empty-new">${icon('plus')}<span>New project</span></button>
+    <p class="muted">${made ? `Make your first ${esc(made.toLowerCase())}.` : 'Start a new project and make something great.'}</p>
+    <button class="btn primary empty-new">${icon('plus')}<span>${made ? `New ${esc(made)}` : 'New project'}</span></button>
   </div>`;
 }
 
@@ -279,16 +335,19 @@ async function moveDialog(meta, folders) {
 
 /* ---------- New project steps ---------- */
 
-function newProjectWizard(folders) {
+// preset: a template id to skip the "What are you making?" step, or null for
+// your own size. Leave it out to ask.
+function newProjectWizard(folders, preset) {
+  const skipKind = preset !== undefined;
   const state = {
-    name: 'My new art',
-    folderId: currentFolder === 'all' || currentFolder === PACKS ? null : currentFolder,
+    name: preset ? `My new ${TEMPLATES[preset].name.toLowerCase()}` : 'My new art',
+    folderId: folders.some((f) => f.id === currentFolder) ? currentFolder : null,
     animated: null,
     animMode: 'keys',
     width: 1024,
     height: 1024,
     rounded: false,
-    template: null,
+    template: preset ?? null,
   };
   let step = 0;
 
@@ -318,6 +377,7 @@ function newProjectWizard(folders) {
         e.preventDefault();
         state.name = input.value.trim() || 'Untitled';
         state.folderId = $('#pfolder', box).value || null;
+        if (skipKind) { step = 2; stepType(); return; }
         step = 1;
         stepKind();
       };
@@ -390,7 +450,11 @@ function newProjectWizard(folders) {
           </button>
         </div>
         <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
-      $('[data-back]', box).onclick = () => { step = 1; stepKind(); };
+      $('[data-back]', box).onclick = () => {
+        if (skipKind) { step = 0; stepName(); return; }
+        step = 1;
+        stepKind();
+      };
       $$('.type-card', box).forEach((b) => {
         b.onclick = () => {
           state.animated = b.dataset.v === '1';
