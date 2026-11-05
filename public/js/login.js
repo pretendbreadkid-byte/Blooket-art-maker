@@ -28,7 +28,7 @@ async function floatBlooks(layer) {
 }
 
 export function renderLogin(root, onDone) {
-  document.title = 'Welcome · Blooksmith';
+  document.title = 'Welcome · Blook Berry';
   let mode = 'login';
 
   root.innerHTML = `<div class="welcome">
@@ -36,7 +36,7 @@ export function renderLogin(root, onDone) {
     <section class="welcome-art">
       <div class="welcome-copy">
         <span class="brand-mark big" data-sideways-logo><img src="/logo.svg" alt=""></span>
-        <h1>Blooksmith</h1>
+        <h1>Blook Berry</h1>
         <p>Draw it. Warp it. Animate it.</p>
       </div>
     </section>

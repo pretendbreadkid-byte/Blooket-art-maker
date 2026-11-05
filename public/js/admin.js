@@ -30,7 +30,7 @@ async function call(method, url, body) {
 }
 
 export async function renderAdmin(root) {
-  document.title = 'Admin · Blooksmith';
+  document.title = 'Admin · Blook Berry';
   if (getToken()) await renderManager(root);
   else renderLogin(root);
 }

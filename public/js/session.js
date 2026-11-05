@@ -36,7 +36,7 @@ export async function call(method, url, body) {
   });
   // Anything but JSON is the host's own page, shown while the site starts up.
   const data = await res.json().catch(() => null);
-  if (!data) throw Object.assign(new Error('Blooksmith is waking up. Try again in a moment.'), { status: 503 });
+  if (!data) throw Object.assign(new Error('Blook Berry is waking up. Try again in a moment.'), { status: 503 });
   if (!res.ok) throw Object.assign(new Error(data.error || 'Something went wrong. Try again.'), { status: res.status });
   return data;
 }

@@ -8,6 +8,7 @@ import { uploadedAssets } from './uploads.js';
 import {
   RARITIES, balanceOdds, chanceOf, gemOf, newPack, pickBlook, pullsOf, rarityOf, recordPull, whyNotOpen,
 } from './pack-rules.js';
+import { confettiLayer } from './confetti.js';
 import { $, $$, confirmBox, dialog, html, icon, toast } from './ui.js';
 
 const BLOOK_SIZE = 512;
@@ -261,14 +262,16 @@ export async function drawCollection(host, metas) {
 
 const tiles = () => Array.from({ length: TILES }, () => `<i style="--glow:${(Math.random() * 0.62 + 0.38).toFixed(2)}"></i>`).join('');
 
-function gems(name) {
-  const { gems: count } = rarityOf(name);
-  return Array.from({ length: count }, () => {
-    const turn = Math.random() * Math.PI * 2;
-    const reach = 260 + Math.random() * 520;
-    const size = Math.round(44 + Math.random() * 44);
-    return `<img src="${gemOf(name)}" alt="" style="--x:${Math.round(Math.cos(turn) * reach)}px;--y:${Math.round(Math.sin(turn) * reach)}px;--spin:${Math.round((Math.random() - 0.5) * 720)}deg;width:${size}px;animation-delay:${Math.round(Math.random() * 260)}ms">`;
-  }).join('');
+// Chroma and Unique throw their own gem in with the confetti.
+const gemImages = new Map();
+function gemImage(name) {
+  if (!gemImages.has(name)) gemImages.set(name, Object.assign(new Image(), { src: gemOf(name) }));
+  return gemImages.get(name);
+}
+
+function celebrate(confetti, name) {
+  const { confetti: c } = rarityOf(name);
+  confetti.fire(c.from, { ...c, images: c.gems ? [gemImage(name)] : [] });
 }
 
 // The diagonal wave: each tile flips over in turn, starting from the bottom right.
@@ -297,11 +300,12 @@ export function openPack(doc) {
   </div>`);
   const body = $('.opener-body', stage);
   const count = $('.opener-count', stage);
+  const confetti = confettiLayer(stage);
   let amount = 1;
   let done = 0;
   let closed = false;
 
-  const leave = () => { closed = true; stage.remove(); removeEventListener('keydown', onKey, true); };
+  const leave = () => { closed = true; confetti.stop(); stage.remove(); removeEventListener('keydown', onKey, true); };
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); leave(); } };
   addEventListener('keydown', onKey, true);
   $('.opener-x', stage).onclick = leave;
@@ -341,6 +345,7 @@ export function openPack(doc) {
   };
 
   const next = async () => {
+    confetti.stop();
     if (stage.classList.contains('lit')) {
       body.innerHTML = '';
       wave(stage, null);
@@ -366,8 +371,7 @@ export function openPack(doc) {
     await wait(rarity.intro);
     if (closed) return;
     const more = done < amount;
-    body.innerHTML = `<div class="opener-gems" aria-hidden="true">${gems(blook.rarity)}</div>
-      <div class="reveal-card enter-${rarity.entrance}" style="${doc.pack.back ? `background-image:url('${esc(doc.pack.back)}')` : ''}">
+    body.innerHTML = `<div class="reveal-card enter-${rarity.entrance}" style="${doc.pack.back ? `background-image:url('${esc(doc.pack.back)}')` : ''}">
         <b class="reveal-name">${esc(blook.name)}</b>
         <b class="reveal-rarity">${esc(blook.rarity)}</b>
         <img src="${esc(blook.picture)}" alt="">
@@ -377,7 +381,8 @@ export function openPack(doc) {
         <button class="btn primary big opener-again">${more ? 'Next' : 'Open another'}</button>
         ${more ? '<button class="btn ghost big opener-skip">Skip to the end</button>' : ''}
       </div>`;
-    $('.opener-again', body).onclick = more ? next : showPack;
+    celebrate(confetti, blook.rarity);
+    $('.opener-again', body).onclick = more ? next : () => { confetti.stop(); showPack(); };
     $('.opener-skip', body)?.addEventListener('click', skip);
   };
 

@@ -1,4 +1,4 @@
-# Blooksmith
+# Blook Berry
 
 A friendly art and animation website. Draw with vector tools, organise projects in folders, and export SVG.
 
@@ -8,7 +8,7 @@ There is nothing to install except [Node.js](https://nodejs.org) 20 or newer.
 
 Press **Ctrl+Shift+B**. This starts the server and opens the app in a tab inside VS Code.
 
-You can also run **Terminal > Run Task > Blooksmith: Preview in VS Code**.
+You can also run **Terminal > Run Task > Blook Berry: Preview in VS Code**.
 
 ## Run it in a normal browser
 
@@ -22,7 +22,7 @@ Then open <http://localhost:5180>.
 
 | Tool | Key | What it does |
 | --- | --- | --- |
-| Select | V | Move, resize and turn things. Ctrl+click picks more. Double-click to edit text or points. Right-click for more. |
+| Select | V | Move, resize and turn things. Drag empty space to move around the canvas, scroll to zoom. Ctrl+click picks more, Shift+drag draws a box to pick. Double-click to edit text or points. Right-click for more. After a resize, Original size at the top puts it back. |
 | Lasso | L | Draw a loop around things to pick them. In the drop-down under Select. |
 | Vertices | A | Drag points, click anywhere on a line to add a point there, choose Pointed or Rounded, round the corners. In the drop-down under Select. |
 | Line | N | Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect. |
@@ -33,16 +33,17 @@ Then open <http://localhost:5180>.
 | Bucket | B | Fill a shape, a closed drawing, or the background, with a colour or a gradient. |
 | Text | T | Click and type. |
 | Eraser | E | Rubs out art. |
-| Move view | H | Drag around. Hold Space to do this from any tool. Scroll to zoom. In the drop-down under Select. |
 | Assets | | Search the Blook art and drag one onto the canvas. |
 | Uploads | | Upload your own pictures. They stay on your account, ready for any project. |
 | Textures | | Dots, stripes, checks, grid, waves, sparkles or your own picture, on some pieces, a whole Blook or the background. In an animation they can slide. |
 | Swap colours | | Change one colour everywhere in the picked art, including SVG and other pictures. |
 | Blur | | Soften any picked art, from 0 to 60 px. In an animation it can blur in and out. |
+| Shadow | | A drop shadow under picked art, with darkness, distance, softness and direction. A whole Blook casts one shadow together. |
+| Auto shadow | | In the Canvas panel. Shades wherever pieces overlap, falling just past the top piece onto the one below, with a strength and spread. |
 
 ## Templates and packs
 
-New projects can start as a Blook, a Banner, a Blook background or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art, and the Canvas panel turns them on or off.
+New projects can start as a Blook, a Banner, a Blook background or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art. The Canvas panel turns them on or off, sizes them, and makes them darker or lighter.
 
 The Test page on the home screen turns your art into a pack with a price, pack art, a Blook background, and Blooks with their own rarity and odds. Test open shows what comes out, and My Blooks keeps track of what you have pulled. Packs and pulls save to the account like projects do.
 

@@ -205,6 +205,24 @@ async function importFiles(files, x, y) {
   }
 }
 
+// The toolbar scrolls, which would cut off a CSS tooltip, so one floats on the page.
+function showTips(bar) {
+  const tipEl = document.createElement('div');
+  tipEl.className = 'tool-tip';
+  tipEl.hidden = true;
+  bar.closest('.ed').append(tipEl);
+  bar.addEventListener('pointerover', (e) => {
+    const b = e.target.closest('[data-tip]');
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    tipEl.textContent = b.dataset.tip;
+    Object.assign(tipEl.style, { left: `${r.right + 8}px`, top: `${r.top + r.height / 2}px` });
+    tipEl.hidden = false;
+  });
+  bar.addEventListener('pointerout', (e) => { if (!e.relatedTarget?.closest?.('[data-tip]')) tipEl.hidden = true; });
+  bar.addEventListener('pointerdown', () => { tipEl.hidden = true; });
+}
+
 function wireTop(root) {
   const doc = S.doc;
   const name = $('#docname', root);
@@ -225,14 +243,17 @@ function wireTop(root) {
 
   const bar = $('#toolbar', root);
   const others = Object.entries(TOOLS).filter(([id]) => !TOOL_GROUPS.flat().includes(id));
+  // Just icons. Hovering one says what it is.
+  const tip = (label) => `data-tip="${label}" aria-label="${label}"`;
   const toolGroup = ([id]) => `<div class="tool-pick">
-      <button data-tool="${id}" title="${TOOLS[id].label} (${TOOLS[id].key})">${icon(id)}<span>${TOOLS[id].label}</span></button>
-      <button class="tool-more" title="More tools" aria-label="More tools" aria-haspopup="menu">${icon('caret')}</button>
+      <button data-tool="${id}" ${tip(`${TOOLS[id].label} (${TOOLS[id].key})`)}>${icon(id)}</button>
+      <button class="tool-more" ${tip('More tools')} aria-haspopup="menu">${icon('caret')}</button>
     </div>`;
   bar.innerHTML = `${TOOL_GROUPS.map(toolGroup).join('')}
-    ${others.map(([id, t]) => `<button data-tool="${id}" title="${t.label} (${t.key})">${icon(id)}<span>${t.label}</span></button>`).join('')}
-    <button id="blookbtn" title="Assets">${icon('file')}<span>Assets</span></button>
-    <button id="uploadbtn" title="Uploaded assets">${icon('upload')}<span>Uploads</span></button>`;
+    ${others.map(([id, t]) => `<button data-tool="${id}" ${tip(`${t.label} (${t.key})`)}>${icon(id)}</button>`).join('')}
+    <button id="blookbtn" ${tip('Assets')}>${icon('file')}</button>
+    <button id="uploadbtn" ${tip('Uploaded assets')}>${icon('upload')}</button>`;
+  showTips(bar);
   bar.onclick = (e) => {
     const b = e.target.closest('[data-tool]');
     if (b) setTool(b.dataset.tool);
@@ -268,7 +289,7 @@ export async function openEditor(root, id) {
   const meta = await getMeta(id);
   openDoc(doc, meta?.thumb || null);
   root.innerHTML = TEMPLATE;
-  document.title = `${doc.name} · Blooksmith`;
+  document.title = `${doc.name} · Blook Berry`;
   S.tool = 'select';
   document.body.dataset.tool = 'select';
 

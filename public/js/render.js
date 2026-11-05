@@ -1,6 +1,6 @@
 // Turns a document into SVG markup. The editor, thumbnails, the bucket tool and
 // export all use this file, so what you see is what you get.
-import { pathD, sample, round, rad, isPages, objectsOn } from './model.js';
+import { pathD, pathBounds, localToWorld, sample, round, rad, isPages, objectsOn } from './model.js';
 import { overlayMarkup } from './templates.js';
 import { patternMarkup } from './textures.js';
 
@@ -164,9 +164,95 @@ function animatedObject(raw, doc, opt) {
     + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
 }
 
+/* ---------- Shadows ---------- */
+
+export const newDropShadow = () => ({ strength: 0.35, distance: 10, soft: 6, angle: 90 });
+export const newAutoShadow = () => ({ on: true, strength: 0.35, size: 10 });
+
+// Roughly where a piece sits on the canvas, to find the ones it overlaps.
+function worldBounds(raw, frame) {
+  const o = sample(raw, frame);
+  let b;
+  if (o.type === 'path') {
+    const p = pathBounds(o.subpaths), w = o.stroke && o.stroke !== 'none' ? o.strokeWidth / 2 : 0;
+    b = { x: p.x - w, y: p.y - w, width: p.width + w * 2, height: p.height + w * 2 };
+  } else if (o.type === 'image') {
+    b = { x: -o.w / 2, y: -o.h / 2, width: o.w, height: o.h };
+  } else {
+    const lines = o.text.split('\n');
+    const width = Math.max(...lines.map((l) => l.length)) * o.fontSize * 0.7, height = lines.length * o.fontSize * 1.2;
+    b = { x: -width / 2, y: -height / 2, width, height };
+  }
+  const pts = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => localToWorld(o, x, y));
+  const grow = (o.blur || 0) * 2;
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  return { x0: Math.min(...xs) - grow, y0: Math.min(...ys) - grow, x1: Math.max(...xs) + grow, y1: Math.max(...ys) + grow };
+}
+
+const touching = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+// Big enough for any canvas, measured on the canvas itself.
+const region = () => `filterUnits="userSpaceOnUse" x="${-MASK_SIZE / 2}" y="${-MASK_SIZE / 2}" width="${MASK_SIZE}" height="${MASK_SIZE}"`;
+
+// A soft black copy of whatever the filter is on, moved by dx, dy.
+const shadeFilter = (id, strength, soft, dx, dy) => `<filter id="${id}" ${region()}><feGaussianBlur in="SourceAlpha" stdDeviation="${round(soft, 2)}"/>`
+  + `<feOffset dx="${round(dx, 2)}" dy="${round(dy, 2)}"/><feComponentTransfer><feFuncA type="linear" slope="${round(strength, 3)}"/></feComponentTransfer></filter>`;
+
+// The pieces a drop shadow is made of: a Blook's pieces share one shadow, so
+// they don't darken each other. Keyed by the first piece, where it is drawn.
+function shadowTeams(list) {
+  const teams = new Map(), byGroup = new Map();
+  list.forEach((o, i) => {
+    if (!o.dropShadow) return;
+    const team = o.group && byGroup.get(o.group);
+    if (team) { team.push(o); return; }
+    const fresh = [o];
+    teams.set(i, fresh);
+    if (o.group) byGroup.set(o.group, fresh);
+  });
+  return teams;
+}
+
+// Shadows are copies (<use>) of the art itself, so they follow it in animations.
+// Auto shadow: each piece casts a soft shadow, only onto the pieces under it.
+// Because the piece is drawn over its own shadow, just a rim shows past its edge.
+function withShadows(list, frame, opt, layer, draw) {
+  const prefix = `${opt.prefix || 'erase'}-${layer.id}`;
+  const ref = (o) => `${prefix}-o-${o.id}`;
+  const uses = (items) => items.map((o) => `<use href="#${ref(o)}"/>`).join('');
+  const used = new Set();
+  const auto = opt.doc?.autoShadow;
+  const autoOn = auto?.on && auto.strength > 0 && auto.size > 0;
+  const moves = (o) => opt.animate && o.keys?.length;
+  const boxes = autoOn ? list.map((o) => worldBounds(o, frame)) : [];
+  const teams = shadowTeams(list);
+  let defs = autoOn ? `<filter id="${prefix}-solid" ${region()}><feFlood flood-color="#fff"/><feComposite in2="SourceAlpha" operator="in"/></filter>`
+    + shadeFilter(`${prefix}-shade`, auto.strength, auto.size / 2, 0, auto.size * 0.35) : '';
+  const parts = list.map((o, i) => {
+    let before = '';
+    const team = teams.get(i);
+    if (team) {
+      const s = { ...newDropShadow(), ...o.dropShadow }, a = rad(s.angle);
+      defs += shadeFilter(`${prefix}-ds-${o.id}`, s.strength, s.soft, Math.cos(a) * s.distance, Math.sin(a) * s.distance);
+      team.forEach((t) => used.add(t.id));
+      before += `<g pointer-events="none" filter="url(#${prefix}-ds-${o.id})">${uses(team)}</g>`;
+    }
+    const under = autoOn ? list.slice(0, i).filter((b, j) => moves(o) || moves(b) || touching(boxes[i], boxes[j])) : [];
+    if (under.length) {
+      [o, ...under].forEach((t) => used.add(t.id));
+      defs += `<mask id="${prefix}-as-${o.id}" maskUnits="userSpaceOnUse" x="${-MASK_SIZE / 2}" y="${-MASK_SIZE / 2}" width="${MASK_SIZE}" height="${MASK_SIZE}"><g filter="url(#${prefix}-solid)">${uses(under)}</g></mask>`;
+      before += `<g pointer-events="none" mask="url(#${prefix}-as-${o.id})"><use href="#${ref(o)}" filter="url(#${prefix}-shade)"/></g>`;
+    }
+    return { o, before, markup: draw(o) };
+  });
+  return (defs ? `<defs>${defs}</defs>` : '')
+    + parts.map(({ o, before, markup }) => before + (used.has(o.id) ? `<g id="${ref(o)}">${markup}</g>` : markup)).join('');
+}
+
 export function layerMarkup(layer, frame, opt = {}) {
   const list = opt.doc ? objectsOn(opt.doc, layer, frame) : layer.objects;
-  const objects = list.map((o) => (opt.animate && o.keys?.length ? animatedObject(o, opt.doc, opt) : objectMarkup(o, frame, opt))).join('');
+  const draw = (o) => (opt.animate && o.keys?.length ? animatedObject(o, opt.doc, opt) : objectMarkup(o, frame, opt));
+  const objects = withShadows(list, frame, opt, layer, draw);
   const attrs = opt.editor ? ` data-layer="${layer.id}"` : ` id="${esc(layer.name.replace(/[^\w-]+/g, '-'))}"`;
   return `<g${attrs} opacity="${round(layer.opacity, 3)}">${objects}</g>`;
 }

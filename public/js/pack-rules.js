@@ -1,15 +1,33 @@
 // The rules of a pack: rarities, odds and what comes out when one is opened.
 
-// gems: how many fly out. intro: how long the build-up lasts, in ms.
-// entrance: how the card arrives. Rarer Blooks make more of a fuss.
+// intro: how long the build-up lasts, in ms. entrance: how the card arrives.
+// confetti: where it comes from and in what colours, as in Blooket: none for
+// Common and Uncommon, blue and cyan from the bottom corners for Rare, red from
+// both sides for Epic, orange raining from the top for Legendary, and gems with
+// confetti from every corner for Chroma and Unique.
 export const RARITIES = {
-  Common: { color: '#a9b3b6', odds: 40, sells: 1, gems: 16, intro: 200, entrance: 'pop' },
-  Uncommon: { color: '#48b82c', odds: 30, sells: 5, gems: 34, intro: 250, entrance: 'pop' },
-  Rare: { color: '#0a18d6', odds: 15, sells: 20, gems: 46, intro: 350, entrance: 'bounce' },
-  Epic: { color: '#d3350b', odds: 8, sells: 75, gems: 60, intro: 550, entrance: 'slam' },
-  Legendary: { color: '#ff910f', odds: 3, sells: 200, gems: 80, intro: 800, entrance: 'slam' },
-  Chroma: { color: '#17c4e6', odds: 1, sells: 300, gems: 100, intro: 1100, entrance: 'spin' },
-  Unique: { color: '#00918d', odds: 0.1, sells: 500, gems: 120, intro: 1300, entrance: 'spin' },
+  Common: { color: '#a9b3b6', odds: 40, sells: 1, intro: 200, entrance: 'pop', confetti: { from: 'none' } },
+  Uncommon: { color: '#48b82c', odds: 30, sells: 5, intro: 250, entrance: 'pop', confetti: { from: 'none' } },
+  Rare: {
+    color: '#0a18d6', odds: 15, sells: 20, intro: 350, entrance: 'rise',
+    confetti: { from: 'bottom-corners', colors: ['#0a18d6', '#2b54ff', '#17c4e6', '#7fe3ff'], count: 70, speed: 58, waves: 2, gap: 160 },
+  },
+  Epic: {
+    color: '#d3350b', odds: 8, sells: 75, intro: 550, entrance: 'grow',
+    confetti: { from: 'sides', colors: ['#d3350b', '#ff4d2e', '#ff8a6b', '#a51f00'], count: 60, speed: 62, waves: 4, gap: 220 },
+  },
+  Legendary: {
+    color: '#ff910f', odds: 3, sells: 200, intro: 800, entrance: 'drop',
+    confetti: { from: 'top', colors: ['#ff910f', '#ffb347', '#ffd27a', '#ff6a00'], count: 26, waves: 14, gap: 180 },
+  },
+  Chroma: {
+    color: '#17c4e6', odds: 1, sells: 300, intro: 1100, entrance: 'spin',
+    confetti: { from: 'all-corners', colors: ['#17c4e6', '#7fe3ff', '#ffffff', '#00a2c7'], count: 45, speed: 60, waves: 5, gap: 260, gems: true, imageShare: 0.3 },
+  },
+  Unique: {
+    color: '#00918d', odds: 0.1, sells: 500, intro: 1300, entrance: 'spin',
+    confetti: { from: 'all-corners', colors: ['#00918d', '#2fd1c2', '#ffffff', '#ffe066'], count: 50, speed: 64, waves: 7, gap: 260, gems: true, imageShare: 0.35 },
+  },
 };
 
 export const rarityOf = (name) => RARITIES[name] ?? RARITIES.Common;

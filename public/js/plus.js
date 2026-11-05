@@ -7,7 +7,7 @@ export function plusDialog(reason = '') {
   return dialog((box, close) => {
     const perks = ['Extra shapes in the catalog', 'Export as PNG, JPG and PDF', 'Everything in Basic'];
     box.innerHTML = `<span class="plus-badge big">PLUS</span>
-      <h2>${esc(reason || 'Blooksmith Plus')}</h2>
+      <h2>${esc(reason || 'Blook Berry Plus')}</h2>
       <ul class="perks">${perks.map((p) => `<li>${icon('check')}<span>${p}</span></li>`).join('')}</ul>
       <p class="plus-price"><b>Free for now</b></p>
       ${session.guest ? '<p class="muted">You need an account to get Plus.</p>' : ''}

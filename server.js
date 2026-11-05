@@ -1,4 +1,4 @@
-// Blooksmith server. Serves the app and the shared shapes catalog.
+// Blook Berry server. Serves the app and the shared shapes catalog.
 // No dependencies: run it with `node server.js`.
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt as scryptCallback } from 'node:crypto';
@@ -574,7 +574,7 @@ async function loadSessionSecret() {
   }
 }
 
-console.log('Starting Blooksmith...');
+console.log('Starting Blook Berry...');
 await loadUsers();
 await loadSessionSecret();
 if (TEMPORARY_DISK && !USERS_IN_GITHUB) {

@@ -41,7 +41,7 @@ const api = (method, path, body, auth = true) => fetch(BASE + path, {
 test('serves the app', async () => {
   const res = await fetch(`${BASE}/`);
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /Blooksmith/);
+  assert.match(await res.text(), /Blook Berry/);
 });
 
 test('does not serve files outside public', async () => {

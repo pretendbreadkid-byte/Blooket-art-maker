@@ -5,15 +5,15 @@ import {
 import { clone, pathBounds } from './model.js';
 import { TEXTURES, MOVES, newTexture, patternMarkup } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
-import { esc } from './render.js';
+import { esc, newDropShadow, newAutoShadow } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, shapeLook,
+  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
-import { TEMPLATES } from './templates.js';
+import { TEMPLATES, overlayLook } from './templates.js';
 import { isPlus } from './session.js';
 import { plusDialog } from './plus.js';
 import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
@@ -102,6 +102,7 @@ function optionBar() {
       button('Flip sideways', 'flipx', () => flipSelection('x')),
       button('Flip up and down', 'flipy', () => flipSelection('y')),
     );
+    if (canRestoreSize()) add(button('Original size', 'undo', restoreSize));
   }
   if (tool === 'pencil' || tool === 'marker' || tool === 'eraser' || tool === 'line') {
     if (tool !== 'eraser') add(ink('stroke', 'Colour'));
@@ -212,9 +213,66 @@ function documentPanel(box) {
   const overlay = TEMPLATES[d.template]?.overlay;
   if (overlay) {
     const row = html(`<label class="check"><input type="checkbox" ${d.overlay ? 'checked' : ''}><span>${overlay.name}</span></label>`);
-    $('input', row).onchange = (e) => { d.overlay = e.target.checked; commit(); hooks.stage(); };
+    $('input', row).onchange = (e) => { d.overlay = e.target.checked; commit(); hooks.panels(); hooks.stage(); };
     box.append(row);
+    if (d.overlay) {
+      const look = overlayLook(d);
+      box.append(
+        slider({
+          label: overlay.sizeLabel, value: Math.round(look.size * 100), min: 10, max: overlay.maxSize * 100, unit: '%',
+          onInput: (v) => { d.overlaySize = v / 100; hooks.stage(); }, onChange: commit,
+        }),
+        slider({
+          label: overlay.strengthLabel, value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%',
+          onInput: (v) => { d.overlayStrength = v / 100; hooks.stage(); }, onChange: commit,
+        }),
+      );
+    }
   }
+  box.append(autoShadowControls(d));
+}
+
+// Shadows wherever pieces overlap, falling just past the top piece's edge.
+function autoShadowControls(d) {
+  const box = html(`<div class="shadow-box"><label class="check"><input type="checkbox" ${d.autoShadow?.on ? 'checked' : ''}><span>Auto shadow</span></label>
+    <p class="muted small">Shades the spots where pieces overlap, so the piece on top looks like it sits on the one below.</p></div>`);
+  $('input', box).onchange = (e) => {
+    d.autoShadow = { ...newAutoShadow(), ...d.autoShadow, on: e.target.checked };
+    commit();
+    hooks.panels();
+    hooks.stage();
+  };
+  if (d.autoShadow?.on) {
+    const set = (patch) => { Object.assign(d.autoShadow, patch); hooks.stage(); };
+    box.append(
+      slider({ label: 'Strength', value: Math.round(d.autoShadow.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+      slider({ label: 'Spread', value: d.autoShadow.size, min: 1, max: 60, unit: 'px', onInput: (v) => set({ size: v }), onChange: commit }),
+    );
+  }
+  return box;
+}
+
+// A drop shadow under the picked art. A whole Blook casts one shadow together.
+function dropShadowControls(items) {
+  const first = items.find((o) => o.dropShadow);
+  const box = html(`<div class="shadow-box"><label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Shadow</span></label></div>`);
+  $('input', box).onchange = (e) => {
+    const s = e.target.checked ? { ...newDropShadow(), ...first?.dropShadow } : null;
+    items.forEach((o) => { o.dropShadow = s && { ...s }; });
+    commit();
+    hooks.panels();
+  };
+  if (first) {
+    const s = { ...newDropShadow(), ...first.dropShadow };
+    const set = (patch) => { Object.assign(s, patch); items.forEach((o) => { o.dropShadow = { ...s }; }); liveRefresh(); };
+    box.append(
+      slider({ label: 'Darkness', value: Math.round(s.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+      slider({ label: 'Distance', value: s.distance, min: 0, max: 80, unit: 'px', onInput: (v) => set({ distance: v }), onChange: commit }),
+      slider({ label: 'Softness', value: s.soft, min: 0, max: 40, unit: 'px', onInput: (v) => set({ soft: v }), onChange: commit }),
+      slider({ label: 'Direction', value: s.angle, min: 0, max: 359, unit: '°', onInput: (v) => set({ angle: v }), onChange: commit }),
+    );
+  }
+  return box;
 }
 
 function refreshFrameCorners() {
@@ -272,7 +330,7 @@ function selectedPanel() {
   const single = items.length === 1 ? items[0] : null;
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
-  box.append(opacitySlider(items), blurSlider(items), arrangeRow());
+  box.append(opacitySlider(items), blurSlider(items), dropShadowControls(items), arrangeRow());
 
   if (single) {
     const s = posed(single);
@@ -284,10 +342,10 @@ function selectedPanel() {
       numberField('X', Math.round(s.x), (v) => { edit(single, { x: v }); liveRefresh(); }),
       numberField('Y', Math.round(s.y), (v) => { edit(single, { y: v }); liveRefresh(); }),
       numberField('Width', width, (v) => {
-        if (b?.width && v > 0) { edit(single, { scaleX: Math.sign(s.scaleX || 1) * (v / b.width) }); liveRefresh(); }
+        if (b?.width && v > 0) { rememberSize(single); edit(single, { scaleX: Math.sign(s.scaleX || 1) * (v / b.width) }); liveRefresh(); }
       }),
       numberField('Height', height, (v) => {
-        if (b?.height && v > 0) { edit(single, { scaleY: Math.sign(s.scaleY || 1) * (v / b.height) }); liveRefresh(); }
+        if (b?.height && v > 0) { rememberSize(single); edit(single, { scaleY: Math.sign(s.scaleY || 1) * (v / b.height) }); liveRefresh(); }
       }),
       numberField('Turn', Math.round(s.rotation), (v) => { edit(single, { rotation: v }); liveRefresh(); }),
     );
@@ -574,8 +632,9 @@ function toolbarState() {
     const inGroup = TOOL_GROUPS[i].includes(S.tool);
     if (inGroup && pick.dataset.tool !== S.tool) {
       pick.dataset.tool = S.tool;
-      pick.title = `${TOOLS[S.tool].label} (${TOOLS[S.tool].key})`;
-      pick.innerHTML = `${icon(S.tool)}<span>${TOOLS[S.tool].label}</span>`;
+      pick.dataset.tip = `${TOOLS[S.tool].label} (${TOOLS[S.tool].key})`;
+      pick.setAttribute('aria-label', pick.dataset.tip);
+      pick.innerHTML = icon(S.tool);
     }
     pick.classList.toggle('on', inGroup);
   });

@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Blooksmith: Start server",
+      "label": "Blook Berry: Start server",
       "type": "shell",
       "command": "node server.js",
       "isBackground": true,
@@ -12,16 +12,16 @@
         "pattern": { "regexp": "^never-matches$" },
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "^Starting Blooksmith",
+          "beginsPattern": "^Starting Blook Berry",
           "endsPattern": "^Running at"
         }
       }
     },
     {
-      "label": "Blooksmith: Preview in VS Code",
+      "label": "Blook Berry: Preview in VS Code",
       "type": "shell",
       "command": "echo Preview open ${input:openPreview}",
-      "dependsOn": "Blooksmith: Start server",
+      "dependsOn": "Blook Berry: Start server",
       "group": { "kind": "build", "isDefault": true },
       "presentation": { "reveal": "never" },
       "problemMatcher": []

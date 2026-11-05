@@ -34,7 +34,7 @@ let leave = () => {};
 export async function renderHome(root, onLeave = leave) {
   host = root;
   leave = onLeave;
-  document.title = 'Blooksmith';
+  document.title = 'Blook Berry';
   const [folders, everything] = await Promise.all([listFolders(), listProjects()]);
   folders.sort((a, b) => a.name.localeCompare(b.name));
   everything.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -49,7 +49,7 @@ export async function renderHome(root, onLeave = leave) {
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
-      <a class="brand" href="#/"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blooksmith</b></a>
+      <a class="brand" href="#/"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
       <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
       <h3>Folders</h3>

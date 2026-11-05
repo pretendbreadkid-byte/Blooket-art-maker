@@ -465,17 +465,92 @@ test('flattening a project that is already flat changes nothing', () => {
 
 test('a template overlay sits above the art and can be turned off', async () => {
   const { newDoc: blank } = await import('../public/js/model.js');
-  const { TEMPLATES } = await import('../public/js/templates.js');
+  const { TEMPLATES, overlayLook } = await import('../public/js/templates.js');
   const doc = blank({ name: 'Blook', width: 512, height: 512 });
   doc.template = 'blook';
   doc.overlay = true;
-  assert.ok(exportSVG(doc).includes(TEMPLATES.blook.overlay.markup));
-  assert.ok(!exportSVG(doc, { overlay: false }).includes('fill-opacity=".28"'));
+  assert.ok(exportSVG(doc).includes(TEMPLATES.blook.overlay.markup(overlayLook(doc))));
+  assert.ok(!exportSVG(doc, { overlay: false }).includes('fill-opacity="0.28"'));
   doc.overlay = false;
-  assert.ok(!exportSVG(doc).includes('fill-opacity=".28"'));
+  assert.ok(!exportSVG(doc).includes('fill-opacity="0.28"'));
   doc.overlay = true;
   doc.template = 'background';
   assert.ok(!exportSVG(doc).includes('pointer-events'));
+});
+
+test('the underbelly can be sized and darkened, and stays on the bottom edge', async () => {
+  const { newDoc: blank } = await import('../public/js/model.js');
+  const doc = blank({ name: 'Blook', width: 512, height: 512 });
+  Object.assign(doc, { template: 'blook', overlay: true });
+  const bottomOf = (svg) => {
+    const [, y, sy] = svg.match(/translate\(256\.17 ([\d.]+)\) scale\(1\.7231 ([\d.]+)\)/).map(Number);
+    return { top: y - 42.93 * sy, bottom: y + 42.93 * sy };
+  };
+  const normal = bottomOf(exportSVG(doc));
+  Object.assign(doc, { overlaySize: 2, overlayStrength: 0.6 });
+  const svg = exportSVG(doc);
+  const big = bottomOf(svg);
+  assert.ok(Math.abs(big.bottom - normal.bottom) < 0.01, 'the bottom stays put');
+  assert.ok(Math.abs((big.bottom - big.top) - 2 * (normal.bottom - normal.top)) < 0.01, 'twice as tall');
+  assert.ok(svg.includes('fill-opacity="0.6"'));
+});
+
+test('a drop shadow is drawn under the art, once for a whole Blook', async () => {
+  const { newDropShadow } = await import('../public/js/render.js');
+  const doc = newDoc({ name: 't', width: 400, height: 400 });
+  const a = newPath({ subpaths: square(), fill: '#ff0000', group: 'g1' });
+  const b = newPath({ subpaths: square(), fill: '#00ff00', x: 50, group: 'g1' });
+  doc.layers[0].objects.push(a, b);
+  assert.ok(!exportSVG(doc).includes('<use'));
+  a.dropShadow = newDropShadow();
+  b.dropShadow = newDropShadow();
+  const svg = exportSVG(doc);
+  assert.equal(svg.match(/filter="url\(#[^"]+-ds-/g).length, 1, 'one shadow for the group');
+  assert.ok(svg.indexOf('-ds-') < svg.indexOf(`id="erase-${doc.layers[0].id}-o-${a.id}"`), 'the shadow comes first');
+  assert.ok(svg.includes('feOffset dx="0" dy="10"'), svg);
+});
+
+test('auto shadow only falls on pieces that are overlapped', () => {
+  const doc = newDoc({ name: 't', width: 600, height: 600 });
+  const under = newPath({ subpaths: square(), fill: '#0000ff' });
+  const over = newPath({ subpaths: square(), fill: '#ff0000', x: 50, y: 50 });
+  const apart = newPath({ subpaths: square(), fill: '#00ff00', x: 400, y: 400 });
+  doc.layers[0].objects.push(under, over, apart);
+  doc.autoShadow = { on: true, strength: 0.4, size: 12 };
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes(`-as-${over.id}"`), 'the top piece shades the one under it');
+  assert.ok(!svg.includes(`-as-${apart.id}"`), 'a piece on its own casts nothing');
+  assert.ok(svg.includes('slope="0.4"'));
+  doc.autoShadow.on = false;
+  assert.ok(!exportSVG(doc).includes('<use'));
+});
+
+test('auto shadows follow pieces in an animated export', () => {
+  const { doc, obj } = animated();
+  const top = newPath({ subpaths: square(), fill: '#ff0000', x: 500 });
+  doc.layers[0].objects.push(top);
+  setProps(doc, top, 20, { x: 0 });
+  doc.autoShadow = { on: true, strength: 0.4, size: 12 };
+  const svg = exportSVG(doc, { animate: true });
+  assert.ok(svg.includes(`-as-${top.id}"`), 'moving pieces still cast');
+  assert.ok(svg.includes(`<use href="#erase-${doc.layers[0].id}-o-${obj.id}"/>`));
+});
+
+test('confetti flies out, slows down and fades away', async () => {
+  const { step, BURSTS } = await import('../public/js/confetti.js');
+  const { RARITIES } = await import('../public/js/pack-rules.js');
+  const p = { x: 0, y: 900, velocity: 40, decay: 0.9, angle2D: -Math.PI / 3, gravity: 3, drift: 0, wobble: 0, wobbleSpeed: 0.1, tilt: 0, tick: 0, ticks: 200 };
+  step(p);
+  assert.ok(p.x > 0 && p.y < 900, 'it flies up and in');
+  let alive = true;
+  for (let i = 0; i < 300 && alive; i++) alive = step(p);
+  assert.ok(!alive);
+  assert.equal(RARITIES.Common.confetti.from, 'none');
+  assert.equal(RARITIES.Rare.confetti.from, 'bottom-corners');
+  assert.equal(RARITIES.Epic.confetti.from, 'sides');
+  assert.equal(RARITIES.Legendary.confetti.from, 'top');
+  assert.ok(RARITIES.Chroma.confetti.gems && RARITIES.Chroma.confetti.from === 'all-corners');
+  for (const r of Object.values(RARITIES)) assert.ok(BURSTS[r.confetti.from], r.confetti.from);
 });
 
 test('packs follow the odds, whatever they add up to', async () => {

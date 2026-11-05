@@ -27,7 +27,7 @@ const DOUBLE_PRESS_MS = 350;
 export const setSpaceHeld = (v) => { spaceHeld = v; };
 
 export const TOOLS = {
-  select: { label: 'Select', key: 'V', hint: 'Click to pick something and drag to move it. Ctrl+click picks more. Right-click for more options.' },
+  select: { label: 'Select', key: 'V', hint: 'Click to pick something and drag to move it. Drag empty space to move around, scroll to zoom. Ctrl+click picks more, Shift+drag draws a box to pick.' },
   lasso: { label: 'Lasso', key: 'L', hint: 'Draw a loop around things to pick them. Hold Ctrl to add to what you have picked.' },
   vertices: { label: 'Vertices', key: 'A', hint: 'Click a shape, then drag its points. Click anywhere on its line to add a point there. Choose Pointed or Rounded up top.' },
   line: { label: 'Line', key: 'N', hint: 'Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect.' },
@@ -37,11 +37,10 @@ export const TOOLS = {
   bucket: { label: 'Bucket', key: 'B', hint: 'Click inside a shape or a closed drawing to fill it with colour.' },
   text: { label: 'Text', key: 'T', hint: 'Click on the canvas and start typing.' },
   eraser: { label: 'Eraser', key: 'E', hint: 'Drag over your art to rub it out.' },
-  hand: { label: 'Move view', key: 'H', hint: 'Drag to move around. You can also hold Space anywhere, and scroll to zoom.' },
 };
 
 // Each group shares one button with a drop-down under it.
-export const TOOL_GROUPS = [['select', 'vertices', 'hand', 'lasso'], ['line', 'pencil', 'marker', 'bucket']];
+export const TOOL_GROUPS = [['select', 'vertices', 'lasso'], ['line', 'pencil', 'marker', 'bucket']];
 
 const pickable = (e) => {
   const el = e.target.closest?.('[data-id]');
@@ -58,9 +57,42 @@ function startMove(p) {
   };
 }
 
+/* ---------- Original size ---------- */
+
+// The size something had before it was first resized, so it can go back.
+export function rememberSize(o) {
+  if (o.orig) return;
+  const s = posed(o);
+  o.orig = { x: s.x, y: s.y, rotation: s.rotation, scaleX: s.scaleX, scaleY: s.scaleY };
+}
+
+const resized = (o) => o.orig && (Math.abs(posed(o).scaleX) !== Math.abs(o.orig.scaleX) || Math.abs(posed(o).scaleY) !== Math.abs(o.orig.scaleY));
+export const canRestoreSize = () => selected().some(resized);
+
+// Puts the picked art back to its first size, centred where it is now. Flips stay.
+export function restoreSize() {
+  const items = selected().filter((o) => o.orig);
+  if (!items.length) return;
+  const ids = items.map((o) => o.id);
+  const before = worldBox(ids);
+  for (const o of items) {
+    const s = posed(o), back = o.orig;
+    const scale = { scaleX: Math.sign(s.scaleX || 1) * Math.abs(back.scaleX), scaleY: Math.sign(s.scaleY || 1) * Math.abs(back.scaleY) };
+    edit(o, items.length === 1 ? scale : { ...scale, x: back.x, y: back.y, rotation: back.rotation });
+  }
+  hooks.stage();
+  const after = worldBox(ids);
+  if (before && after) {
+    const dx = before.x + before.width / 2 - (after.x + after.width / 2), dy = before.y + before.height / 2 - (after.y + after.height / 2);
+    for (const o of items) { const s = posed(o); edit(o, { x: s.x + dx, y: s.y + dy }); }
+  }
+  commit();
+}
+
 function startTransform(handle, p, e) {
   const f = selectionFrame();
   if (!f) return;
+  if (handle !== 'rot') selected().forEach(rememberSize);
   const items = selected().map((o) => {
     const s = posed(o);
     return { o, x: s.x, y: s.y, rotation: s.rotation, scaleX: s.scaleX, scaleY: s.scaleY };
@@ -151,8 +183,9 @@ function selectDown(e, p) {
     startMove(p);
     return;
   }
-  if (!adding && S.sel.size) { select([]); refresh(); }
-  drag = { type: 'marquee', p0: p };
+  // Empty space moves the view. A click without moving lets go of what's picked.
+  if (adding) { drag = { type: 'marquee', p0: p }; return; }
+  drag = { type: 'pan', x: e.clientX, y: e.clientY, panX: S.panX, panY: S.panY, letGo: true };
 }
 
 function marquee(p) {
@@ -939,7 +972,7 @@ function down(e) {
   closeTextEditor();
   const wk = e.currentTarget;
   wk.setPointerCapture(e.pointerId);
-  if (S.tool === 'hand' || spaceHeld || e.button === 1) {
+  if (spaceHeld || e.button === 1) {
     drag = { type: 'pan', x: e.clientX, y: e.clientY, panX: S.panX, panY: S.panY };
     S.fitted = false;
     return;
@@ -963,6 +996,9 @@ function move(e) {
   if (S.tool === 'vertices' && !drag) vertexHover(e, toDoc(e));
   if (!drag) return;
   if (drag.type === 'pan') {
+    if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 3) return;
+    drag.moved = true;
+    S.fitted = false;
     S.panX = drag.panX + e.clientX - drag.x;
     S.panY = drag.panY + e.clientY - drag.y;
     placeFrame();
@@ -1004,6 +1040,12 @@ function up(e) {
   const d = drag;
   if (d.type === 'line') { lineUp(toDoc(e)); drag = null; return; }
   if (d.type === 'marquee') { finishMarquee(); drag = null; drawOverlay(); return; }
+  if (d.type === 'pan') {
+    drag = null;
+    if (d.letGo && !d.moved && S.sel.size) { select([]); refresh(); }
+    else if (d.moved) { drawOverlay(); hooks.panels(); }
+    return;
+  }
   if (d.type === 'lasso') finishLasso();
   else if (d.type === 'stroke') finishStroke();
   else if (d.type === 'shape') finishShape();
