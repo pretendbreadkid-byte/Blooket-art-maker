@@ -507,7 +507,26 @@ test('a drop shadow is drawn under the art, once for a whole Blook', async () =>
   const svg = exportSVG(doc);
   assert.equal(svg.match(/filter="url\(#[^"]+-ds-/g).length, 1, 'one shadow for the group');
   assert.ok(svg.indexOf('-ds-') < svg.indexOf(`id="erase-${doc.layers[0].id}-o-${a.id}"`), 'the shadow comes first');
-  assert.ok(svg.includes('feOffset dx="0" dy="10"'), svg);
+  assert.ok(svg.includes('<feOffset in="SourceAlpha" dx="0" dy="10"/>'), 'solid, not blurred');
+  assert.ok(!svg.includes('feGaussianBlur'));
+  a.dropShadow = b.dropShadow = { ...newDropShadow(), soft: 5 };
+  assert.ok(exportSVG(doc).includes('feGaussianBlur in="SourceAlpha" stdDeviation="5"'), 'softness still works when asked for');
+});
+
+test('the new textures draw, and the shine starts angled and sweeps in animations', async () => {
+  const { TEXTURES, newTexture, patternMarkup } = await import('../public/js/textures.js');
+  for (const kind of ['shine', 'bricks', 'planks', 'scales', 'zigzag', 'diamonds', 'hearts']) {
+    assert.ok(TEXTURES[kind], kind);
+    assert.match(patternMarkup(newTexture(kind), 't', null, 0), /<(path|rect) /, kind);
+  }
+  const still = newTexture('shine');
+  assert.equal(still.angle, 35);
+  assert.equal(still.move, 'none', 'pictures do not move');
+  assert.equal(newTexture('shine', true).move, 'right');
+  const { doc, obj } = animated();
+  obj.texture = newTexture('shine', true);
+  setProps(doc, obj, 20, { x: 10 });
+  assert.ok(exportSVG(doc, { animate: true }).includes('attributeName="patternTransform"'));
 });
 
 test('auto shadow only falls on pieces that are overlapped', () => {
@@ -521,6 +540,7 @@ test('auto shadow only falls on pieces that are overlapped', () => {
   assert.ok(svg.includes(`-as-${over.id}"`), 'the top piece shades the one under it');
   assert.ok(!svg.includes(`-as-${apart.id}"`), 'a piece on its own casts nothing');
   assert.ok(svg.includes('slope="0.4"'));
+  assert.ok(svg.includes('<feOffset in="SourceAlpha" dx="0" dy="12"/>') && !svg.includes('feGaussianBlur'), 'a solid band, not a fade');
   doc.autoShadow.on = false;
   assert.ok(!exportSVG(doc).includes('<use'));
 });

@@ -166,8 +166,9 @@ function animatedObject(raw, doc, opt) {
 
 /* ---------- Shadows ---------- */
 
-export const newDropShadow = () => ({ strength: 0.35, distance: 10, soft: 6, angle: 90 });
-export const newAutoShadow = () => ({ on: true, strength: 0.35, size: 10 });
+// Shadows are flat and see-through, like Blooket's art, rather than soft and fading.
+export const newDropShadow = () => ({ strength: 0.3, distance: 10, soft: 0, angle: 90 });
+export const newAutoShadow = () => ({ on: true, strength: 0.25, size: 10 });
 
 // Roughly where a piece sits on the canvas, to find the ones it overlaps.
 function worldBounds(raw, frame) {
@@ -194,9 +195,12 @@ const touching = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a
 // Big enough for any canvas, measured on the canvas itself.
 const region = () => `filterUnits="userSpaceOnUse" x="${-MASK_SIZE / 2}" y="${-MASK_SIZE / 2}" width="${MASK_SIZE}" height="${MASK_SIZE}"`;
 
-// A soft black copy of whatever the filter is on, moved by dx, dy.
-const shadeFilter = (id, strength, soft, dx, dy) => `<filter id="${id}" ${region()}><feGaussianBlur in="SourceAlpha" stdDeviation="${round(soft, 2)}"/>`
-  + `<feOffset dx="${round(dx, 2)}" dy="${round(dy, 2)}"/><feComponentTransfer><feFuncA type="linear" slope="${round(strength, 3)}"/></feComponentTransfer></filter>`;
+// A see-through black copy of whatever the filter is on, moved by dx, dy.
+// Solid unless soft is above 0.
+const shadeFilter = (id, strength, soft, dx, dy) => `<filter id="${id}" ${region()}>`
+  + (soft > 0 ? `<feGaussianBlur in="SourceAlpha" stdDeviation="${round(soft, 2)}"/><feOffset dx="${round(dx, 2)}" dy="${round(dy, 2)}"/>`
+    : `<feOffset in="SourceAlpha" dx="${round(dx, 2)}" dy="${round(dy, 2)}"/>`)
+  + `<feComponentTransfer><feFuncA type="linear" slope="${round(strength, 3)}"/></feComponentTransfer></filter>`;
 
 // The pieces a drop shadow is made of: a Blook's pieces share one shadow, so
 // they don't darken each other. Keyed by the first piece, where it is drawn.
@@ -214,8 +218,8 @@ function shadowTeams(list) {
 }
 
 // Shadows are copies (<use>) of the art itself, so they follow it in animations.
-// Auto shadow: each piece casts a soft shadow, only onto the pieces under it.
-// Because the piece is drawn over its own shadow, just a rim shows past its edge.
+// Auto shadow: each piece casts a flat see-through shadow, only onto the pieces under it.
+// Because the piece is drawn over its own shadow, just a solid band shows below its edge.
 function withShadows(list, frame, opt, layer, draw) {
   const prefix = `${opt.prefix || 'erase'}-${layer.id}`;
   const ref = (o) => `${prefix}-o-${o.id}`;
@@ -227,7 +231,7 @@ function withShadows(list, frame, opt, layer, draw) {
   const boxes = autoOn ? list.map((o) => worldBounds(o, frame)) : [];
   const teams = shadowTeams(list);
   let defs = autoOn ? `<filter id="${prefix}-solid" ${region()}><feFlood flood-color="#fff"/><feComposite in2="SourceAlpha" operator="in"/></filter>`
-    + shadeFilter(`${prefix}-shade`, auto.strength, auto.size / 2, 0, auto.size * 0.35) : '';
+    + shadeFilter(`${prefix}-shade`, auto.strength, 0, 0, auto.size) : '';
   const parts = list.map((o, i) => {
     let before = '';
     const team = teams.get(i);

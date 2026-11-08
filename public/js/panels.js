@@ -3,7 +3,7 @@ import {
   S, hooks, liveRefresh, commit, selected, posed, edit, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
 import { clone, pathBounds } from './model.js';
-import { TEXTURES, MOVES, newTexture, patternMarkup } from './textures.js';
+import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
 import { esc, newDropShadow, newAutoShadow } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
@@ -246,7 +246,7 @@ function autoShadowControls(d) {
     const set = (patch) => { Object.assign(d.autoShadow, patch); hooks.stage(); };
     box.append(
       slider({ label: 'Strength', value: Math.round(d.autoShadow.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
-      slider({ label: 'Spread', value: d.autoShadow.size, min: 1, max: 60, unit: 'px', onInput: (v) => set({ size: v }), onChange: commit }),
+      slider({ label: 'Size', value: d.autoShadow.size, min: 1, max: 60, unit: 'px', onInput: (v) => set({ size: v }), onChange: commit }),
     );
   }
   return box;
@@ -456,7 +456,7 @@ function textureControls(current, apply, label, under) {
       b.onclick = () => {
         if (b.dataset.k === 'none') set(null, true);
         else if (b.dataset.k === 'picture') file.click();
-        else set({ kind: b.dataset.k, href: undefined }, true);
+        else set({ kind: b.dataset.k, href: undefined, ...kindLook(b.dataset.k, S.doc.animated) }, true);
       };
     });
     file.onchange = async () => {
