@@ -9,13 +9,15 @@ const STRIP = 'M-187.54 -421.77L187.54 -421.77L187.54 421.77L-187.54 421.77Z';
 const num = (v) => +v.toFixed(4);
 
 // The underbelly grows upwards from the bottom edge, so it never leaves a gap there.
-const shadow = (x, y, sx, sy) => ({ size, strength }) => {
+const shadow = (x, y, sx, sy) => ({ size, strength, color }) => {
   const bottom = y + UNDERBELLY_HALF * sy;
-  return `<path transform="translate(${x} ${num(bottom - UNDERBELLY_HALF * sy * size)}) scale(${sx} ${num(sy * size)})" d="${UNDERBELLY}" fill="#000" fill-opacity="${num(strength)}"/>`;
+  return `<path transform="translate(${x} ${num(bottom - UNDERBELLY_HALF * sy * size)}) scale(${sx} ${num(sy * size)})" d="${UNDERBELLY}" fill="${color}" fill-opacity="${num(strength)}"/>`;
 };
-const strip = (x, y, sx) => ({ size, strength }) => `<path transform="translate(${x} ${y}) rotate(36.65) scale(${num(sx * size)} 2.3114)" d="${STRIP}" fill="#fff" fill-opacity="${num(strength)}"/>`;
+const strip = (x, y, sx) => ({ size, strength, color }) => `<path transform="translate(${x} ${y}) rotate(36.65) scale(${num(sx * size)} 2.3114)" d="${STRIP}" fill="${color}" fill-opacity="${num(strength)}"/>`;
 
-const UNDERBELLY_LOOK = { sizeLabel: 'Underbelly size', strengthLabel: 'Shadow darkness', strength: 0.28, maxSize: 3 };
+const UNDERBELLY_LOOK = {
+  sizeLabel: 'Underbelly size', strengthLabel: 'Underbelly opacity', colorLabel: 'Underbelly colour', strength: 0.28, color: '#000000', maxSize: 3,
+};
 
 export const TEMPLATES = {
   blook: {
@@ -38,16 +40,17 @@ export const TEMPLATES = {
     name: 'Pack art', note: 'The picture on the front of a pack', width: 1131, height: 929, radius: 0, background: '#2ca3e8', words: ['Your Pack', 'Art Here'],
     overlay: {
       name: 'Pack shine', ask: 'Add the pack shine?', note: 'Two see-through white strips from edge to edge, one thicker than the other. They stay on top of your art.',
-      sizeLabel: 'Shine thickness', strengthLabel: 'Shine strength', strength: 0.1, maxSize: 2.5,
+      sizeLabel: 'Shine thickness', strengthLabel: 'Shine opacity', colorLabel: 'Shine colour', strength: 0.1, color: '#ffffff', maxSize: 2.5,
       markup: (look) => strip(412.96, 650.53, 1)(look) + strip(775.57, 833.1, 0.5166)(look),
     },
   },
 };
 
-// How big and how strong a project's overlay is. Older projects use the template's own.
+// How big, how strong and what colour a project's overlay is. Older projects use the template's own.
 export function overlayLook(doc) {
   const overlay = TEMPLATES[doc.template]?.overlay;
-  return { size: doc.overlaySize ?? 1, strength: doc.overlayStrength ?? overlay?.strength ?? 0 };
+  const color = /^#[0-9a-f]{6}$/i.test(doc.overlayColor) ? doc.overlayColor : overlay?.color || '#000000';
+  return { size: doc.overlaySize ?? 1, strength: doc.overlayStrength ?? overlay?.strength ?? 0, color };
 }
 
 export function overlayMarkup(doc) {
@@ -63,7 +66,7 @@ export function templatePreview(id, withOverlay = true) {
   const size = Math.min(t.height / 2, t.width / (longest * 0.72));
   const text = t.words.map((word, i) => `<text x="${t.width / 2}" y="${t.height / 2 + (i - (t.words.length - 1) / 2) * size * 1.15}" font-size="${size}" font-family="Titan One" text-anchor="middle" dominant-baseline="central" fill="#fff">${word}</text>`).join('');
   const clip = `template-${id}-${withOverlay ? 'on' : 'off'}`;
-  const overlay = withOverlay && t.overlay ? t.overlay.markup({ size: 1, strength: t.overlay.strength }) : '';
+  const overlay = withOverlay && t.overlay ? t.overlay.markup({ size: 1, strength: t.overlay.strength, color: t.overlay.color }) : '';
   return `<svg class="template-art" viewBox="0 0 ${t.width} ${t.height}" aria-hidden="true"><clipPath id="${clip}"><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></clipPath>
     <g clip-path="url(#${clip})"><rect width="${t.width}" height="${t.height}" fill="${t.preview || t.background}"/>${text}${overlay}</g></svg>`;
 }

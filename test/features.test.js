@@ -495,29 +495,49 @@ test('the underbelly can be sized and darkened, and stays on the bottom edge', a
   assert.ok(svg.includes('fill-opacity="0.6"'));
 });
 
-test('any path shape can have an underbelly clipped to its outline', () => {
+test('anything can have an underbelly made from its own outline', async () => {
+  const { newUnderbelly } = await import('../public/js/render.js');
   const doc = newDoc({ name: 't' });
-  const shape = newPath({ subpaths: square(), fill: '#ff0000', fillRule: 'evenodd' });
-  doc.layers[0].objects.push(shape);
+  const shape = newPath({ subpaths: square(), fill: '#ff0000' });
+  const words = newText({ text: 'Hi', x: 300, y: 300 });
+  doc.layers[0].objects.push(shape, words);
   assert.ok(!exportSVG(doc).includes('-belly'));
 
-  shape.underbelly = { size: 1.5, strength: 0.6 };
+  shape.underbelly = { ...newUnderbelly(), size: 2, strength: 0.6, color: '#3a1f5c' };
+  words.underbelly = newUnderbelly();
   const svg = exportSVG(doc);
-  assert.ok(svg.includes('clipPath id="erase-' + shape.id + '-belly"'));
-  assert.ok(svg.includes('clip-rule="evenodd"'));
-  assert.ok(svg.includes('d="M-113.62 42.93'));
-  assert.ok(svg.includes('fill-opacity="0.6"'));
+  // The square is 100 tall, so at 200% the band is 28 deep: the outline moved up 28 is cut out.
+  assert.ok(svg.includes('<feOffset in="SourceAlpha" dx="0" dy="-28" result="up"/>'), svg);
+  assert.ok(svg.includes('flood-color="#3a1f5c" flood-opacity="0.6"'));
+  assert.ok(svg.includes(`filter="url(#erase-${shape.id}-belly)"`));
+  assert.ok(svg.includes(`filter="url(#erase-${words.id}-belly)"`), 'text gets one too');
+  assert.ok(!svg.includes('M-113.62 42.93'), 'no stretched template shape');
 });
 
-test('an underbelly follows an animated shape outline', () => {
-  const doc = newDoc({ name: 't', animated: true });
-  const shape = newPath({ subpaths: square(), fill: '#ff0000', underbelly: { size: 1, strength: 0.28 } });
+test('a flipped shape keeps its underbelly on the bottom', async () => {
+  const { newUnderbelly } = await import('../public/js/render.js');
+  const doc = newDoc({ name: 't' });
+  const shape = newPath({ subpaths: square(), fill: '#ff0000', scaleY: -1, underbelly: newUnderbelly() });
   doc.layers[0].objects.push(shape);
-  setProps(doc, shape, 0, { x: 0 });
-  setProps(doc, shape, 20, { subpaths: square().map((sp) => ({ ...sp, nodes: sp.nodes.map((n) => ({ ...n, y: n.y * 2 })) })) });
+  assert.ok(exportSVG(doc).includes('dy="14" result="up"'));
+});
+
+test('an underbelly follows an animated shape', async () => {
+  const { newUnderbelly } = await import('../public/js/render.js');
+  const { doc, obj } = animated();
+  obj.underbelly = newUnderbelly();
+  setProps(doc, obj, 20, { subpaths: square().map((sp) => ({ ...sp, nodes: sp.nodes.map((n) => ({ ...n, y: n.y * 2 })) })) });
   const svg = exportSVG(doc, { animate: true });
   assert.ok(svg.includes('<animate attributeName="d" values='));
-  assert.ok(svg.includes('<animate attributeName="transform" values='));
+  assert.ok(svg.includes(`filter="url(#erase-${obj.id}-belly)"`));
+});
+
+test('the template underbelly can change colour', async () => {
+  const doc = newDoc({ name: 'Blook', width: 512, height: 512 });
+  Object.assign(doc, { template: 'blook', overlay: true, overlayColor: '#123456' });
+  assert.ok(exportSVG(doc).includes('fill="#123456" fill-opacity="0.28"'));
+  doc.overlayColor = '"><script>';
+  assert.ok(exportSVG(doc).includes('fill="#000000"'), 'only real colours are used');
 });
 
 test('a drop shadow is drawn under the art, once for a whole Blook', async () => {

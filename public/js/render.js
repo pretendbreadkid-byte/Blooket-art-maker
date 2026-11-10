@@ -7,9 +7,6 @@ import { patternMarkup } from './textures.js';
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const MASK_SIZE = 20000;
-const UNDERBELLY = 'M-113.62 42.93L113.62 42.93C133.71 42.93 150 26.64 150 6.55L150 -42.93C150 -42.93 144.79 -4.43 103.96 1.53C63.12 7.5 -68.48 4.79 -93.48 4.79C-143.48 4.79 -150 -42.93 -150 -42.93L-150 6.55C-150 26.64 -133.71 42.93 -113.62 42.93Z';
-const UNDERBELLY_HALF = 42.93;
-const UNDERBELLY_HEIGHT = 85.86;
 
 const transformOf = (o) => `translate(${round(o.x)} ${round(o.y)}) rotate(${round(o.rotation)}) scale(${round(o.scaleX, 4)} ${round(o.scaleY, 4)})`;
 
@@ -108,29 +105,35 @@ function clipsOf(o, id) {
   };
 }
 
-function underbellyTransform(o) {
-  const b = pathBounds(o.subpaths);
-  const size = o.underbelly?.size ?? 1;
-  const sx = b.width * 1.12 / 300;
-  const sy = b.height * 0.26 * size / UNDERBELLY_HEIGHT;
-  return `translate(${round(b.x + b.width / 2)} ${round(b.y + b.height - UNDERBELLY_HALF * sy)}) scale(${round(sx, 5)} ${round(sy, 5)})`;
+export const newUnderbelly = () => ({ size: 1, strength: 0.28, color: '#000000' });
+
+// How deep the band is at size 100%, as a share of the thing's height.
+const BELLY_DEPTH = 0.14;
+
+// How tall a thing is in its own units.
+function localHeight(o) {
+  if (o.type === 'path') return pathBounds(o.subpaths).height + (o.stroke && o.stroke !== 'none' ? o.strokeWidth : 0);
+  if (o.type === 'image') return o.h;
+  return o.text.split('\n').length * o.fontSize * 1.2;
 }
 
-function underbellyMarkup(o, id, animation = null) {
-  if (!o.underbelly || o.type !== 'path') return { defs: '', art: '' };
-  const b = pathBounds(o.subpaths);
-  if (!b.width || !b.height) return { defs: '', art: '' };
-
-  const paths = animation?.samples.map((s) => pathD(s.subpaths, { uniform: true })) || [];
-  const clipAnimation = new Set(paths).size > 1
-    ? `<animate attributeName="d" values="${paths.join(';')}" dur="${animation.duration}" repeatCount="indefinite"/>` : '';
-  const transforms = animation?.samples.map(underbellyTransform) || [];
-  const transformAnimation = new Set(transforms).size > 1
-    ? `<animate attributeName="transform" values="${transforms.join(';')}" dur="${animation.duration}" repeatCount="indefinite"/>` : '';
-  const clip = `<clipPath id="${id}-belly" clipPathUnits="userSpaceOnUse"><path d="${pathD(o.subpaths, { uniform: !!animation})}" clip-rule="${esc(o.fillRule || 'nonzero')}">${clipAnimation}</path></clipPath>`;
-  const strength = round(o.underbelly.strength ?? 0.28, 3);
-  const belly = `<path d="${UNDERBELLY}" transform="${underbellyTransform(o)}" fill="#000" fill-opacity="${strength}" clip-path="url(#${id}-belly)">${transformAnimation}</path>`;
-  return { defs: clip, art: belly };
+// The underbelly: a see-through band along the bottom of anything (shapes,
+// pictures, text), made from its own outline. The outline moved up is cut out of
+// the outline, so the band follows the bottom edge and curves up wherever the
+// edge does. The cut-out edge is sharpened so straight sides leave no faint line.
+function underbellyFilter(o, id) {
+  if (!o.underbelly) return '';
+  const u = { ...newUnderbelly(), ...o.underbelly };
+  const depth = localHeight(o) * BELLY_DEPTH * u.size * Math.sign(o.scaleY || 1);
+  if (!depth || !(u.strength > 0)) return '';
+  const half = MASK_SIZE / 2;
+  return `<filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}" color-interpolation-filters="sRGB">`
+    + `<feOffset in="SourceAlpha" dx="0" dy="${round(-depth, 2)}" result="up"/>`
+    + '<feComposite in="SourceAlpha" in2="up" operator="out"/>'
+    + '<feComponentTransfer result="band"><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>'
+    + `<feFlood flood-color="${esc(u.color)}" flood-opacity="${round(u.strength, 3)}"/>`
+    + '<feComposite in2="band" operator="in" result="belly"/>'
+    + '<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="belly"/></feMerge></filter>';
 }
 
 // Blur is measured on the canvas, so it sits outside the piece's own scale.
@@ -150,9 +153,9 @@ function objectMarkup(raw, frame, opt) {
   const textureId = `${maskId}-tex`;
   const clip = clipsOf(raw, maskId);
   const texture = o.texture && o.type !== 'image' ? patternMarkup(o.texture, textureId, o, frame, opt) : '';
-  const underbelly = underbellyMarkup(o, maskId);
-  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + underbelly.defs;
-  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${underbelly.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
+  const belly = underbellyFilter(o, `${maskId}-belly`);
+  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + belly;
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -182,7 +185,7 @@ function animatedObject(raw, doc, opt) {
   const clip = clipsOf(raw, maskId);
   const textureId = `${maskId}-tex`;
   const texture = raw.texture && raw.type !== 'image' ? patternMarkup(raw.texture, textureId, first, 0, opt) : '';
-  const underbelly = underbellyMarkup(first, maskId, first.underbelly ? { samples, duration: dur } : null);
+  const belly = underbellyFilter(first, `${maskId}-belly`);
   const blurs = animate('stdDeviation', (s) => round(s.blur || 0, 2));
   return blurred(`<g opacity="${round(first.opacity, 3)}">`
     + motion('translate', (s) => `${round(s.x)} ${round(s.y)}`)
@@ -190,8 +193,8 @@ function animatedObject(raw, doc, opt) {
     + motion('scale', (s) => `${round(s.scaleX, 4)} ${round(s.scaleY, 4)}`)
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
-    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + underbelly.defs
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${underbelly.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
+    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + belly
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
 }
 
 /* ---------- Shadows ---------- */

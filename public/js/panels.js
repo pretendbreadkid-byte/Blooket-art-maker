@@ -5,7 +5,7 @@ import {
 import { clone, pathBounds } from './model.js';
 import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
-import { esc, newDropShadow, newAutoShadow } from './render.js';
+import { esc, newDropShadow, newAutoShadow, newUnderbelly } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
@@ -218,6 +218,10 @@ function documentPanel(box) {
     if (d.overlay) {
       const look = overlayLook(d);
       box.append(
+        colorButton({
+          label: overlay.colorLabel, value: look.color,
+          onInput: (c) => { d.overlayColor = c; hooks.stage(); }, onDone: commit,
+        }),
         slider({
           label: overlay.sizeLabel, value: Math.round(look.size * 100), min: 10, max: overlay.maxSize * 100, unit: '%',
           onInput: (v) => { d.overlaySize = v / 100; hooks.stage(); }, onChange: commit,
@@ -275,27 +279,24 @@ function dropShadowControls(items) {
   return box;
 }
 
+// A see-through band along the bottom of whatever is picked, following its outline.
 function underbellyControls(items) {
-  const shapes = items.filter((o) => o.type === 'path');
-  if (!shapes.length) return null;
-  const first = shapes[0].underbelly;
+  const first = items.find((o) => o.underbelly);
   const box = html(`<div class="shadow-box"><label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Underbelly</span></label>
-    <p class="muted small">Adds a see-through shadow along the bottom of the shape.</p></div>`);
+    <p class="muted small">A see-through band along the bottom, following the outline. Works on shapes, pictures and text.</p></div>`);
   $('input', box).onchange = (e) => {
-    shapes.forEach((o) => { o.underbelly = e.target.checked ? { size: 1, strength: 0.28, ...o.underbelly } : null; });
+    const look = e.target.checked ? { ...newUnderbelly(), ...first?.underbelly } : null;
+    items.forEach((o) => { o.underbelly = look && { ...look }; });
     commit();
     hooks.panels();
-    hooks.stage();
   };
   if (first) {
-    const look = { size: 1, strength: 0.28, ...first };
-    const set = (patch) => {
-      shapes.forEach((o) => { o.underbelly = { size: 1, strength: 0.28, ...o.underbelly, ...patch }; });
-      liveRefresh();
-    };
+    const look = { ...newUnderbelly(), ...first.underbelly };
+    const set = (patch) => { Object.assign(look, patch); items.forEach((o) => { o.underbelly = { ...look }; }); liveRefresh(); };
     box.append(
-      slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 300, unit: '%', onInput: (v) => set({ size: v / 100 }), onChange: commit }),
-      slider({ label: 'Darkness', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+      colorButton({ label: 'Underbelly colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
+      slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', onInput: (v) => set({ size: v / 100 }), onChange: commit }),
+      slider({ label: 'Opacity', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
     );
   }
   return box;
@@ -357,8 +358,7 @@ function selectedPanel() {
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
   box.append(opacitySlider(items), blurSlider(items), dropShadowControls(items), arrangeRow());
-  const bellyControls = underbellyControls(items);
-  if (bellyControls) box.append(bellyControls);
+  box.append(underbellyControls(items));
 
   if (single) {
     const s = posed(single);
