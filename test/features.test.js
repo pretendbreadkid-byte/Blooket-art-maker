@@ -495,6 +495,31 @@ test('the underbelly can be sized and darkened, and stays on the bottom edge', a
   assert.ok(svg.includes('fill-opacity="0.6"'));
 });
 
+test('any path shape can have an underbelly clipped to its outline', () => {
+  const doc = newDoc({ name: 't' });
+  const shape = newPath({ subpaths: square(), fill: '#ff0000', fillRule: 'evenodd' });
+  doc.layers[0].objects.push(shape);
+  assert.ok(!exportSVG(doc).includes('-belly'));
+
+  shape.underbelly = { size: 1.5, strength: 0.6 };
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes('clipPath id="erase-' + shape.id + '-belly"'));
+  assert.ok(svg.includes('clip-rule="evenodd"'));
+  assert.ok(svg.includes('d="M-113.62 42.93'));
+  assert.ok(svg.includes('fill-opacity="0.6"'));
+});
+
+test('an underbelly follows an animated shape outline', () => {
+  const doc = newDoc({ name: 't', animated: true });
+  const shape = newPath({ subpaths: square(), fill: '#ff0000', underbelly: { size: 1, strength: 0.28 } });
+  doc.layers[0].objects.push(shape);
+  setProps(doc, shape, 0, { x: 0 });
+  setProps(doc, shape, 20, { subpaths: square().map((sp) => ({ ...sp, nodes: sp.nodes.map((n) => ({ ...n, y: n.y * 2 })) })) });
+  const svg = exportSVG(doc, { animate: true });
+  assert.ok(svg.includes('<animate attributeName="d" values='));
+  assert.ok(svg.includes('<animate attributeName="transform" values='));
+});
+
 test('a drop shadow is drawn under the art, once for a whole Blook', async () => {
   const { newDropShadow } = await import('../public/js/render.js');
   const doc = newDoc({ name: 't', width: 400, height: 400 });

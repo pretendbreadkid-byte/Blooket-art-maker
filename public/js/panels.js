@@ -275,6 +275,32 @@ function dropShadowControls(items) {
   return box;
 }
 
+function underbellyControls(items) {
+  const shapes = items.filter((o) => o.type === 'path');
+  if (!shapes.length) return null;
+  const first = shapes[0].underbelly;
+  const box = html(`<div class="shadow-box"><label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Underbelly</span></label>
+    <p class="muted small">Adds a see-through shadow along the bottom of the shape.</p></div>`);
+  $('input', box).onchange = (e) => {
+    shapes.forEach((o) => { o.underbelly = e.target.checked ? { size: 1, strength: 0.28, ...o.underbelly } : null; });
+    commit();
+    hooks.panels();
+    hooks.stage();
+  };
+  if (first) {
+    const look = { size: 1, strength: 0.28, ...first };
+    const set = (patch) => {
+      shapes.forEach((o) => { o.underbelly = { size: 1, strength: 0.28, ...o.underbelly, ...patch }; });
+      liveRefresh();
+    };
+    box.append(
+      slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 300, unit: '%', onInput: (v) => set({ size: v / 100 }), onChange: commit }),
+      slider({ label: 'Darkness', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+    );
+  }
+  return box;
+}
+
 function refreshFrameCorners() {
   $('#frame').style.borderRadius = `${S.doc.cornerRadius * S.zoom}px`;
   hooks.stage();
@@ -331,6 +357,8 @@ function selectedPanel() {
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
   box.append(opacitySlider(items), blurSlider(items), dropShadowControls(items), arrangeRow());
+  const bellyControls = underbellyControls(items);
+  if (bellyControls) box.append(bellyControls);
 
   if (single) {
     const s = posed(single);

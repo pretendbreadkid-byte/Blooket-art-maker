@@ -7,6 +7,9 @@ import { patternMarkup } from './textures.js';
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const MASK_SIZE = 20000;
+const UNDERBELLY = 'M-113.62 42.93L113.62 42.93C133.71 42.93 150 26.64 150 6.55L150 -42.93C150 -42.93 144.79 -4.43 103.96 1.53C63.12 7.5 -68.48 4.79 -93.48 4.79C-143.48 4.79 -150 -42.93 -150 -42.93L-150 6.55C-150 26.64 -133.71 42.93 -113.62 42.93Z';
+const UNDERBELLY_HALF = 42.93;
+const UNDERBELLY_HEIGHT = 85.86;
 
 const transformOf = (o) => `translate(${round(o.x)} ${round(o.y)}) rotate(${round(o.rotation)}) scale(${round(o.scaleX, 4)} ${round(o.scaleY, 4)})`;
 
@@ -105,6 +108,31 @@ function clipsOf(o, id) {
   };
 }
 
+function underbellyTransform(o) {
+  const b = pathBounds(o.subpaths);
+  const size = o.underbelly?.size ?? 1;
+  const sx = b.width * 1.12 / 300;
+  const sy = b.height * 0.26 * size / UNDERBELLY_HEIGHT;
+  return `translate(${round(b.x + b.width / 2)} ${round(b.y + b.height - UNDERBELLY_HALF * sy)}) scale(${round(sx, 5)} ${round(sy, 5)})`;
+}
+
+function underbellyMarkup(o, id, animation = null) {
+  if (!o.underbelly || o.type !== 'path') return { defs: '', art: '' };
+  const b = pathBounds(o.subpaths);
+  if (!b.width || !b.height) return { defs: '', art: '' };
+
+  const paths = animation?.samples.map((s) => pathD(s.subpaths, { uniform: true })) || [];
+  const clipAnimation = new Set(paths).size > 1
+    ? `<animate attributeName="d" values="${paths.join(';')}" dur="${animation.duration}" repeatCount="indefinite"/>` : '';
+  const transforms = animation?.samples.map(underbellyTransform) || [];
+  const transformAnimation = new Set(transforms).size > 1
+    ? `<animate attributeName="transform" values="${transforms.join(';')}" dur="${animation.duration}" repeatCount="indefinite"/>` : '';
+  const clip = `<clipPath id="${id}-belly" clipPathUnits="userSpaceOnUse"><path d="${pathD(o.subpaths, { uniform: !!animation})}" clip-rule="${esc(o.fillRule || 'nonzero')}">${clipAnimation}</path></clipPath>`;
+  const strength = round(o.underbelly.strength ?? 0.28, 3);
+  const belly = `<path d="${UNDERBELLY}" transform="${underbellyTransform(o)}" fill="#000" fill-opacity="${strength}" clip-path="url(#${id}-belly)">${transformAnimation}</path>`;
+  return { defs: clip, art: belly };
+}
+
 // Blur is measured on the canvas, so it sits outside the piece's own scale.
 // values: an animated blur, one stdDeviation per frame.
 function blurred(markup, id, amount, values = '') {
@@ -122,8 +150,9 @@ function objectMarkup(raw, frame, opt) {
   const textureId = `${maskId}-tex`;
   const clip = clipsOf(raw, maskId);
   const texture = o.texture && o.type !== 'image' ? patternMarkup(o.texture, textureId, o, frame, opt) : '';
-  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs;
-  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
+  const underbelly = underbellyMarkup(o, maskId);
+  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + underbelly.defs;
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${underbelly.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -153,6 +182,7 @@ function animatedObject(raw, doc, opt) {
   const clip = clipsOf(raw, maskId);
   const textureId = `${maskId}-tex`;
   const texture = raw.texture && raw.type !== 'image' ? patternMarkup(raw.texture, textureId, first, 0, opt) : '';
+  const underbelly = underbellyMarkup(first, maskId, first.underbelly ? { samples, duration: dur } : null);
   const blurs = animate('stdDeviation', (s) => round(s.blur || 0, 2));
   return blurred(`<g opacity="${round(first.opacity, 3)}">`
     + motion('translate', (s) => `${round(s.x)} ${round(s.y)}`)
@@ -160,8 +190,8 @@ function animatedObject(raw, doc, opt) {
     + motion('scale', (s) => `${round(s.scaleX, 4)} ${round(s.scaleY, 4)}`)
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
-    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
+    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + underbelly.defs
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${underbelly.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
 }
 
 /* ---------- Shadows ---------- */
