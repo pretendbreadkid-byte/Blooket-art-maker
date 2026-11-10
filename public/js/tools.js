@@ -12,6 +12,7 @@ import {
   worldToLocal, worldVectorToLocal, rad, simplify,
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
+import { loopToSubpath } from './trace.js';
 import { exportSVG, rasterize, esc } from './render.js';
 import { loopSelection } from './timeline.js';
 import { piecesFromPicture, piecesToObjects } from './pieces.js';
@@ -678,6 +679,80 @@ function fillBackground() {
   commit();
 }
 
+/* ---------- Weld ---------- */
+
+const WELD_PX = 2400;
+const WELD_SOLID = 110;
+
+export const canWeld = () => S.sel.size > 1;
+
+// Just the outline of a thing, solid black, so the drawing below is its silhouette.
+function silhouette(raw) {
+  const o = clone(posed(raw));
+  const ink = (paint) => (paint && paint !== 'none' ? '#000000' : 'none');
+  return {
+    ...o, keys: [], page: undefined, opacity: 1, blur: 0, gradient: null, texture: null, look: undefined,
+    dropShadow: null, underbelly: null, shadow: false, fill: o.type === 'text' ? '#000000' : ink(o.fill), stroke: ink(o.stroke),
+  };
+}
+
+// Joins the picked things into one shape. Their silhouettes are drawn together and
+// the outline of the lot is traced, so overlaps merge and holes stay holes. It works
+// for any mix of shapes, drawings, text and pictures, and takes the top one's look.
+export async function weldSelection() {
+  const items = selected();
+  if (items.length < 2) return;
+  const box = worldBox(items.map((o) => o.id));
+  if (!box) return;
+  const widest = Math.max(0, ...items.map((o) => (o.stroke && o.stroke !== 'none' ? posed(o).strokeWidth * Math.max(Math.abs(o.scaleX), Math.abs(o.scaleY)) : 0)));
+  const pad = widest + Math.max(box.width, box.height) * 0.02 + 4;
+  const area = { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 };
+  const scale = WELD_PX / Math.max(area.width, area.height);
+  const w = Math.max(8, Math.round(area.width * scale)), h = Math.max(8, Math.round(area.height * scale));
+
+  const order = S.doc.layers.flatMap((l) => l.objects);
+  const stacked = [...items].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const plain = { ...S.doc, animated: false, autoShadow: null, layers: [{ id: 'weld', name: 'Weld', visible: true, locked: false, opacity: 1, objects: stacked.map(silhouette) }] };
+  let loops;
+  try {
+    const canvas = await rasterize(exportSVG(plain, { box: area }), w, h);
+    const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] > WELD_SOLID ? 1 : 0;
+    loops = traceLoops(mask, w, h, { tolerance: 1.2, minArea: 6 });
+  } catch {
+    toast('Those could not be welded. Try again.', 'warn');
+    return;
+  }
+  if (!loops.length) { toast('There is nothing solid to weld there.', 'warn'); return; }
+
+  const subpaths = loops.map((loop) => loopToSubpath(loop.map((q) => ({ x: area.x + q.x / scale, y: area.y + q.y / scale }))));
+  const b = pathBounds(subpaths);
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  subpaths.forEach((sp) => sp.nodes.forEach((n) => { n.x -= cx; n.y -= cy; }));
+
+  const top = stacked[stacked.length - 1];
+  const looks = posed([...stacked].reverse().find((o) => o.type !== 'image') || top);
+  const welded = newPath({
+    name: 'Welded shape', x: cx, y: cy, subpaths, fillRule: 'evenodd',
+    fill: looks.fill && looks.fill !== 'none' ? looks.fill : '#000000', gradient: clone(looks.gradient ?? null),
+    stroke: looks.stroke || 'none', strokeWidth: looks.strokeWidth || 0, opacity: looks.opacity ?? 1,
+    ...(top.texture ? { texture: clone(top.texture) } : {}), ...(top.underbelly ? { underbelly: clone(top.underbelly) } : {}),
+    ...(top.dropShadow ? { dropShadow: clone(top.dropShadow) } : {}), ...(isPages(S.doc) && top.page ? { page: top.page } : {}),
+  });
+
+  // The welded shape takes the top piece's place in the stack.
+  const layer = layerOf(top.id);
+  const gone = new Set(items.map((o) => o.id));
+  layer.objects.splice(layer.objects.indexOf(top), 1, welded);
+  for (const l of S.doc.layers) l.objects = l.objects.filter((o) => o === welded || !gone.has(o.id));
+  select([welded.id]);
+  commit();
+  refresh();
+  const moving = items.some((o) => o.keys?.length);
+  toast(`Welded ${items.length} things into one shape.${moving ? ' It keeps how they looked on this frame.' : ''}`, 'ok');
+}
+
 function isInFill(el, e) {
   const m = el.getScreenCTM();
   if (!m) return false;
@@ -803,6 +878,7 @@ function contextMenu(e) {
   const lines = openLines().length;
   const keyed = S.doc.animated && !isPages(S.doc);
   const special = [
+    ...(canWeld() ? [{ label: 'Weld into one shape (Ctrl+J)', icon: 'weld', onClick: weldSelection }] : []),
     ...(canTakeApart() ? [{ label: 'Take apart', icon: 'apart', onClick: takeApart }] : []),
     ...(S.sel.size > 1 && !selected().every((o) => o.group && o.group === selected()[0].group) ? [{ label: 'Group together', icon: 'link', onClick: groupSelection }] : []),
     ...(lines ? [{ label: lines > 1 ? 'Connect lines' : 'Close the line', icon: 'link', onClick: connectSelection }] : []),

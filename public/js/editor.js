@@ -6,7 +6,7 @@ import { getDoc, getMeta } from './store.js';
 import { mountStage, drawStage, drawOverlay, fitView, placeFrame, zoomAt } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
-  copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor, flipSelection, reorderSelection,
+  copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor, flipSelection, reorderSelection, weldSelection,
   finishLine, cancelLine, lineInProgress,
 } from './tools.js';
 import { toggleBlooks, addPictureApart } from './blooks.js';
@@ -106,7 +106,7 @@ function onKey(e) {
   if (ctrl) {
     const actions = {
       z: () => (e.shiftKey ? redo() : undo()), y: redo, d: duplicateSelection,
-      c: copySelection, v: pasteClipboard, s: persist,
+      c: copySelection, v: pasteClipboard, s: persist, j: weldSelection,
       ']': () => reorderSelection('up'), '[': () => reorderSelection('down'),
       '}': () => reorderSelection('front'), '{': () => reorderSelection('back'),
       x: () => { copySelection(); deleteSelection(); },

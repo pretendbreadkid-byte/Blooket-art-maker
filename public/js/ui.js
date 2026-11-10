@@ -79,6 +79,7 @@ const ICONS = {
   users: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c.600-3 3-5 6-5s5.400 2 6 5M16 5a3 3 0 0 1 0 6M17.500 15c2 .500 3.200 2.300 3.500 5',
   info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.500h.01',
   send: 'M4 12l16-8-6 16-3-7zM11 13l9-9',
+  weld: 'M8.500 6.500a5.500 5.500 0 1 0 0 11h7a5.500 5.500 0 1 0 0-11zM12 9v6',
 };
 
 export const icon = (name) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name] || ''}"/></svg>`;

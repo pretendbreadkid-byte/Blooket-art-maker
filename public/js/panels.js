@@ -10,7 +10,7 @@ import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize,
+  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, canWeld, weldSelection,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { TEMPLATES, overlayLook } from './templates.js';
@@ -102,6 +102,7 @@ function optionBar() {
       button('Flip sideways', 'flipx', () => flipSelection('x')),
       button('Flip up and down', 'flipy', () => flipSelection('y')),
     );
+    if (canWeld()) add(button('Weld', 'weld', weldSelection));
     if (canRestoreSize()) add(button('Original size', 'undo', restoreSize));
   }
   if (tool === 'pencil' || tool === 'marker' || tool === 'eraser' || tool === 'line') {
@@ -356,6 +357,7 @@ function selectedPanel() {
 
   const single = items.length === 1 ? items[0] : null;
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
+  if (canWeld()) box.append(button('Weld into one shape', 'weld', weldSelection, 'wide'));
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
   box.append(opacitySlider(items), blurSlider(items), dropShadowControls(items), arrangeRow());
   box.append(underbellyControls(items));
