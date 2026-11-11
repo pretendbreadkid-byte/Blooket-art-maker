@@ -1,7 +1,7 @@
 // Everything that happens when you press, drag and release on the canvas.
 import {
   S, hooks, refresh, liveRefresh, commit, activeLayer, layerOf, findObj, selected, select, posed, edit, fillPatch,
-  addObject, visibleObjects, groupOf,
+  addObject, visibleObjects, pickableObjects, groupOf,
 } from './state.js';
 import {
   toDoc, objectEl, liveLayer, worldBox, selectionFrame, placeFrame, zoomAt, drawOverlay,
@@ -256,7 +256,7 @@ function finishMarquee() {
   const r = drag.rect;
   if (!r) return;
   const ids = [];
-  for (const o of visibleObjects()) {
+  for (const o of pickableObjects()) {
     const b = worldBox([o.id]);
     if (b && b.x < r.x + r.w && b.x + b.width > r.x && b.y < r.y + r.h && b.y + b.height > r.y) ids.push(o.id);
   }
@@ -564,12 +564,6 @@ export async function takeApart() {
   toast(made.length ? `Taken apart into ${made.length} pieces!` : 'Taken apart! Click any piece to move it.', 'ok');
 }
 
-export function groupSelection() {
-  const group = uid('t');
-  selected().forEach((o) => { o.group = group; });
-  commit();
-}
-
 /* ---------- Pencil, marker, eraser ---------- */
 
 function strokeAttrsFor(tool) {
@@ -737,6 +731,39 @@ function fillBackground() {
   S.doc.background = S.fill;
   S.doc.bgGradient = S.fillGradient;
   commit();
+}
+
+/* ---------- Groups ---------- */
+
+export const canGroup = () => S.sel.size > 1;
+export const canUngroup = () => selected().some((o) => o.group);
+
+// Picked things become one group, stacked together where the top one was.
+// Clicking any of them then picks the whole group, like a Blook.
+export function groupSelection() {
+  if (S.sel.size < 2) return;
+  const id = uid('t');
+  for (const layer of S.doc.layers) {
+    const picked = layer.objects.filter((o) => S.sel.has(o.id));
+    if (!picked.length) continue;
+    const after = layer.objects[layer.objects.indexOf(picked[picked.length - 1]) + 1];
+    const rest = layer.objects.filter((o) => !S.sel.has(o.id));
+    const at = after ? rest.indexOf(after) : rest.length;
+    rest.splice(at, 0, ...picked);
+    layer.objects = rest;
+    picked.forEach((o) => { o.group = id; });
+  }
+  S.doc.groupNames = { ...S.doc.groupNames, [id]: `Group ${new Set(S.doc.layers.flatMap((l) => l.objects).map((o) => o.group).filter(Boolean)).size}` };
+  commit();
+  refresh();
+}
+
+export function ungroupSelection() {
+  const items = selected().filter((o) => o.group);
+  if (!items.length) return;
+  items.forEach((o) => { delete o.group; });
+  commit();
+  refresh();
 }
 
 /* ---------- Weld ---------- */
@@ -944,7 +971,7 @@ function finishLasso() {
   liveLayer().innerHTML = '';
   if (pts.length < 3) { if (!adding) { select([]); refresh(); } return; }
   const ids = adding ? [...S.sel] : [];
-  for (const o of visibleObjects()) if (!ids.includes(o.id) && insideLasso(o, pts)) ids.push(o.id);
+  for (const o of pickableObjects()) if (!ids.includes(o.id) && insideLasso(o, pts)) ids.push(o.id);
   select(ids);
   if (ids.length) setTool('select');
   else refresh();
@@ -965,7 +992,7 @@ function contextMenu(e) {
       ...(S.clipboard?.length ? [paste] : []),
       {
         label: 'Pick everything', icon: 'select',
-        onClick: () => { select(visibleObjects().map((o) => o.id)); refresh(); },
+        onClick: () => { select(pickableObjects().map((o) => o.id)); refresh(); },
       },
     ]);
     return;
@@ -975,8 +1002,9 @@ function contextMenu(e) {
   const special = [
     ...(canWeld() ? [{ label: 'Weld into one shape (Ctrl+J)', icon: 'weld', onClick: weldSelection }] : []),
     ...(canUnweld() ? [{ label: 'Unweld', icon: 'apart', onClick: unweldSelection }] : []),
+    ...(canGroup() ? [{ label: 'Group (Ctrl+G)', icon: 'group', onClick: groupSelection }] : []),
+    ...(canUngroup() ? [{ label: 'Ungroup (Ctrl+Shift+G)', icon: 'ungroup', onClick: ungroupSelection }] : []),
     ...(canTakeApart() ? [{ label: 'Take apart', icon: 'apart', onClick: takeApart }] : []),
-    ...(S.sel.size > 1 && !selected().every((o) => o.group && o.group === selected()[0].group) ? [{ label: 'Group together', icon: 'link', onClick: groupSelection }] : []),
     ...(lines ? [{ label: lines > 1 ? 'Connect lines' : 'Close the line', icon: 'link', onClick: connectSelection }] : []),
     ...(keyed ? [{ label: 'Loop back to beginning', icon: 'loop', onClick: loopSelection }] : []),
   ];

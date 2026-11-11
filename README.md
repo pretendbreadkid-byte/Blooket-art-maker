@@ -31,7 +31,7 @@ Then open <http://localhost:5180>.
 | Shapes | S | Basic shapes, Plus shapes and the uploaded catalog. Click one, or drag it onto the canvas. |
 | Flip | Shift+H, Shift+V | Pick something, then flip it sideways or up and down. Things picked together flip as one. |
 | Bucket | B | Fill a shape, a closed drawing, or the background, with a colour or a gradient. |
-| Text | T | Click and type. |
+| Text | T | Click and type. Line it up left, centre or right, and warp it: Arc curves it up or down, and Wave, Bulge, Pinch and Rise move or size each letter. Outlines go round the outside of the letters. |
 | Eraser | E | Rubs out art. |
 | Assets | | Search the Blook art and drag one onto the canvas. |
 | Uploads | | Upload your own pictures. They stay on your account, ready for any project. |
@@ -39,6 +39,9 @@ Then open <http://localhost:5180>.
 | Swap colours | | Change one colour everywhere in the picked art, including SVG and other pictures. |
 | Blur | | Soften any picked art, from 0 to 60 px. In an animation it can blur in and out. |
 | Shadow | | A solid, see-through drop shadow under picked art, with darkness, distance and direction. Softness blurs it if you want. A whole Blook casts one shadow together. |
+| Group | Ctrl+G, Ctrl+Shift+G | Pick two or more things and group them, so clicking any of them picks them all. Ctrl+Shift+G ungroups. |
+| Layers | | Turn on when making a project, or in the Canvas panel. Lists everything, top first, with groups as folders. Hide, lock, rename (double-click) and drag to reorder. |
+| Colours from pictures | | In any colour picker: From a picture lets you click a picture to take an exact colour, or use its main colours. From the screen (Chrome and Edge) picks from anywhere. |
 | Weld | Ctrl+J | Pick two or more things and join them into one shape with a single outline. Overlaps merge, holes stay holes, and it works with text and pictures too. Each piece keeps its own colours inside the new outline; the Bucket recolours one piece, Fill recolours them all, and Unweld gives the pieces back. |
 | Underbelly | | A see-through band along the bottom of picked shapes, pictures or text, following their outline, with size, opacity and colour. |
 | Auto shadow | | In the Canvas panel. A solid, see-through band below each piece, wherever it overlaps the one under it, with a strength and size. |

@@ -1,6 +1,7 @@
 // Shared bits of interface: icons, dialogs, menus and toasts.
 // VS Code's preview blocks alert/confirm/prompt, so everything here is custom.
 import { esc } from './render.js';
+import { findPalette } from './trace.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -79,6 +80,13 @@ const ICONS = {
   users: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c.600-3 3-5 6-5s5.400 2 6 5M16 5a3 3 0 0 1 0 6M17.500 15c2 .500 3.200 2.300 3.500 5',
   info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.500h.01',
   send: 'M4 12l16-8-6 16-3-7zM11 13l9-9',
+  alignleft: 'M4 6h16M4 10h10M4 14h16M4 18h10',
+  aligncenter: 'M4 6h16M7 10h10M4 14h16M7 18h10',
+  alignright: 'M4 6h16M10 10h10M4 14h16M10 18h10',
+  layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17.500l9 5 9-5',
+  group: 'M3 3h7v7H3zM14 14h7v7h-7zM10 6.500h6.500V14M6.500 10v6.500H14',
+  ungroup: 'M3 3h7v7H3zM14 14h7v7h-7z',
+  eyedropper: 'M15 4l5 5-2 2-1-1-7 7H7v-3l7-7-1-1zM7 17l-3 3',
   weld: 'M8.500 6.500a5.500 5.500 0 1 0 0 11h7a5.500 5.500 0 1 0 0-11zM12 9v6',
 };
 
@@ -200,6 +208,10 @@ export function colorPopover(anchor, { value, allowNone = false, allowGradient =
       <input class="hex" value="${value === 'none' ? '' : esc(value)}" placeholder="#000000" maxlength="7" aria-label="Colour code">
       ${allowNone ? '<button class="btn ghost small" data-none>None</button>' : ''}
     </div>
+    <div class="pop-row pop-pick">
+      <button class="btn ghost small" data-from-picture>${icon('image')}<span>From a picture</span></button>
+      ${'EyeDropper' in window ? `<button class="btn ghost small" data-dropper title="Pick a colour from anywhere on the screen">${icon('eyedropper')}<span>From the screen</span></button>` : ''}
+    </div>
   </div>`);
   const pick = (c, finish) => {
     onInput(c);
@@ -216,6 +228,14 @@ export function colorPopover(anchor, { value, allowNone = false, allowGradient =
     const c = e.target.closest('[data-c]')?.dataset.c;
     if (c) pick(c, true);
     if (e.target.closest('[data-none]')) pick('none', true);
+    if (e.target.closest('[data-from-picture]')) {
+      pop.remove();
+      document.removeEventListener('pointerdown', outside, true);
+      pickFromPicture().then((c) => { if (c) onInput(c); onDone?.(); });
+    }
+    if (e.target.closest('[data-dropper]')) {
+      new window.EyeDropper().open().then(({ sRGBHex }) => pick(toHexColor(sRGBHex))).catch(() => { /* Cancelled. */ });
+    }
     if (e.target.closest('[data-grad]')) {
       pop.remove();
       document.removeEventListener('pointerdown', outside, true);
@@ -231,6 +251,82 @@ export function colorPopover(anchor, { value, allowNone = false, allowGradient =
   pop.style.left = `${Math.max(8, Math.min(innerWidth - m.width - 8, r.left))}px`;
   pop.style.top = `${r.bottom + m.height + 8 > innerHeight ? Math.max(8, r.top - m.height - 6) : r.bottom + 6}px`;
   setTimeout(() => document.addEventListener('pointerdown', outside, true));
+}
+
+/* ---------- Colours from pictures ---------- */
+
+// Pictures you can pick colours from, besides one from your computer. The editor
+// fills this in with the pictures on the canvas.
+export const pictureSources = { list: () => [] };
+
+const hex2 = (v) => Math.round(v).toString(16).padStart(2, '0');
+const rgbHex = (r, g, b) => `#${hex2(r)}${hex2(g)}${hex2(b)}`;
+function toHexColor(c) {
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c.toLowerCase();
+  const m = c.match(/\d+(\.\d+)?/g);
+  return m && m.length >= 3 ? rgbHex(+m[0], +m[1], +m[2]) : '#000000';
+}
+
+const MAX_PICK_W = 560, MAX_PICK_H = 340, MAIN_COLOURS = 8;
+
+// Shows a picture: click anywhere on it to take that exact colour, or pick one of
+// its main colours. Resolves to the colour, or nothing when cancelled.
+export function pickFromPicture() {
+  return dialog((box, close) => {
+    box.classList.add('pick-colour');
+    const pictures = pictureSources.list();
+    box.innerHTML = `<h2>Pick a colour from a picture</h2>
+      <div class="pc-sources">${pictures.map((p, i) => `<button class="pc-thumb" data-i="${i}" title="${esc(p.name || 'Picture')}"><img src="${esc(p.href)}" alt=""></button>`).join('')}
+        <label class="btn ghost small pc-file">${icon('upload')}<span>Choose a picture</span><input type="file" accept="image/*,.svg" hidden></label></div>
+      <div class="pc-stage"><p class="muted">${pictures.length ? 'Choose a picture above.' : 'Choose a picture from your computer.'}</p></div>
+      <div class="pc-main"></div>
+      <div class="pc-foot"><span class="pc-now" hidden><i></i><b></b></span><div class="grow"></div><button class="btn ghost" data-no>Cancel</button></div>`;
+    $('[data-no]', box).onclick = () => close();
+    const stage = $('.pc-stage', box), main = $('.pc-main', box), now = $('.pc-now', box);
+
+    const show = async (href) => {
+      const img = new Image();
+      img.src = href;
+      try { await img.decode(); } catch { stage.innerHTML = '<p class="size-err">That picture could not be opened.</p>'; return; }
+      const w0 = img.naturalWidth || 300, h0 = img.naturalHeight || 300;
+      const scale = Math.min(MAX_PICK_W / w0, MAX_PICK_H / h0, 4);
+      const canvas = Object.assign(document.createElement('canvas'), { width: Math.max(1, Math.round(w0 * scale)), height: Math.max(1, Math.round(h0 * scale)) });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      stage.innerHTML = '';
+      stage.append(canvas);
+      const at = (e) => {
+        const r = canvas.getBoundingClientRect();
+        const x = Math.floor(((e.clientX - r.left) / r.width) * canvas.width), y = Math.floor(((e.clientY - r.top) / r.height) * canvas.height);
+        const i = (Math.max(0, Math.min(canvas.height - 1, y)) * canvas.width + Math.max(0, Math.min(canvas.width - 1, x))) * 4;
+        return data.data[i + 3] < 20 ? null : rgbHex(data.data[i], data.data[i + 1], data.data[i + 2]);
+      };
+      canvas.onpointermove = (e) => {
+        const c = at(e);
+        now.hidden = !c;
+        if (c) { $('i', now).style.background = c; $('b', now).textContent = c; }
+      };
+      canvas.onclick = (e) => { const c = at(e); if (c) close(c); };
+      const mask = new Uint8Array(canvas.width * canvas.height).map((_, i) => (data.data[i * 4 + 3] > 24 ? 1 : 0));
+      const colours = findPalette(data.data, mask, MAIN_COLOURS).map(([r, g, b]) => rgbHex(r, g, b));
+      main.innerHTML = colours.length ? `<span class="muted small">Its main colours</span>${colours.map((c) => `<button class="pc-swatch" data-c="${c}" style="background:${c}" title="${c}" aria-label="${c}"></button>`).join('')}` : '';
+      $$('.pc-swatch', main).forEach((b) => { b.onclick = () => close(b.dataset.c); });
+    };
+
+    $$('.pc-thumb', box).forEach((b) => {
+      b.onclick = () => {
+        $$('.pc-thumb', box).forEach((x) => x.classList.toggle('on', x === b));
+        show(pictures[+b.dataset.i].href);
+      };
+    });
+    const file = $('input[type=file]', box);
+    file.onchange = async () => {
+      const [picked] = file.files;
+      if (picked) show(await readDataUrl(picked));
+    };
+    if (pictures.length) $('.pc-thumb', box).click();
+  }, { wide: true });
 }
 
 // Pick two colours and turn the dial to point the gradient any way you like.

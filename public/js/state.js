@@ -67,6 +67,8 @@ export const findObj = (id) => allObjects().find((o) => o.id === id);
 export const layerOf = (id) => S.doc.layers.find((l) => l.objects.some((o) => o.id === id));
 export const selected = () => [...S.sel].map(findObj).filter(Boolean);
 export const visibleObjects = () => objectsOn(S.doc, activeLayer(), S.frame);
+// What can be picked on the canvas: not hidden, not locked.
+export const pickableObjects = () => visibleObjects().filter((o) => !o.hidden && !o.locked);
 // Puts new art on top of the stack. In a page animation it goes on the page showing now.
 export function addObject(layer, obj) {
   if (isPages(S.doc)) obj.page = S.doc.pages[S.frame].id;

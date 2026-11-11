@@ -2,17 +2,18 @@
 import {
   S, hooks, liveRefresh, commit, selected, posed, edit, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
-import { clone, pathBounds } from './model.js';
+import { clone, pathBounds, localToWorld } from './model.js';
 import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
-import { esc, newDropShadow, newAutoShadow, newUnderbelly } from './render.js';
+import { esc, newDropShadow, newAutoShadow, newUnderbelly, WARPS } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection,
+  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, canGroup, canUngroup, groupSelection, ungroupSelection,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
+import { drawLayers } from './layers.js';
 import { TEMPLATES, overlayLook } from './templates.js';
 import { isPlus } from './session.js';
 import { plusDialog } from './plus.js';
@@ -125,7 +126,10 @@ function optionBar() {
     add(paint('Colour'));
   } else if (tool === 'text') {
     add(paint('Colour'));
-    add(fontControls(S.font, (patch) => Object.assign(S.font, patch)));
+    add(fontControls(S.font, (patch, done) => {
+      Object.assign(S.font, patch);
+      if ('warp' in patch && done) hooks.panels();
+    }));
   } else if (tool === 'vertices') {
     const [item] = selected();
     if (item?.type === 'path') {
@@ -177,7 +181,35 @@ function fontControls(target, apply) {
     label: 'Size', value: target.fontSize, min: 6, max: 400, unit: 'px',
     onInput: (v) => apply({ fontSize: v }),
     onChange: () => apply({}, true),
-  }));
+  }), textShapeControls(target, apply));
+  return wrap;
+}
+
+const ALIGNS = [['left', 'Align left'], ['center', 'Centre'], ['right', 'Align right']];
+
+// Alignment, and warps: Arc curves the text, the others move or size each letter.
+function textShapeControls(target, apply) {
+  const warp = { type: 'none', amount: 50, ...target.warp };
+  const arc = warp.type === 'arc';
+  const box = html(`<div class="text-shape">
+    <div class="align-row ${arc ? 'off' : ''}" role="group" aria-label="Alignment">${ALIGNS.map(([a, label]) => `<button class="tog ${(target.align || 'center') === a ? 'on' : ''}" data-a="${a}" title="${label}" aria-label="${label}">${icon(`align${a}`)}</button>`).join('')}</div>
+    <label class="warp-pick"><span>Warp</span><select>${Object.entries(WARPS).map(([k, label]) => `<option value="${k}" ${k === warp.type ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+  </div>`);
+  $$('[data-a]', box).forEach((b) => {
+    b.onclick = () => {
+      $$('[data-a]', box).forEach((x) => x.classList.toggle('on', x === b));
+      apply({ align: b.dataset.a }, true);
+    };
+  });
+  $('select', box).onchange = (e) => apply({ warp: { ...warp, type: e.target.value } }, true);
+  const wrap = html('<div class="text-shape-wrap"></div>');
+  wrap.append(box);
+  if (warp.type !== 'none') {
+    wrap.append(slider({
+      label: arc ? 'Curve (up or down)' : 'Strength', value: warp.amount, min: arc ? -100 : 0, max: 100,
+      onInput: (v) => apply({ warp: { ...warp, amount: v } }), onChange: () => apply({}, true),
+    }));
+  }
   return wrap;
 }
 
@@ -235,6 +267,9 @@ function documentPanel(box) {
     }
   }
   box.append(autoShadowControls(d));
+  const layers = html(`<label class="check"><input type="checkbox" ${d.layersPanel ? 'checked' : ''}><span>Layers panel</span></label>`);
+  $('input', layers).onchange = (e) => { d.layersPanel = e.target.checked; commit(); hooks.panels(); };
+  box.append(layers);
 }
 
 // Shadows wherever pieces overlap, falling just past the top piece's edge.
@@ -382,6 +417,12 @@ function selectedPanel() {
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canWeld()) box.append(button('Weld into one shape', 'weld', weldSelection, 'wide'));
   if (canUnweld()) box.append(button('Unweld', 'apart', unweldSelection, 'wide'));
+  if (canGroup() || canUngroup()) {
+    const grouping = html('<div class="btn-grid"></div>');
+    if (canGroup()) grouping.append(button('Group', 'group', groupSelection));
+    if (canUngroup()) grouping.append(button('Ungroup', 'ungroup', ungroupSelection));
+    box.append(grouping);
+  }
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
   box.append(opacitySlider(items), blurSlider(items), dropShadowControls(items), arrangeRow());
   box.append(underbellyControls(items));
@@ -456,9 +497,18 @@ function selectedPanel() {
 
   if (single?.type === 'text') {
     box.append(fontControls(single, (patch, done) => {
+      // A new alignment keeps the text where it is: its anchor moves to that edge.
+      if (patch.align && patch.align !== (single.align || 'center')) {
+        const b = localBox(single.id), s = posed(single);
+        if (b && (!single.warp || single.warp.type !== 'arc')) {
+          const edge = { left: b.x, center: b.x + b.width / 2, right: b.x + b.width }[patch.align];
+          edit(single, localToWorld(s, edge, 0));
+        }
+      }
       Object.assign(single, patch);
       liveRefresh();
       if (done || !('fontSize' in patch)) commit();
+      if ('warp' in patch && done) hooks.panels();
     }));
   }
 
@@ -707,6 +757,7 @@ function toolbarState() {
 export function drawPanels() {
   optionBar();
   selectedPanel();
+  drawLayers();
   catalogPanel();
   drawBlooks();
   toolbarState();

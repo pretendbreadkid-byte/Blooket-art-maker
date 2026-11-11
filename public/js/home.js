@@ -358,6 +358,7 @@ function newProjectWizard(folders, preset) {
       box.innerHTML = `${dots()}<h2>What should we call it?</h2>
         <form>
           <label class="field"><span>Project name</span><input id="pname" maxlength="80" value="${esc(state.name)}" autofocus></label>
+          <label class="check"><input type="checkbox" id="players" ${state.layers ? 'checked' : ''}><span>Show a Layers panel, to see, hide, lock, group and reorder everything</span></label>
           <label class="field"><span>Put it in a folder</span>
             <select id="pfolder">
               <option value="">No folder</option>
@@ -377,6 +378,7 @@ function newProjectWizard(folders, preset) {
         e.preventDefault();
         state.name = input.value.trim() || 'Untitled';
         state.folderId = $('#pfolder', box).value || null;
+        state.layers = $('#players', box).checked;
         if (skipKind) { step = 2; stepType(); return; }
         step = 1;
         stepKind();
@@ -401,6 +403,7 @@ function newProjectWizard(folders, preset) {
     };
 
     const create = async (doc) => {
+      doc.layersPanel = !!state.layers;
       try {
         await saveDoc(doc);
       } catch {

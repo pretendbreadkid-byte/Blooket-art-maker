@@ -834,3 +834,60 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 @media (max-width: 760px) {
   .ai-btn span { display: none; }
 }
+
+/* The Layers panel */
+.panel.layers { flex: 0 1 auto; max-height: 45%; min-height: 0; overflow-y: auto; gap: 6px; border-top: 1px solid var(--line); border-bottom: 0; }
+.layers .panel-head h3 { display: flex; align-items: center; gap: 6px; }
+.layers .panel-head h3 .ico { width: 16px; height: 16px; }
+.layer-tools { display: flex; gap: 2px; }
+.layer-tools .ib { width: 30px; height: 30px; }
+.layer-tools .ib:disabled { opacity: .35; }
+.layer-list, .layer-list ul { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0; padding: 0; }
+.layer-list ul { padding-left: 18px; }
+.layer-row { display: flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 4px; border: 2px solid transparent; border-radius: 8px; font-size: 13px; cursor: pointer; user-select: none; }
+.layer-row:hover { background: var(--brand-soft); }
+.layer-row.on { background: var(--brand-soft); border-color: var(--brand); }
+.layer-row.is-hidden .lr-name, .layer-row.is-hidden .lr-icon { opacity: .4; }
+.layer-row.drop-above { box-shadow: 0 -3px 0 var(--brand); }
+.layer-row.drop-below { box-shadow: 0 3px 0 var(--brand); }
+.layer-row button { display: grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: 6px; color: var(--muted); }
+.layer-row button:hover { background: rgba(0, 0, 0, .06); color: var(--ink); }
+.layer-row .ico { width: 15px; height: 15px; }
+.lr-icon { display: grid; place-items: center; color: var(--muted); }
+.lr-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.lr-count { padding: 0 6px; border-radius: 8px; background: var(--panel-2); color: var(--muted); font-size: 11px; font-style: normal; font-weight: 800; }
+.lr-lock { opacity: .35; }
+.layer-row:hover .lr-lock, .lr-lock.locked { opacity: 1; }
+.lr-lock.locked { color: var(--brand); }
+.lr-open .ico { transition: transform .12s; }
+.lr-open.open .ico { transform: rotate(90deg); }
+.lr-rename { flex: 1; min-width: 0; height: 26px; padding: 0 6px; border: 1.5px solid var(--brand); border-radius: 6px; font: inherit; }
+
+/* Text alignment and warps */
+.text-shape-wrap { display: flex; flex-direction: column; gap: 8px; }
+.text-shape { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.align-row { display: flex; gap: 3px; }
+.align-row.off { opacity: .4; pointer-events: none; }
+.align-row .tog .ico { width: 18px; height: 18px; }
+.warp-pick { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; }
+.warp-pick select { height: 34px; padding: 0 6px; border: 1.5px solid var(--line); border-radius: 9px; background: #fff; }
+#opts .font-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Picking colours from pictures */
+.pop-pick { flex-wrap: wrap; }
+.pop-pick .btn { gap: 5px; }
+.pop-pick .ico { width: 15px; height: 15px; }
+.dlg.pick-colour { width: min(640px, 100%); }
+.pc-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pc-thumb { width: 54px; height: 54px; padding: 3px; border: 2px solid var(--line); border-radius: 10px; background: repeating-conic-gradient(#ece9f3 0 25%, #fff 0 50%) 0 0 / 12px 12px; }
+.pc-thumb.on { border-color: var(--brand); }
+.pc-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.pc-file { gap: 6px; cursor: pointer; }
+.pc-stage { display: grid; place-items: center; min-height: 160px; padding: 8px; border-radius: 12px; background: repeating-conic-gradient(#ece9f3 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+.pc-stage canvas { max-width: 100%; cursor: crosshair; }
+.pc-main { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pc-swatch { width: 30px; height: 30px; border: 2px solid #fff; border-radius: 8px; box-shadow: 0 0 0 1.5px var(--line); }
+.pc-swatch:hover { transform: scale(1.1); }
+.pc-foot { display: flex; align-items: center; gap: 10px; }
+.pc-now { display: flex; align-items: center; gap: 8px; font-weight: 800; }
+.pc-now i { width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 0 0 1.5px var(--line); }

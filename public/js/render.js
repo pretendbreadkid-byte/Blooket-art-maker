@@ -61,6 +61,82 @@ function fontStyle(doc) {
 
 const SHADOW_X = 0.045, SHADOW_Y = 0.06;
 
+/* ---------- Text ---------- */
+
+export const WARPS = { none: 'None', arc: 'Arc', wave: 'Wave', bulge: 'Bulge', pinch: 'Pinch', rise: 'Rise' };
+const ANCHORS = { left: 'start', center: 'middle', right: 'end' };
+// Roughly how wide a letter is, for sizing an arc before the font is measured.
+const LETTER_WIDTH = 0.58;
+const MAX_ARC = Math.PI * 1.5;
+
+// Each letter of a line on its own, for warps that move or size letters one by one.
+function letters(line, place) {
+  const chars = [...line];
+  return chars.map((ch, i) => `<tspan ${place(i, chars.length)}>${esc(ch)}</tspan>`).join('');
+}
+
+// The lines of a text, laid out for its alignment and warp. id: for the arc paths.
+function textLines(o, id) {
+  const lines = o.text.split('\n');
+  const height = o.fontSize * 1.2;
+  const top = (-(lines.length - 1) * height) / 2;
+  const warp = WARPS[o.warp?.type] ? o.warp.type : 'none';
+  const bend = Math.max(-100, Math.min(100, o.warp?.amount ?? 50)) / 100;
+  if (warp === 'arc' && bend) {
+    // Each line sits on a circle: bending up makes a hill, down makes a bowl.
+    // The text is centred on the top (or bottom) of the circle.
+    const paths = lines.map((line, i) => {
+      const y = top + i * height;
+      const angle = Math.abs(bend) * MAX_ARC;
+      const r = Math.max(o.fontSize, ([...line].length * o.fontSize * LETTER_WIDTH) / angle);
+      const a = Math.PI - 0.02, up = bend > 0;
+      const at = (t) => (up ? [r * Math.sin(t), y + r - r * Math.cos(t)] : [r * Math.sin(t), y - r + r * Math.cos(t)]);
+      const [x0, y0] = at(up ? -a : -a), [x1, y1] = at(a);
+      return `<path id="${id}-arc${i}" d="M${round(x0)} ${round(y0)}A${round(r)} ${round(r)} 0 1 ${up ? 1 : 0} ${round(x1)} ${round(y1)}" fill="none"/>`;
+    });
+    return {
+      defs: `<defs>${paths.join('')}</defs>`,
+      anchor: 'middle',
+      content: lines.map((line, i) => `<textPath href="#${id}-arc${i}" startOffset="50%">${esc(line) || ' '}</textPath>`).join(''),
+    };
+  }
+  const anchor = ANCHORS[o.align] || 'middle';
+  const lift = o.fontSize * 0.45 * bend;
+  const content = lines.map((line, i) => {
+    const y = round(top + i * height);
+    if (warp === 'wave' && bend) {
+      // Letters ride a wave: each is moved by the change from the one before, and tipped to follow it.
+      let last = 0;
+      return letters(line, (k, n) => {
+        const t = n > 1 ? k / (n - 1) : 0.5;
+        const now = Math.sin(t * Math.PI * 2) * lift;
+        const tilt = Math.cos(t * Math.PI * 2) * 22 * bend;
+        const move = round(k === 0 ? y + now : now - last);
+        last = now;
+        return k === 0 ? `x="0" y="${move}" rotate="${round(-tilt)}"` : `dy="${move}" rotate="${round(-tilt)}"`;
+      });
+    }
+    if ((warp === 'bulge' || warp === 'pinch') && bend) {
+      // Letters grow towards the middle (bulge) or the ends (pinch).
+      const sign = warp === 'bulge' ? 1 : -1;
+      return letters(line, (k, n) => {
+        const t = n > 1 ? k / (n - 1) : 0.5;
+        const size = o.fontSize * Math.max(0.3, 1 + sign * Math.abs(bend) * 0.7 * (Math.sin(t * Math.PI) - 0.5));
+        return `${k === 0 ? `x="0" y="${y}" ` : ''}font-size="${round(size)}"`;
+      });
+    }
+    if (warp === 'rise' && bend) {
+      // Letters climb steadily, each tipped the same way.
+      const n = [...line].length;
+      const step = n > 1 ? (-lift * 2) / (n - 1) : 0;
+      const tilt = round(-Math.atan2(step, o.fontSize * LETTER_WIDTH) * (180 / Math.PI));
+      return letters(line, (k) => (k === 0 ? `x="0" y="${round(y - (step * (n - 1)) / 2)}" rotate="${tilt}"` : `dy="${round(step)}" rotate="${tilt}"`));
+    }
+    return `<tspan x="0" y="${y}">${esc(line) || ' '}</tspan>`;
+  }).join('');
+  return { defs: '', anchor, content };
+}
+
 // A texture is the same outline drawn again on top, filled with the pattern.
 // Outline-only shapes get it on their outline instead.
 function texturePaint(o, textureId) {
@@ -76,15 +152,16 @@ function body(o, inner = '', gradientId = '', textureId = '', textureInner = '')
       + (textured ? `<path d="${d}" fill-rule="${o.fillRule}" ${texturePaint(o, textureId)}>${textureInner}</path>` : '');
   }
   if (o.type === 'text') {
-    const lines = o.text.split('\n');
-    const height = o.fontSize * 1.2;
-    const top = (-(lines.length - 1) * height) / 2;
-    const spans = lines.map((line, i) => `<tspan x="0" y="${round(top + i * height)}">${esc(line) || ' '}</tspan>`).join('');
+    const { content, defs, anchor } = textLines(o, gradientId.replace(/-paint$/, ''));
     const style = `font-family="${esc(o.fontFamily)}" font-size="${round(o.fontSize)}" font-weight="${o.bold ? 700 : 400}" font-style="${o.italic ? 'italic' : 'normal'}"`;
-    const text = `${style} text-anchor="middle" dominant-baseline="central" xml:space="preserve"`;
-    const shadow = o.shadow ? `<text ${text} fill="#000000" fill-opacity="0.24" transform="translate(${round(o.fontSize * SHADOW_X)} ${round(o.fontSize * SHADOW_Y)})">${spans}</text>` : '';
-    return `${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${strokeAttrs(o)}>${inner}${spans}</text>`
-      + (textured ? `<text ${text} ${texturePaint(o, textureId)}>${spans}</text>` : '');
+    const text = `${style} text-anchor="${anchor}" dominant-baseline="central" xml:space="preserve"`;
+    const shadow = o.shadow ? `<text ${text} fill="#000000" fill-opacity="0.24" transform="translate(${round(o.fontSize * SHADOW_X)} ${round(o.fontSize * SHADOW_Y)})">${content}</text>` : '';
+    // The outline goes round the outside of the letters: it is drawn twice as
+    // wide, behind the fill, so the fill covers its inner half.
+    const line = !o.stroke || o.stroke === 'none' || !o.strokeWidth ? 'stroke="none"'
+      : `${strokeAttrs({ ...o, strokeWidth: o.strokeWidth * 2 })} paint-order="stroke"`;
+    return `${defs}${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${line}>${inner}${content}</text>`
+      + (textured ? `<text ${text} ${texturePaint(o, textureId)}>${content}</text>` : '');
   }
   return `<image href="${esc(o.href)}" x="${round(-o.w / 2)}" y="${round(-o.h / 2)}" width="${round(o.w)}" height="${round(o.h)}" preserveAspectRatio="none"/>`;
 }
@@ -163,7 +240,8 @@ function objectMarkup(raw, frame, opt) {
   const o = sample(raw, frame);
   const maskId = `${opt.prefix || 'erase'}-${raw.id}`;
   const masked = raw.erase?.length > 0;
-  const tag = opt.part !== undefined ? ` data-part="${opt.part}"` : opt.editor ? ` data-id="${raw.id}"` : '';
+  // Locked things can't be picked on the canvas.
+  const tag = opt.part !== undefined ? ` data-part="${opt.part}"` : opt.editor ? ` data-id="${raw.id}"${raw.locked ? ' pointer-events="none"' : ''}` : '';
   const gradientId = `${maskId}-paint`;
   const textureId = `${maskId}-tex`;
   const clip = clipsOf(raw, maskId);
@@ -304,7 +382,8 @@ function withShadows(list, frame, opt, layer, draw) {
 }
 
 export function layerMarkup(layer, frame, opt = {}) {
-  const list = opt.doc ? objectsOn(opt.doc, layer, frame) : layer.objects;
+  // Hidden things are not drawn, on the canvas or in exports.
+  const list = (opt.doc ? objectsOn(opt.doc, layer, frame) : layer.objects).filter((o) => !o.hidden);
   const draw = (o) => (opt.animate && o.keys?.length ? animatedObject(o, opt.doc, opt) : objectMarkup(o, frame, opt));
   const objects = withShadows(list, frame, opt, layer, draw);
   const attrs = opt.editor ? ` data-layer="${layer.id}"` : ` id="${esc(layer.name.replace(/[^\w-]+/g, '-'))}"`;

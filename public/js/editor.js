@@ -1,13 +1,13 @@
 // Builds the editor screen and connects the top bar, keyboard and file drops.
 import {
-  S, hooks, openDoc, refresh, commit, undo, redo, persist, selected, visibleObjects,
+  S, hooks, openDoc, refresh, commit, undo, redo, persist, selected, pickableObjects,
 } from './state.js';
 import { getDoc, getMeta } from './store.js';
 import { mountStage, drawStage, drawOverlay, fitView, placeFrame, zoomAt } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, attachTools, setTool, setSpaceHeld, deleteSelection, deleteNodes, duplicateSelection,
   copySelection, pasteClipboard, nudge, addImageFromUrl, addShape, closeTextEditor, flipSelection, reorderSelection, weldSelection,
-  finishLine, cancelLine, lineInProgress,
+  finishLine, cancelLine, lineInProgress, groupSelection, ungroupSelection,
 } from './tools.js';
 import { toggleBlooks, addPictureApart } from './blooks.js';
 import { mountSplits } from './splits.js';
@@ -22,7 +22,7 @@ import { imageToShape } from './trace.js';
 import { session } from './session.js';
 import { syncArt, flushUploads, syncStatus } from './sync.js';
 import { pathD, pathBounds } from './model.js';
-import { $, $$, icon, menu, toast, dialog, readDataUrl } from './ui.js';
+import { $, $$, icon, menu, toast, dialog, readDataUrl, pictureSources } from './ui.js';
 
 const TEMPLATE = `
 <div class="ed">
@@ -57,6 +57,7 @@ const TEMPLATE = `
   </main>
   <aside class="ed-right">
     <section id="inspector" class="panel"></section>
+    <section id="layers" class="panel layers" hidden></section>
   </aside>
   <section class="ed-time" id="timeline" hidden></section>
   <div class="split split-side" data-split="side" title="Drag to resize. Double-click to reset."></div>
@@ -109,11 +110,12 @@ function onKey(e) {
     const actions = {
       z: () => (e.shiftKey ? redo() : undo()), y: redo, d: duplicateSelection,
       c: copySelection, v: pasteClipboard, s: persist, j: weldSelection,
+      g: () => (e.shiftKey ? ungroupSelection() : groupSelection()),
       ']': () => reorderSelection('up'), '[': () => reorderSelection('down'),
       '}': () => reorderSelection('front'), '{': () => reorderSelection('back'),
       x: () => { copySelection(); deleteSelection(); },
       a: () => {
-        S.sel = new Set(visibleObjects().map((o) => o.id));
+        S.sel = new Set(pickableObjects().map((o) => o.id));
         refresh();
       },
     };
@@ -296,6 +298,8 @@ export async function openEditor(root, id) {
   S.tool = 'select';
   document.body.dataset.tool = 'select';
 
+  // The colour picker can take colours from the pictures in this project.
+  pictureSources.list = () => (S.doc?.layers || []).flatMap((l) => l.objects).filter((o) => o.type === 'image' && o.href).map((o) => ({ name: o.name, href: o.href }));
   hooks.stage = drawStage;
   hooks.overlay = drawOverlay;
   hooks.panels = drawPanels;

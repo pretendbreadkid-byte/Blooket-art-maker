@@ -767,3 +767,62 @@ test('Blookberry AI recolours real Blooks and finds them by name', async () => {
   assert.match(hatted, /viewBox="0 -?\d+(\.\d)? 300 \d+(\.\d)?"/);
   assert.ok(hatted.includes('#ffc83d') && hatted.endsWith('</svg>'));
 });
+
+test('text outlines go round the outside of the letters', () => {
+  const doc = newDoc({ name: 't' });
+  doc.layers[0].objects.push(newText({ text: 'Hi', fill: '#ffffff', stroke: '#000000', strokeWidth: 6 }));
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes('stroke-width="12"') && svg.includes('paint-order="stroke"'), 'drawn twice as wide, behind the fill');
+});
+
+test('text lines line up left, centre or right', () => {
+  const doc = newDoc({ name: 't' });
+  const words = newText({ text: 'One\nTwo', align: 'left' });
+  doc.layers[0].objects.push(words);
+  assert.ok(exportSVG(doc).includes('text-anchor="start"'));
+  words.align = 'right';
+  assert.ok(exportSVG(doc).includes('text-anchor="end"'));
+  delete words.align;
+  assert.ok(exportSVG(doc).includes('text-anchor="middle"'), 'centred unless told otherwise');
+});
+
+test('curved text sits on an arc that bends up or down', () => {
+  const doc = newDoc({ name: 't' });
+  const words = newText({ text: 'Blook Berry', warp: { type: 'arc', amount: 60 } });
+  doc.layers[0].objects.push(words);
+  let svg = exportSVG(doc);
+  assert.ok(svg.includes(`<textPath href="#erase-${words.id}-arc0" startOffset="50%">Blook Berry</textPath>`), svg);
+  assert.match(svg, /<path id="[^"]+-arc0" d="M[^"]+A[\d.]+ [\d.]+ 0 1 1 /, 'a hill');
+  words.warp.amount = -60;
+  svg = exportSVG(doc);
+  assert.match(svg, /<path id="[^"]+-arc0" d="M[^"]+A[\d.]+ [\d.]+ 0 1 0 /, 'a bowl');
+});
+
+test('warps move or size each letter', () => {
+  const doc = newDoc({ name: 't' });
+  const words = newText({ text: 'Wavy', warp: { type: 'wave', amount: 80 } });
+  doc.layers[0].objects.push(words);
+  let svg = exportSVG(doc);
+  assert.equal((svg.match(/<tspan/g) || []).length, 4, 'one span per letter');
+  assert.equal((svg.match(/<tspan[^>]*rotate=/g) || []).length, 4, 'each letter tipped to follow the wave');
+  words.warp = { type: 'bulge', amount: 100 };
+  svg = exportSVG(doc);
+  const sizes = [...svg.matchAll(/<tspan[^>]*font-size="([\d.]+)"/g)].map((m) => +m[1]);
+  assert.ok(sizes[1] > sizes[0] && sizes[1] > sizes[3], `the middle grows: ${sizes}`);
+  words.warp = { type: 'none', amount: 50 };
+  assert.ok(!exportSVG(doc).includes('rotate='));
+});
+
+test('hidden things are not drawn, and locked things cannot be picked on the canvas', async () => {
+  const { layerMarkup } = await import('../public/js/render.js');
+  const doc = newDoc({ name: 't' });
+  const shown = newPath({ subpaths: square(), fill: '#ff0000' });
+  const hidden = newPath({ subpaths: square(), fill: '#00ff00', hidden: true });
+  const locked = newPath({ subpaths: square(), fill: '#0000ff', locked: true });
+  doc.layers[0].objects.push(shown, hidden, locked);
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes('#ff0000') && !svg.includes('#00ff00') && svg.includes('#0000ff'), 'hidden stays out of exports too');
+  const editor = layerMarkup(doc.layers[0], 0, { doc, editor: true, prefix: 'stage' });
+  assert.ok(editor.includes(`data-id="${locked.id}" pointer-events="none"`));
+  assert.ok(!editor.includes(`data-id="${shown.id}" pointer-events`));
+});
