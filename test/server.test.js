@@ -18,7 +18,7 @@ let server, dataDir, token;
 before(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'blook-test-'));
   server = spawn(process.execPath, ['server.js'], {
-    env: { ...process.env, PORT, ADMIN_PASSWORD: PASSWORD, DATA_DIR: dataDir },
+    env: { ...process.env, PORT, ADMIN_PASSWORD: PASSWORD, DATA_DIR: dataDir, ANTHROPIC_API_KEY: '' },
   });
   await new Promise((resolve, reject) => {
     server.stdout.on('data', (d) => { if (String(d).includes('Running at')) resolve(); });
@@ -147,4 +147,21 @@ test('packs sent to Community wait for an admin, then everyone can open them', a
   assert.deepEqual((await (await anyone('GET', '/api/community')).json()).packs, []);
   assert.equal((await boss('DELETE', `/api/admin/community/${pack.id}`)).status, 200);
   assert.equal((await (await boss('GET', '/api/admin/community')).json()).packs.length, 0);
+});
+
+test('Blookberry AI needs an account and an API key, and spends nothing without one', async () => {
+  const status = await (await fetch(`${BASE}/api/ai/status`)).json();
+  assert.equal(status.ready, false);
+  const ask = (auth) => fetch(`${BASE}/api/ai/blook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) },
+    body: JSON.stringify({ prompt: 'a pumpkin' }),
+  });
+  assert.equal((await ask(null)).status, 401, 'guests cannot use it');
+  const signup = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'aimaker', password: 'hunter22' }),
+  })).json();
+  const res = await ask(signup.token);
+  assert.equal(res.status, 503);
+  assert.match((await res.json()).error, /ANTHROPIC_API_KEY/);
 });

@@ -133,6 +133,18 @@ Render's free disk is wiped on every restart, so accounts and art need somewhere
 
 Render's free plan puts a site to sleep after 15 quiet minutes, then shows its own loading page to the next visitor. A paid Render plan never sleeps. On the free plan, add `KEEP_AWAKE` set to `true` and the site visits itself every 10 minutes to stay up. Free plans get 750 hours a month across every service on the account, and this one service uses about 744, so don't turn it on if you run other free services there.
 
+### Blookberry AI (beta)
+
+The **Blookberry AI** button at the top of the editor turns a short description into a Blook, drawn by Claude (`claude-opus-5-5`) in Blooket's style. Every request shows it eight real Blooks as a style guide, plus up to three more whose names match the description. What comes back is cleaned so only plain drawing is left (no scripts, links or outside pictures), then added to the canvas as pieces you can edit.
+
+To switch it on:
+
+1. Get an API key from the [Claude Console](https://platform.claude.com/).
+2. In Render, add `ANTHROPIC_API_KEY` (the key).
+3. Make sure Render's build command is `npm install`, which installs the one package this needs (`@anthropic-ai/sdk`).
+
+Only people with accounts can use it, up to 12 Blooks a day each (change this with `AI_BLOOKS_PER_DAY`). Each Blook is billed to your Anthropic account, so keep an eye on usage in the Console. Without a key, the button explains that it isn't switched on and nothing is charged.
+
 ## Tests
 
 ```

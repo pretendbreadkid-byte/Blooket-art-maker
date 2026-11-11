@@ -730,3 +730,18 @@ test('swapping colours reaches the pieces inside a welded shape', async () => {
   swapColor([welded], '#ff0000', '#123456');
   assert.equal(welded.parts[0].fill, '#123456');
 });
+
+test('Blookberry AI keeps only plain drawing from what comes back', async () => {
+  const { cleanSvg } = await import('../ai.js');
+  const reply = 'Here is your Blook:\n<svg viewBox="0 0 300 345" onload="alert(1)"><script>alert(2)</script><style>p{fill:red}</style>'
+    + '<g><path d="M0 0H10V10Z" fill="url(#A)" onclick="x()"/><a href="javascript:void(0)"><rect width="5" height="5"/></a>'
+    + '<image href="https://example.com/x.png"/><linearGradient id="A" xlink:href="#B"><stop offset="0" stop-color="#fff"/></linearGradient>'
+    + '<path fill="url(https://example.com/x)"/><foreignObject><div>hi</div></foreignObject></g></svg> Enjoy!';
+  const svg = cleanSvg(reply);
+  assert.ok(svg.startsWith('<svg xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg"') && svg.endsWith('</svg>'), svg);
+  for (const bad of ['script', 'alert', 'onload', 'onclick', '<style', 'javascript', '<image', 'example.com', 'foreignObject', '<a ', 'Enjoy']) {
+    assert.ok(!svg.includes(bad), `${bad} should be gone: ${svg}`);
+  }
+  assert.ok(svg.includes('fill="url(#A)"') && svg.includes('<linearGradient id="A"'), 'its own gradients stay');
+  assert.equal(cleanSvg('Sorry, no drawing.'), null);
+});

@@ -1,5 +1,6 @@
 // Blook Berry server. Serves the app and the shared shapes catalog.
-// No dependencies: run it with `node server.js`.
+// Run it with `node server.js`. Its one package, the Anthropic SDK, is only
+// needed for Blookberry AI; without it the rest of the site works the same.
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt as scryptCallback } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -7,6 +8,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { aiReady, generateBlook, AiError } from './ai.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -509,6 +511,34 @@ async function communityAdmin(req, res, path) {
   });
 }
 
+/* ---------- Blookberry AI ---------- */
+
+// Each Blook costs real money, so only accounts can make them, a few a day each.
+const AI_PER_DAY = Number(process.env.AI_BLOOKS_PER_DAY || 12);
+const DAY_MS = 24 * 60 * 60 * 1000;
+const aiUses = new Map();
+
+async function aiBlook(req, res) {
+  const user = currentUser(req);
+  if (!user) return send(res, 401, { error: 'Make an account to use Blookberry AI.' });
+  if (!aiReady()) return send(res, 503, { error: 'Blookberry AI is not switched on yet. The site owner needs to add an ANTHROPIC_API_KEY.' });
+  const key = user.name.toLowerCase();
+  const recent = (aiUses.get(key) || []).filter((t) => t > Date.now() - DAY_MS);
+  if (recent.length >= AI_PER_DAY) return send(res, 429, { error: `You have made ${AI_PER_DAY} Blooks today. Come back tomorrow for more.` });
+  const { prompt } = await readJson(req);
+  recent.push(Date.now());
+  aiUses.set(key, recent);
+  try {
+    const { svg, references } = await generateBlook(ROOT, prompt);
+    return send(res, 200, { svg, references, left: AI_PER_DAY - recent.length });
+  } catch (error) {
+    // A failed try does not count against the day.
+    recent.pop();
+    if (error instanceof AiError) return send(res, error.status, { error: error.message });
+    throw error;
+  }
+}
+
 const digest = (s) => createHash('sha256').update(String(s)).digest();
 const passwordMatches = (attempt) => timingSafeEqual(digest(attempt), digest(adminPassword));
 
@@ -599,6 +629,8 @@ async function api(req, res, path) {
   if (path === '/api/art' || path.startsWith('/api/art/')) return art(req, res, path);
   if (path === '/api/uploads' || path.startsWith('/api/uploads/')) return uploads(req, res, path);
   if (path === '/api/community' || path.startsWith('/api/community/')) return communityApi(req, res, path);
+  if (path === '/api/ai/status' && req.method === 'GET') return send(res, 200, { ready: aiReady(), perDay: AI_PER_DAY });
+  if (path === '/api/ai/blook' && req.method === 'POST') return aiBlook(req, res);
   if (path === '/api/me' || path === '/api/plus/join') {
     const user = currentUser(req);
     if (!user) return send(res, 401, { error: 'Please log in.' });

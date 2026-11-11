@@ -29,11 +29,12 @@ function placePieces(parsed, name, x, y) {
 }
 
 // An uploaded picture, already apart, so each piece can be clicked straight away.
-export async function addPictureApart(href, name, x = S.doc.width / 2, y = S.doc.height / 2) {
+// together: keep the pieces picked as one, like a Blook from Assets.
+export async function addPictureApart(href, name, x = S.doc.width / 2, y = S.doc.height / 2, { together = false } = {}) {
   const objects = placePieces(await piecesFromPicture(href), name, x, y);
-  objects.forEach((o) => { delete o.group; });
+  if (!together) objects.forEach((o) => { delete o.group; });
   commit();
-  toast(`${name} came apart into ${objects.length} pieces.`, 'ok');
+  toast(together ? `${name} was added. Right-click it and choose Take apart to edit each piece.` : `${name} came apart into ${objects.length} pieces.`, 'ok');
 }
 
 export async function addBlook(blook, x, y) {

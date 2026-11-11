@@ -16,6 +16,7 @@ import { drawTimeline, setFrame, stop, togglePlay } from './timeline.js';
 import { fetchCatalog } from './shapes.js';
 import { esc } from './render.js';
 import { exportDialog } from './export.js';
+import { blookberryDialog } from './ai.js';
 import { checkOverflow, resetFitPrompt } from './fit.js';
 import { imageToShape } from './trace.js';
 import { session } from './session.js';
@@ -39,6 +40,7 @@ const TEMPLATE = `
       <button class="zoomval" id="zoomval" title="Fit to screen"></button>
       <button class="ib" id="zoomin" title="Zoom in" aria-label="Zoom in">${icon('plus')}</button>
     </div>
+    <button class="btn ghost ai-btn" id="blookberry" title="Describe a Blook and have it drawn for you"><img src="/logo.svg" alt=""><span>Blookberry AI</span><i class="beta">BETA</i></button>
     <button class="btn ghost" id="import">${icon('image')}<span>Add picture</span></button>
     <button class="btn primary" id="export">${icon('download')}<span>Export</span></button>
     <input type="file" id="file" accept="image/*,.svg" hidden multiple>
@@ -237,6 +239,7 @@ function wireTop(root) {
   $('#zoomout', root).onclick = () => zoomBy(0.8);
   $('#zoomval', root).onclick = () => { fitView(); refresh(); };
   $('#export', root).onclick = exportDialog;
+  $('#blookberry', root).onclick = blookberryDialog;
   const file = $('#file', root);
   $('#import', root).onclick = () => file.click();
   file.onchange = () => { importFiles([...file.files]); file.value = ''; };
