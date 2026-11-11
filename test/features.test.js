@@ -702,3 +702,31 @@ test('swapping a colour reaches fills, outlines, gradients, keyframes, textures 
   assert.equal(obj.stroke, '#00F');
   assert.equal(svgOf(picture.href), '<svg><rect fill="#123456"/><rect fill="#00ff00"/></svg>');
 });
+
+test('a welded shape keeps each piece in its own colour, inside the joined outline', async () => {
+  const { layerMarkup } = await import('../public/js/render.js');
+  const doc = newDoc({ name: 't' });
+  const welded = newPath({
+    name: 'Welded shape', subpaths: square(), fill: '#00ff00', stroke: '#111111', strokeWidth: 4,
+    parts: [
+      newPath({ subpaths: parseD('M0 0H60V100H0Z'), fill: '#ff0000' }),
+      newPath({ subpaths: parseD('M40 0H100V100H40Z'), fill: '#0000ff' }),
+    ],
+  });
+  doc.layers[0].objects.push(welded);
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes('fill="#ff0000"') && svg.includes('fill="#0000ff"'), 'both pieces keep their colours');
+  assert.ok(svg.includes(`clip-path="url(#erase-${welded.id}-weld)"`), 'cut to the outline');
+  assert.ok(svg.lastIndexOf('stroke="#111111"') > svg.indexOf('fill="#0000ff"'), 'the outline goes on top');
+  const editor = layerMarkup(doc.layers[0], 0, { doc, editor: true, prefix: 'stage' });
+  assert.equal(editor.match(/data-id=/g).length, 1, 'the pieces are not picked on their own');
+  assert.ok(editor.includes('data-part="1"'), 'but the Bucket can find each one');
+});
+
+test('swapping colours reaches the pieces inside a welded shape', async () => {
+  const { colorsIn, swapColor } = await import('../public/js/recolor.js');
+  const welded = newPath({ subpaths: square(), fill: '#00ff00', parts: [newPath({ subpaths: square(), fill: '#ff0000' })] });
+  assert.deepEqual(colorsIn([welded]).sort(), ['#00ff00', '#ff0000']);
+  swapColor([welded], '#ff0000', '#123456');
+  assert.equal(welded.parts[0].fill, '#123456');
+});

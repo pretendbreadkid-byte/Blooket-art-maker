@@ -47,6 +47,8 @@ function slots(o, visit) {
     else if (g) { visit(g.from, (v) => { g.from = v; }); visit(g.to, (v) => { g.to = v; }); }
   }
   if (o.texture) visit(o.texture.color, (v) => { o.texture.color = v; });
+  // A welded shape's pieces keep their own colours.
+  for (const part of o.parts || []) slots(part, visit);
 }
 
 // The colours in some art, most used first.
@@ -57,6 +59,10 @@ export function colorsIn(objects) {
     slots(o, add);
     const svg = o.type === 'image' && svgOf(o.href);
     if (svg) for (const m of svg.match(HEX_IN_SVG) || []) add(m);
+    for (const part of o.parts || []) {
+      const inner = part.type === 'image' && svgOf(part.href);
+      if (inner) for (const m of inner.match(HEX_IN_SVG) || []) add(m);
+    }
   }
   return [...count].sort((a, b) => b[1] - a[1]).slice(0, MAX_SWATCHES).map(([c]) => c);
 }

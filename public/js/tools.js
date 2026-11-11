@@ -641,6 +641,12 @@ function finishShape() {
 async function bucket(e, p) {
   const doc = S.doc;
   const hit = pickable(e);
+  const part = hit?.parts && e.target.closest?.('[data-part]');
+  if (part) {
+    const piece = hit.parts[+part.dataset.part];
+    if (piece && piece.type !== 'image') { Object.assign(piece, fillPatch()); commit(); }
+    return;
+  }
   if (hit && hit.type !== 'image') {
     const el = objectEl(hit.id).querySelector('path,text');
     const hasOutline = hit.strokeWidth > 0 && hit.stroke !== 'none';
@@ -696,9 +702,17 @@ function silhouette(raw) {
   };
 }
 
+// A piece kept inside a welded shape: where it sits relative to the shape, and its
+// own colours, without the effects that belong to the whole shape now.
+function weldPart(raw, cx, cy) {
+  const o = clone(posed(raw));
+  return { ...o, id: uid('w'), x: o.x - cx, y: o.y - cy, keys: [], page: undefined, group: undefined, dropShadow: null, underbelly: null, blur: 0 };
+}
+
 // Joins the picked things into one shape. Their silhouettes are drawn together and
-// the outline of the lot is traced, so overlaps merge and holes stay holes. It works
-// for any mix of shapes, drawings, text and pictures, and takes the top one's look.
+// the outline of the lot is traced, so overlaps merge and holes stay holes. Each
+// piece keeps its own colours inside the new outline. It works for any mix of
+// shapes, drawings, text and pictures, and the shape takes the top one's effects.
 export async function weldSelection() {
   const items = selected();
   if (items.length < 2) return;
@@ -739,6 +753,7 @@ export async function weldSelection() {
     stroke: looks.stroke || 'none', strokeWidth: looks.strokeWidth || 0, opacity: looks.opacity ?? 1,
     ...(top.texture ? { texture: clone(top.texture) } : {}), ...(top.underbelly ? { underbelly: clone(top.underbelly) } : {}),
     ...(top.dropShadow ? { dropShadow: clone(top.dropShadow) } : {}), ...(isPages(S.doc) && top.page ? { page: top.page } : {}),
+    parts: stacked.map((o) => weldPart(o, cx, cy)),
   });
 
   // The welded shape takes the top piece's place in the stack.
@@ -751,6 +766,32 @@ export async function weldSelection() {
   refresh();
   const moving = items.some((o) => o.keys?.length);
   toast(`Welded ${items.length} things into one shape.${moving ? ' It keeps how they looked on this frame.' : ''}`, 'ok');
+}
+
+export const canUnweld = () => selected().some((o) => o.parts?.length);
+
+// Puts a welded shape's pieces back where they are now, as separate things.
+export function unweldSelection() {
+  const ids = [];
+  for (const raw of selected().filter((o) => o.parts?.length)) {
+    const w = posed(raw);
+    const layer = layerOf(raw.id);
+    const pieces = raw.parts.map((p) => {
+      const at = localToWorld(w, p.x, p.y);
+      const piece = {
+        ...clone(p), id: uid('o'), x: at.x, y: at.y, rotation: p.rotation + w.rotation,
+        scaleX: p.scaleX * w.scaleX, scaleY: p.scaleY * w.scaleY, opacity: p.opacity * w.opacity,
+        ...(raw.page ? { page: raw.page } : {}),
+      };
+      ids.push(piece.id);
+      return piece;
+    });
+    layer.objects.splice(layer.objects.indexOf(raw), 1, ...pieces);
+  }
+  if (!ids.length) return;
+  select(ids);
+  commit();
+  refresh();
 }
 
 function isInFill(el, e) {
@@ -879,6 +920,7 @@ function contextMenu(e) {
   const keyed = S.doc.animated && !isPages(S.doc);
   const special = [
     ...(canWeld() ? [{ label: 'Weld into one shape (Ctrl+J)', icon: 'weld', onClick: weldSelection }] : []),
+    ...(canUnweld() ? [{ label: 'Unweld', icon: 'apart', onClick: unweldSelection }] : []),
     ...(canTakeApart() ? [{ label: 'Take apart', icon: 'apart', onClick: takeApart }] : []),
     ...(S.sel.size > 1 && !selected().every((o) => o.group && o.group === selected()[0].group) ? [{ label: 'Group together', icon: 'link', onClick: groupSelection }] : []),
     ...(lines ? [{ label: lines > 1 ? 'Connect lines' : 'Close the line', icon: 'link', onClick: connectSelection }] : []),

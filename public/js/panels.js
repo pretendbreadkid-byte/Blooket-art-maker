@@ -10,7 +10,7 @@ import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, canWeld, weldSelection,
+  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, canWeld, weldSelection, canUnweld, unweldSelection,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { TEMPLATES, overlayLook } from './templates.js';
@@ -358,6 +358,7 @@ function selectedPanel() {
   const single = items.length === 1 ? items[0] : null;
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canWeld()) box.append(button('Weld into one shape', 'weld', weldSelection, 'wide'));
+  if (canUnweld()) box.append(button('Unweld', 'apart', unweldSelection, 'wide'));
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
   box.append(opacitySlider(items), blurSlider(items), dropShadowControls(items), arrangeRow());
   box.append(underbellyControls(items));
@@ -388,7 +389,13 @@ function selectedPanel() {
     const row = html('<div class="row"></div>');
     row.append(colorButton({
       label: 'Fill', value: first.gradient || first.fill, allowNone: true, allowGradient: true,
-      onInput: (c) => { paintable.forEach((o) => edit(o, paintPatch(c))); liveRefresh(); },
+      onInput: (c) => {
+        paintable.forEach((o) => {
+          edit(o, paintPatch(c));
+          o.parts?.forEach((p) => { if (p.type !== 'image') Object.assign(p, paintPatch(c)); });
+        });
+        liveRefresh();
+      },
       onDone: commit,
     }));
     row.append(colorButton({

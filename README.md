@@ -39,7 +39,7 @@ Then open <http://localhost:5180>.
 | Swap colours | | Change one colour everywhere in the picked art, including SVG and other pictures. |
 | Blur | | Soften any picked art, from 0 to 60 px. In an animation it can blur in and out. |
 | Shadow | | A solid, see-through drop shadow under picked art, with darkness, distance and direction. Softness blurs it if you want. A whole Blook casts one shadow together. |
-| Weld | Ctrl+J | Pick two or more things and join them into one shape with a single outline. Overlaps merge, holes stay holes, and it works with text and pictures too. It takes the look of the top piece. |
+| Weld | Ctrl+J | Pick two or more things and join them into one shape with a single outline. Overlaps merge, holes stay holes, and it works with text and pictures too. Each piece keeps its own colours inside the new outline; the Bucket recolours one piece, Fill recolours them all, and Unweld gives the pieces back. |
 | Underbelly | | A see-through band along the bottom of picked shapes, pictures or text, following their outline, with size, opacity and colour. |
 | Auto shadow | | In the Canvas panel. A solid, see-through band below each piece, wherever it overlaps the one under it, with a strength and size. |
 

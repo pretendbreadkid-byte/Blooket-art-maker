@@ -144,18 +144,34 @@ function blurred(markup, id, amount, values = '') {
   return `<g filter="url(#${id})"><filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}"><feGaussianBlur stdDeviation="${round(amount || 0, 2)}">${values}</feGaussianBlur></filter>${markup}</g>`;
 }
 
+// A welded shape's pieces, each in its own colours, cut to the joined outline. The
+// outline is filled first, so anywhere the outline was stretched past the pieces
+// still has colour. Its texture and line go on top of the pieces.
+function weldedParts(o, id, frame, opt, shape = '', textureId = '') {
+  if (o.type !== 'path' || !o.parts?.length) return { defs: '', art: '' };
+  const d = pathD(o.subpaths, { uniform: !!shape });
+  const parts = o.parts.map((p, i) => objectMarkup(p, frame, { ...opt, editor: false, prefix: `${id}-p${i}`, part: i })).join('');
+  const textured = textureId && o.texture ? `<path d="${d}" fill-rule="${esc(o.fillRule || 'nonzero')}" ${texturePaint(o, textureId)}>${shape}</path>` : '';
+  const line = strokeAttrs(o) === 'stroke="none"' ? '' : `<path d="${d}" fill="none" ${strokeAttrs(o)}>${shape}</path>`;
+  return {
+    defs: `<clipPath id="${id}-weld"><path d="${d}" clip-rule="${esc(o.fillRule || 'nonzero')}">${shape}</path></clipPath>`,
+    art: `<g clip-path="url(#${id}-weld)">${parts}</g>${textured}${line}`,
+  };
+}
+
 function objectMarkup(raw, frame, opt) {
   const o = sample(raw, frame);
   const maskId = `${opt.prefix || 'erase'}-${raw.id}`;
   const masked = raw.erase?.length > 0;
-  const tag = opt.editor ? ` data-id="${raw.id}"` : '';
+  const tag = opt.part !== undefined ? ` data-part="${opt.part}"` : opt.editor ? ` data-id="${raw.id}"` : '';
   const gradientId = `${maskId}-paint`;
   const textureId = `${maskId}-tex`;
   const clip = clipsOf(raw, maskId);
   const texture = o.texture && o.type !== 'image' ? patternMarkup(o.texture, textureId, o, frame, opt) : '';
   const belly = underbellyFilter(o, `${maskId}-belly`);
-  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + belly;
-  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, texture && textureId)}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
+  const parts = weldedParts(o, maskId, frame, opt, '', texture && textureId);
+  const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + belly + parts.defs;
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? '' : texture && textureId)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -186,6 +202,7 @@ function animatedObject(raw, doc, opt) {
   const textureId = `${maskId}-tex`;
   const texture = raw.texture && raw.type !== 'image' ? patternMarkup(raw.texture, textureId, first, 0, opt) : '';
   const belly = underbellyFilter(first, `${maskId}-belly`);
+  const parts = weldedParts(first, maskId, 0, opt, shape, texture && textureId);
   const blurs = animate('stdDeviation', (s) => round(s.blur || 0, 2));
   return blurred(`<g opacity="${round(first.opacity, 3)}">`
     + motion('translate', (s) => `${round(s.x)} ${round(s.y)}`)
@@ -193,8 +210,8 @@ function animatedObject(raw, doc, opt) {
     + motion('scale', (s) => `${round(s.scaleX, 4)} ${round(s.scaleY, 4)}`)
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
-    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + belly
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, texture && textureId, shape)}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
+    + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + belly + parts.defs
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, parts.art ? '' : texture && textureId, shape)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
 }
 
 /* ---------- Shadows ---------- */
