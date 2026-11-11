@@ -1,8 +1,8 @@
 // The canvas: zoom and pan, drawing the art, and drawing handles on top of it.
-import { S, posed, selected } from './state.js';
+import { S, posed, selected, findObj } from './state.js';
 import { layersMarkup, backgroundMarkup, frameClip } from './render.js';
 import { overlayMarkup } from './templates.js';
-import { localToWorld, isCorner, clamp } from './model.js';
+import { localToWorld, isCorner, clamp, mapSubpaths, pathBounds } from './model.js';
 import { $ } from './ui.js';
 
 let art, overlay, frameEl, workspace;
@@ -73,16 +73,34 @@ export function localBox(id) {
 }
 
 // Selection box in document units.
+// A shape's box, from its own points placed on the canvas. The browser's box for
+// a turned shape is the box around its unturned box, which is too big once it leans.
+function shapeBox(raw) {
+  const o = posed(raw);
+  if (o.type !== 'path' || !o.subpaths?.length) return null;
+  const b = pathBounds(mapSubpaths(o.subpaths, (x, y) => localToWorld(o, x, y)));
+  const line = o.stroke && o.stroke !== 'none' ? (o.strokeWidth / 2) * Math.max(Math.abs(o.scaleX), Math.abs(o.scaleY)) : 0;
+  return { x0: b.x - line, y0: b.y - line, x1: b.x + b.width + line, y1: b.y + b.height + line };
+}
+
 export function worldBox(ids) {
   const r = art.getBoundingClientRect();
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const id of ids) {
+    const obj = findObj(id);
+    const own = obj && shapeBox(obj);
+    if (own) {
+      x0 = Math.min(x0, own.x0); y0 = Math.min(y0, own.y0); x1 = Math.max(x1, own.x1); y1 = Math.max(y1, own.y1);
+      continue;
+    }
     const b = objectEl(id)?.querySelector('.b')?.getBoundingClientRect();
     if (!b) continue;
-    x0 = Math.min(x0, b.left); y0 = Math.min(y0, b.top); x1 = Math.max(x1, b.right); y1 = Math.max(y1, b.bottom);
+    const z = S.zoom;
+    x0 = Math.min(x0, (b.left - r.left) / z); y0 = Math.min(y0, (b.top - r.top) / z);
+    x1 = Math.max(x1, (b.right - r.left) / z); y1 = Math.max(y1, (b.bottom - r.top) / z);
   }
   if (x0 === Infinity) return null;
-  return { x: (x0 - r.left) / S.zoom, y: (y0 - r.top) / S.zoom, width: (x1 - x0) / S.zoom, height: (y1 - y0) / S.zoom };
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
 // Corner points of the selection, in document units, with the box's rotation.
@@ -138,7 +156,6 @@ function selectionOverlay() {
   out += `<line class="sel-stem" x1="${top.x}" y1="${top.y}" x2="${rot.x}" y2="${rot.y}"/>`;
   out += `<circle class="handle rot" cx="${rot.x}" cy="${rot.y}" r="8" data-h="rot"/>`;
   for (const [name, a, b] of HANDLES) {
-    if (b !== null && !f.single) continue;
     const p = b === null ? pts[a] : mid(pts[a], pts[b]);
     out += `<rect class="handle h-${name}" x="${p.x - 6}" y="${p.y - 6}" width="12" height="12" rx="3" data-h="${name}"/>`;
   }

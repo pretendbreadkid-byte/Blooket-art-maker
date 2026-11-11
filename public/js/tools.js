@@ -94,10 +94,7 @@ function startTransform(handle, p, e) {
   const f = selectionFrame();
   if (!f) return;
   if (handle !== 'rot') selected().forEach(rememberSize);
-  const items = selected().map((o) => {
-    const s = posed(o);
-    return { o, x: s.x, y: s.y, rotation: s.rotation, scaleX: s.scaleX, scaleY: s.scaleY };
-  });
+  const items = selected().map(stretchStart);
   if (handle === 'rot') {
     const center = { x: (f.pts[0].x + f.pts[2].x) / 2, y: (f.pts[0].y + f.pts[2].y) / 2 };
     drag = { type: 'rotate', center, items, a0: Math.atan2(p.y - center.y, p.x - center.x), moved: false };
@@ -113,7 +110,8 @@ function startTransform(handle, p, e) {
   drag = {
     type: 'scale', handle, anchor, grab, items, usesX, usesY, moved: false, single: f.single,
     box: f.box, rotation: f.single ? f.obj.rotation : 0,
-    aspectLocked: !f.single || (f.obj.type === 'image' && !e.shiftKey),
+    // Pictures keep their proportions unless Shift is held; everything else stretches freely.
+    aspectLocked: f.single ? f.obj.type === 'image' && !e.shiftKey : items.every((it) => it.o.type === 'image'),
   };
 }
 
@@ -127,11 +125,12 @@ function moveScale(p, e) {
   let fx = d.usesX && start.x ? limit(now.x / start.x) : 1;
   let fy = d.usesY && start.y ? limit(now.y / start.y) : 1;
   const keep = d.handle.length === 2 && (d.aspectLocked ? !e.shiftKey : e.shiftKey);
-  if (keep || !d.single) {
+  if (keep) {
     const f = d.usesX && d.usesY ? Math.max(Math.abs(fx), Math.abs(fy)) : (d.usesX ? Math.abs(fx) : Math.abs(fy));
     fx = Math.sign(fx || 1) * f;
     fy = Math.sign(fy || 1) * f;
   }
+  if (!d.single) { stretchItems(d.items, fx, fy, d.anchor); return; }
   const R = rad(d.rotation), rc = Math.cos(R), rs = Math.sin(R);
   for (const it of d.items) {
     const v = inBox({ x: it.x - d.anchor.x, y: it.y - d.anchor.y });
@@ -141,6 +140,61 @@ function moveScale(p, e) {
       y: d.anchor.y + sx * rs + sy * rc,
       scaleX: it.scaleX * fx,
       scaleY: it.scaleY * fy,
+    });
+  }
+}
+
+// Where a thing starts before it is stretched.
+export function stretchStart(o) {
+  const s = posed(o);
+  return { o, x: s.x, y: s.y, rotation: s.rotation, scaleX: s.scaleX, scaleY: s.scaleY, subpaths: o.type === 'path' ? clone(s.subpaths) : null };
+}
+
+const squareOn = (deg) => Math.abs(((deg % 90) + 90) % 90) < 0.01 || Math.abs(((deg % 90) + 90) % 90 - 90) < 0.01;
+
+// A turned shape stretched straight across would need to lean, which its size and
+// turn cannot show, so the stretch goes into its points instead: exact, curves too.
+function stretchPoints(it, fx, fy) {
+  const t = rad(it.rotation), c = Math.cos(t), s = Math.sin(t);
+  const m = [c * it.scaleX, -s * it.scaleY, s * it.scaleX, c * it.scaleY];
+  const det = m[0] * m[3] - m[1] * m[2];
+  if (!det) return it.subpaths;
+  const inv = [m[3] / det, -m[1] / det, -m[2] / det, m[0] / det];
+  // The stretch, seen from inside the shape: undo its size and turn, stretch, redo them.
+  const a = [fx * m[0], fx * m[1], fy * m[2], fy * m[3]];
+  const k = [inv[0] * a[0] + inv[1] * a[2], inv[0] * a[1] + inv[1] * a[3], inv[2] * a[0] + inv[3] * a[2], inv[2] * a[1] + inv[3] * a[3]];
+  const map = (x, y) => ({ x: k[0] * x + k[1] * y, y: k[2] * x + k[3] * y });
+  const grow = Math.sqrt(Math.abs(k[0] * k[3] - k[1] * k[2]));
+  return it.subpaths.map((sp) => ({
+    ...sp,
+    nodes: sp.nodes.map((n) => {
+      const out = { ...n, ...map(n.x, n.y) };
+      if (n.ix || n.iy) { const h = map(n.ix || 0, n.iy || 0); out.ix = h.x; out.iy = h.y; }
+      if (n.ox || n.oy) { const h = map(n.ox || 0, n.oy || 0); out.ox = h.x; out.oy = h.y; }
+      if (n.r) out.r = n.r * grow;
+      return out;
+    }),
+  }));
+}
+
+// Stretches several things as one, fx across and fy down, from anchor. Turned
+// shapes take the stretch in their points; turned pictures and text, which have
+// no points, take it along their own sides, which is as close as they can get.
+export function stretchItems(items, fx, fy, anchor) {
+  for (const it of items) {
+    const at = { x: anchor.x + (it.x - anchor.x) * fx, y: anchor.y + (it.y - anchor.y) * fy };
+    if (it.subpaths && !squareOn(it.rotation)) {
+      edit(it.o, { ...at, subpaths: stretchPoints(it, fx, fy) });
+      continue;
+    }
+    const t = rad(it.rotation), c = Math.cos(t), s = Math.sin(t);
+    const along = { x: fx * c, y: fy * s }, across = { x: -fx * s, y: fy * c };
+    const turned = (Math.atan2(along.y, along.x) * 180) / Math.PI;
+    edit(it.o, {
+      ...at,
+      rotation: it.rotation + ((((turned - it.rotation) % 360) + 540) % 360) - 180,
+      scaleX: it.scaleX * Math.hypot(along.x, along.y),
+      scaleY: it.scaleY * Math.hypot(across.x, across.y) * (Math.sign(fx * fy) || 1),
     });
   }
 }

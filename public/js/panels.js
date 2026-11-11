@@ -7,10 +7,10 @@ import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup } from './textures
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
 import { esc, newDropShadow, newAutoShadow, newUnderbelly } from './render.js';
 import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
-import { localBox, hasCorners, toDoc } from './stage.js';
+import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, canWeld, weldSelection, canUnweld, unweldSelection,
+  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { TEMPLATES, overlayLook } from './templates.js';
@@ -303,6 +303,29 @@ function underbellyControls(items) {
   return box;
 }
 
+// X, Y, Width and Height for several things at once, as if they were one shape.
+function groupSizeFields(items) {
+  const grid = html('<div class="num-grid"></div>');
+  const box = worldBox(items.map((o) => o.id));
+  if (!box) return grid;
+  const start = () => items.map(stretchStart);
+  const move = (dx, dy) => { for (const it of start()) edit(it.o, { x: it.x + dx, y: it.y + dy }); liveRefresh(); };
+  let now = { ...box };
+  const size = (fx, fy) => {
+    items.forEach(rememberSize);
+    stretchItems(start(), fx, fy, { x: now.x, y: now.y });
+    now = { ...now, width: now.width * fx, height: now.height * fy };
+    liveRefresh();
+  };
+  grid.append(
+    numberField('X', Math.round(box.x), (v) => { move(v - now.x, 0); now.x = v; }),
+    numberField('Y', Math.round(box.y), (v) => { move(0, v - now.y); now.y = v; }),
+    numberField('Width', Math.round(box.width), (v) => { if (v > 0 && now.width) size(v / now.width, 1); }),
+    numberField('Height', Math.round(box.height), (v) => { if (v > 0 && now.height) size(1, v / now.height); }),
+  );
+  return grid;
+}
+
 function refreshFrameCorners() {
   $('#frame').style.borderRadius = `${S.doc.cornerRadius * S.zoom}px`;
   hooks.stage();
@@ -381,6 +404,8 @@ function selectedPanel() {
       numberField('Turn', Math.round(s.rotation), (v) => { edit(single, { rotation: v }); liveRefresh(); }),
     );
     box.append(grid);
+  } else {
+    box.append(groupSizeFields(items));
   }
 
   const paintable = items.filter((o) => o.type !== 'image');

@@ -22,7 +22,7 @@ Then open <http://localhost:5180>.
 
 | Tool | Key | What it does |
 | --- | --- | --- |
-| Select | V | Move, resize and turn things. Drag empty space to move around the canvas, scroll to zoom. Ctrl+click picks more, Shift+drag draws a box to pick. Double-click to edit text or points. Right-click for more. After a resize, Original size at the top puts it back. |
+| Select | V | Move, resize and turn things. Drag empty space to move around the canvas, scroll to zoom. Ctrl+click picks more, Shift+drag draws a box to pick. Double-click to edit text or points. Right-click for more. After a resize, Original size at the top puts it back. Several picked things stretch like one shape: side handles make them wider or taller, corners reshape freely (Shift keeps proportions), and the Selected panel has their X, Y, Width and Height. |
 | Lasso | L | Draw a loop around things to pick them. In the drop-down under Select. |
 | Vertices | A | Drag points, click anywhere on a line to add a point there, choose Pointed or Rounded, round the corners. In the drop-down under Select. |
 | Line | N | Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect. |
