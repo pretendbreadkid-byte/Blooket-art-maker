@@ -43,6 +43,16 @@ Then open <http://localhost:5180>.
 | Underbelly | | A see-through band along the bottom of picked shapes, pictures or text, following their outline, with size, opacity and colour. |
 | Auto shadow | | In the Canvas panel. A solid, see-through band below each piece, wherever it overlaps the one under it, with a strength and size. |
 
+## Blookberry AI (beta)
+
+The **Blookberry AI** button at the top of the editor turns a few words into a Blook and shows three versions to pick from. It is free, needs no account, and runs in the browser: nothing is sent anywhere.
+
+- Naming a real Blook ("blue chick", "pumpkin with a crown") starts from that Blook, recoloured and dressed up as asked.
+- Anything else is built from Blook parts in the same style: colours (blue, pink, gold...), things (dragon, robot, pumpkin, cat, ghost, cupcake...), moods (sleepy, grumpy, cute, cool...) and extras (crown, witch hat, party hat, halo, spotted, striped...).
+- **More like this** makes new versions; **Add to canvas** adds the chosen one as pieces that stay together.
+
+The words it understands live in `public/js/blook-gen.js`; add more there.
+
 ## Templates and packs
 
 New projects can start as a Blook, a Banner, a Blook background, an Icon (Blook size with sharp corners, for the corner of a pack card) or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art. The Canvas panel turns them on or off, sizes them, and makes them darker or lighter.
@@ -132,18 +142,6 @@ Render's free disk is wiped on every restart, so accounts and art need somewhere
 ### Render's loading page
 
 Render's free plan puts a site to sleep after 15 quiet minutes, then shows its own loading page to the next visitor. A paid Render plan never sleeps. On the free plan, add `KEEP_AWAKE` set to `true` and the site visits itself every 10 minutes to stay up. Free plans get 750 hours a month across every service on the account, and this one service uses about 744, so don't turn it on if you run other free services there.
-
-### Blookberry AI (beta)
-
-The **Blookberry AI** button at the top of the editor turns a short description into a Blook, drawn by Claude (`claude-opus-5-5`) in Blooket's style. Every request shows it eight real Blooks as a style guide, plus up to three more whose names match the description. What comes back is cleaned so only plain drawing is left (no scripts, links or outside pictures), then added to the canvas as pieces you can edit.
-
-To switch it on:
-
-1. Get an API key from the [Claude Console](https://platform.claude.com/).
-2. In Render, add `ANTHROPIC_API_KEY` (the key).
-3. Make sure Render's build command is `npm install`, which installs the one package this needs (`@anthropic-ai/sdk`).
-
-Only people with accounts can use it, up to 12 Blooks a day each (change this with `AI_BLOOKS_PER_DAY`). Each Blook is billed to your Anthropic account, so keep an eye on usage in the Console. Without a key, the button explains that it isn't switched on and nothing is charged.
 
 ## Tests
 
