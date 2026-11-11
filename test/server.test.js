@@ -148,3 +148,11 @@ test('packs sent to Community wait for an admin, then everyone can open them', a
   assert.equal((await boss('DELETE', `/api/admin/community/${pack.id}`)).status, 200);
   assert.equal((await (await boss('GET', '/api/admin/community')).json()).packs.length, 0);
 });
+
+test('the admin password ignores stray spaces and quote marks', async () => {
+  for (const attempt of [` ${PASSWORD} `, `"${PASSWORD}"`, `${PASSWORD}
+`]) {
+    assert.equal((await api('POST', '/api/admin/login', { password: attempt }, false)).status, 200, JSON.stringify(attempt));
+  }
+  assert.equal((await api('POST', '/api/admin/login', { password: `${PASSWORD}x` }, false)).status, 401);
+});

@@ -51,8 +51,12 @@ const TYPES = {
 
 mkdirSync(DATA, { recursive: true });
 
+// Spaces, line breaks and quote marks pasted in by accident are not part of it.
+const cleanPassword = (value) => String(value ?? '').trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+
 function loadPassword() {
-  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  const fromEnv = cleanPassword(process.env.ADMIN_PASSWORD);
+  if (fromEnv) return fromEnv;
   if (existsSync(PASSWORD_FILE)) return readFileSync(PASSWORD_FILE, 'utf8').trim();
   const generated = randomBytes(9).toString('base64url');
   writeFileSync(PASSWORD_FILE, generated + '\n');
@@ -510,7 +514,7 @@ async function communityAdmin(req, res, path) {
 }
 
 const digest = (s) => createHash('sha256').update(String(s)).digest();
-const passwordMatches = (attempt) => timingSafeEqual(digest(attempt), digest(adminPassword));
+const passwordMatches = (attempt) => timingSafeEqual(digest(cleanPassword(attempt)), digest(adminPassword));
 
 function isAdmin(req) {
   const token = (req.headers.authorization || '').replace(/^Bearer /, '');
@@ -688,7 +692,7 @@ server.on('error', (err) => {
 // Render wipes the disk, so without ADMIN_PASSWORD the admin password changes on
 // every restart. Logins are signed with a secret kept beside the accounts instead.
 async function loadSessionSecret() {
-  if (process.env.ADMIN_PASSWORD) return;
+  if (cleanPassword(process.env.ADMIN_PASSWORD)) return;
   try {
     let secret = await readArtFile('session-secret.txt');
     if (!secret) {
@@ -715,5 +719,6 @@ if (process.env.KEEP_AWAKE === 'true' && process.env.RENDER_EXTERNAL_URL) {
 }
 server.listen(PORT, HOST, () => {
   console.log(`Running at http://localhost:${PORT}`);
-  console.log(process.env.ADMIN_PASSWORD ? 'Admin password: set from ADMIN_PASSWORD' : `Admin password: ${adminPassword}`);
+  // The length, never the password, so a stray space or a typo shows up in the logs.
+  console.log(cleanPassword(process.env.ADMIN_PASSWORD) ? `Admin password: set from ADMIN_PASSWORD (${adminPassword.length} characters)` : `Admin password: ${adminPassword}`);
 });
