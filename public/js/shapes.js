@@ -60,7 +60,7 @@ function flowerD(petals) {
   return `${d}Z`;
 }
 
-const PLUS_DEFS = [
+const MORE_DEFS = [
   ['cloud', 'Cloud', 'M-30 30A22 22 0 0 1 -32 -14A26 26 0 0 1 16 -24A20 20 0 0 1 34 30Z'],
   ['bolt', 'Lightning', 'M10 -50L-30 8H-4L-14 50L30 -12H4Z'],
   ['crown', 'Crown', 'M-50 35V-30L-22 0L0 -40L22 0L50 -30V35Z'],
@@ -75,8 +75,8 @@ const PLUS_DEFS = [
   ['mushroom', 'Mushroom', 'M-46 4A46 46 0 0 1 46 4C46 10 22 8 14 8V40A8 8 0 0 1 6 48H-6A8 8 0 0 1 -14 40V8C-22 8 -46 10 -46 4Z'],
 ];
 
-export const PLUS_SHAPES = PLUS_DEFS.map(([id, name, d]) => ({
-  id, name, category: 'Plus shapes', fillRule: 'nonzero', lineOnly: false, plus: true,
+export const MORE_SHAPES = MORE_DEFS.map(([id, name, d]) => ({
+  id, name, category: 'More shapes', fillRule: 'nonzero', lineOnly: false,
   subpaths: fitSubpaths(parseD(d), 100, 100),
 }));
 

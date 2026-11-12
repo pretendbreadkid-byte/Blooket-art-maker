@@ -4,9 +4,8 @@ import {
 } from './store.js';
 import { newDoc, uid, clamp } from './model.js';
 import { esc } from './render.js';
-import { session, isPlus, logOut } from './session.js';
+import { session, logOut } from './session.js';
 import { syncArt, flushUploads, resetSync } from './sync.js';
-import { plusDialog } from './plus.js';
 import { TEMPLATES, templatePreview } from './templates.js';
 import {
   drawCollection, editPack, newPackProject, savePack, marketCard, shopPack, fetchCommunity, fetchMySent, communityDoc, pulledCommunityDocs,
@@ -94,10 +93,9 @@ export async function renderHome(root, onLeave = leave) {
       </ul>
       <button class="btn ghost" id="newfolder">${icon('folderplus')}<span>New folder</span></button>
       <div class="grow"></div>
-      ${isPlus() ? '' : `<button class="plus-card" id="getplus"><span class="plus-badge">PLUS</span><b>More shapes and exports</b><small>Free for now</small></button>`}
       <div class="who">
         <span class="who-icon">${icon('user')}</span>
-        <span class="who-name"><b>${esc(session.user?.name || 'Guest')}</b>${isPlus() ? '<span class="plus-badge">PLUS</span>' : ''}</span>
+        <span class="who-name"><b>${esc(session.user?.name || 'Guest')}</b></span>
         <button class="ib" id="logout" title="${session.guest ? 'Back to the welcome screen' : 'Log out'}" aria-label="Log out">${icon('logout')}</button>
       </div>
       <a class="admin-link" href="#/admin">${icon('shield')}<span>Admin: shapes and Community</span></a>
@@ -118,7 +116,6 @@ export async function renderHome(root, onLeave = leave) {
   $$('[data-tab]', root).forEach((b) => { b.onclick = () => { testTab = b.dataset.tab; redraw(); }; });
   if (inPacks) fillTest($('#market', root), packs, redraw);
   $('#newfolder', root).onclick = () => createFolder();
-  $('#getplus', root)?.addEventListener('click', async () => { if (await plusDialog()) renderHome(root); });
   $('#logout', root).onclick = async () => {
     await flushUploads();
     resetSync();

@@ -82,9 +82,3 @@ export function logOut() {
   session.guest = false;
 }
 
-export const isPlus = () => !!session.user?.plus;
-
-export async function joinPlus() {
-  session.user = (await call('POST', '/api/plus/join')).user;
-  saveUser(session.user);
-}

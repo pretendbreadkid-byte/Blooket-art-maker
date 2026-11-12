@@ -32,9 +32,6 @@ const KEEP_AWAKE_MS = 10 * 60 * 1000;
 const TRY_WINDOW_MS = 15 * 60 * 1000;
 const MAX_TRIES = 20;
 
-// Plus costs nothing for now. Set PLUS_IS_FREE=false once payment is connected.
-const PLUS_IS_FREE = process.env.PLUS_IS_FREE !== 'false';
-
 // Render's free disk is wiped on restart, so accounts can also be kept in a
 // private GitHub repo. Set GITHUB_TOKEN and DATA_REPO (owner/name) to turn it on.
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -131,7 +128,7 @@ function saveUsers() {
 }
 
 const hashPassword = async (password, salt) => (await scrypt(password, salt, 32)).toString('hex');
-const publicUser = (u) => ({ name: u.name, plus: !!u.plus });
+const publicUser = (u) => ({ name: u.name });
 const sign = (payload) => createHmac('sha256', sessionSecret).update(payload).digest('base64url');
 
 function issueToken(key) {
@@ -177,7 +174,7 @@ async function register(req, res) {
   const salt = randomBytes(16).toString('hex');
   const hash = await hashPassword(password, salt);
   if (users[key]) return send(res, 409, { error: 'That username is taken.' });
-  users[key] = { name: username, salt, hash, plus: false, createdAt: Date.now() };
+  users[key] = { name: username, salt, hash, createdAt: Date.now() };
   await saveUsers();
   return send(res, 201, { token: issueToken(key), user: publicUser(users[key]) });
 }
@@ -588,7 +585,6 @@ function cleanShape(input) {
     category: cleanText(input.category, 40, 'Uploaded'),
     fillRule: input.fillRule === 'evenodd' ? 'evenodd' : 'nonzero',
     lineOnly: !!input.lineOnly,
-    plus: !!input.plus,
     subpaths,
   };
 }
@@ -603,16 +599,10 @@ async function api(req, res, path) {
   if (path === '/api/art' || path.startsWith('/api/art/')) return art(req, res, path);
   if (path === '/api/uploads' || path.startsWith('/api/uploads/')) return uploads(req, res, path);
   if (path === '/api/community' || path.startsWith('/api/community/')) return communityApi(req, res, path);
-  if (path === '/api/me' || path === '/api/plus/join') {
+  if (path === '/api/me' && req.method === 'GET') {
     const user = currentUser(req);
     if (!user) return send(res, 401, { error: 'Please log in.' });
-    if (req.method === 'GET' && path === '/api/me') return send(res, 200, { user: publicUser(user) });
-    if (req.method === 'POST' && path === '/api/plus/join') {
-      if (!PLUS_IS_FREE) return send(res, 402, { error: 'Plus is not available yet.' });
-      user.plus = true;
-      await saveUsers();
-      return send(res, 200, { user: publicUser(user) });
-    }
+    return send(res, 200, { user: publicUser(user) });
   }
 
   if (req.method === 'POST' && path === '/api/admin/login') {
@@ -646,7 +636,6 @@ async function api(req, res, path) {
     const patch = await readJson(req);
     shapes[index].name = cleanText(patch.name, 60, shapes[index].name);
     shapes[index].category = cleanText(patch.category, 40, shapes[index].category);
-    if (typeof patch.plus === 'boolean') shapes[index].plus = patch.plus;
     saveShapes();
     return send(res, 200, { shape: shapes[index] });
   }

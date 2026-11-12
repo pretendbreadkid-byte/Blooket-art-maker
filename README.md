@@ -101,18 +101,6 @@ The text tool has the **Blooket** font, which is Titan One, with an optional chu
 
 If art goes past the edge, the app offers to expand the canvas: **Perfect fit** wraps tightly around your lines and **Basic fit** just makes it big enough.
 
-## Plans
-
-| | Guest | Basic | Plus |
-| --- | --- | --- | --- |
-| Make art | Yes | Yes | Yes |
-| Saves your art | No | Yes | Yes |
-| Export SVG and WEBP | Yes | Yes | Yes |
-| Export PNG, JPG and PDF | No | No | Yes |
-| Plus shapes | No | No | Yes |
-
-Plus is free for now. Set `PLUS_IS_FREE=false` to turn off free sign-ups, then connect payment in `POST /api/plus/join` in `server.js`. Plus checks currently run in the browser, so move them to the server before charging money.
-
 ## Admins
 
 The **Admin** link on the home screen opens the shapes catalog. Admins upload files, and each file becomes one single-colour shape with editable points that everyone can use.

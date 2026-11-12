@@ -1,16 +1,14 @@
 // The Export dialog and the file formats behind it.
 import { S } from './state.js';
 import { exportSVG, rasterize, esc } from './render.js';
-import { isPlus } from './session.js';
-import { needsPlus } from './plus.js';
 import { $, $$, dialog, icon, toast } from './ui.js';
 
 const FORMATS = [
   { id: 'svg', label: 'SVG', note: 'Sharp at any size' },
   { id: 'webp', label: 'WEBP', note: 'Small picture file' },
-  { id: 'png', label: 'PNG', note: 'See-through background', plus: true },
-  { id: 'jpg', label: 'JPG', note: 'White background', plus: true },
-  { id: 'pdf', label: 'PDF', note: 'Ready to print', plus: true },
+  { id: 'png', label: 'PNG', note: 'See-through background' },
+  { id: 'jpg', label: 'JPG', note: 'White background' },
+  { id: 'pdf', label: 'PDF', note: 'Ready to print' },
 ];
 
 const JPEG_QUALITY = 0.92;
@@ -96,7 +94,7 @@ export function exportDialog() {
         <p class="muted">${doc.width} × ${doc.height} px.</p>
         <label class="field"><span>File name</span><input id="xname" value="${esc($('#xname', box)?.value ?? safe)}"></label>
         <div class="format-grid">${FORMATS.map((f) => `<button class="format ${f.id === format ? 'on' : ''}" data-f="${f.id}">
-          <b>${f.label}</b><small>${f.note}</small>${f.plus && !isPlus() ? '<span class="plus-badge">PLUS</span>' : ''}
+          <b>${f.label}</b><small>${f.note}</small>
         </button>`).join('')}</div>
         ${animated ? `<div class="choice-row">
           <label class="radio"><input type="radio" name="kind" value="anim" checked><span><b>Animated</b><small>Plays and loops in any web browser</small></span></label>
@@ -117,8 +115,7 @@ export function exportDialog() {
             paint();
             $('#xname', box).value = name;
           };
-          if (chosen.plus) needsPlus(`${chosen.label} export is part of Plus`, pick);
-          else pick();
+          pick();
         };
       });
       $('[data-yes]', box).onclick = async () => {

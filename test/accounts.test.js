@@ -71,7 +71,7 @@ test('accounts sign up, log in, stay signed in and survive a restart', async () 
   const created = await post('/api/auth/register', { username: 'Breadlet', password: 'hunter22' });
   assert.equal(created.status, 201);
   const { token, user } = await created.json();
-  assert.deepEqual(user, { name: 'Breadlet', plus: false });
+  assert.deepEqual(user, { name: 'Breadlet' });
 
   assert.equal((await post('/api/auth/register', { username: 'breadlet', password: 'another1' })).status, 409);
   assert.equal((await post('/api/auth/login', { username: 'Breadlet', password: 'wrong-one' })).status, 401);
@@ -104,21 +104,6 @@ test('a forged token is refused', async () => {
   const payload = Buffer.from(JSON.stringify({ u: 'breadlet', e: Date.now() + 100000 })).toString('base64url');
   const res = await fetch(`${BASE}/api/me`, { headers: { Authorization: `Bearer ${payload}.forged` } });
   assert.equal(res.status, 401);
-  await stopServer(server);
-});
-
-test('Plus is free for now and can be switched off later', async () => {
-  let server = await startServer();
-  const { token } = await (await post('/api/auth/register', { username: 'plususer', password: 'hunter22' })).json();
-  assert.equal((await post('/api/plus/join')).status, 401);
-  const joined = await post('/api/plus/join', null, token);
-  assert.equal(joined.status, 200);
-  assert.equal((await joined.json()).user.plus, true);
-  await stopServer(server);
-
-  server = await startServer({ PLUS_IS_FREE: 'false' });
-  const { token: other } = await (await post('/api/auth/register', { username: 'laterone', password: 'hunter22' })).json();
-  assert.equal((await post('/api/plus/join', null, other)).status, 402);
   await stopServer(server);
 });
 

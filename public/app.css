@@ -372,7 +372,7 @@ body.panning #wk { cursor: grab; }
 
 /* Breadlet theme */
 @font-face { font-family: "Titan One"; src: url(/fonts/TitanOne.woff2) format("woff2"); font-display: swap; }
-h1, h2, .brand b, .opt-title b, .btn.big, .plus-price, .fit-ask b, .format b, .login-tabs button { font-family: "Titan One", Nunito, "Segoe UI", sans-serif; font-weight: 400; letter-spacing: .01em; }
+h1, h2, .brand b, .opt-title b, .btn.big, .fit-ask b, .format b, .login-tabs button { font-family: "Titan One", Nunito, "Segoe UI", sans-serif; font-weight: 400; letter-spacing: .01em; }
 h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .btn { border-radius: 8px; }
 .btn.primary { box-shadow: 0 4px 0 var(--brand-dark); }
@@ -426,8 +426,6 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .who-icon { background: var(--crumb); color: var(--ink); border: 0; box-shadow: 0 2px 0 rgba(0, 0, 0, .2); }
 .admin-link { color: #ecd4f1; }
 .admin-link:hover { color: #fff; }
-.plus-card { color: var(--ink); background: var(--crumb); border: 0; box-shadow: 0 4px 0 var(--crust); }
-.plus-card small { color: #6d4a22; }
 .steps li.on, .steps li.done { border-color: var(--brand); }
 .type-card, .size-card, .radio { border-color: var(--line); }
 .type-art { background: var(--bg); color: #fff; border: 0; box-shadow: 0 4px 0 var(--bg-2); }
@@ -499,9 +497,6 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .login-guest { text-align: center; }
 
 /* Accounts and Plus */
-.plus-badge { display: inline-block; padding: 1px 6px; border-radius: 6px; background: var(--sun); color: var(--ink); border: 1.5px solid var(--ink); font: 700 9.5px/1.3 Fredoka, sans-serif; letter-spacing: .05em; font-style: normal; }
-.plus-badge.big { align-self: flex-start; font-size: 14px; padding: 3px 12px; }
-.plus-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border-radius: 12px; text-align: left; }
 .who { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 2px solid; }
 .who-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; flex: none; }
 .who-icon .ico { width: 18px; height: 18px; }
@@ -509,7 +504,6 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .perks { display: flex; flex-direction: column; gap: 8px; font-weight: 700; }
 .perks li { display: flex; align-items: center; gap: 8px; }
 .perks .ico { color: var(--teal); stroke-width: 3; }
-.plus-price { font: 600 20px Fredoka, sans-serif; color: var(--brand-dark); }
 
 /* Export and picture choices */
 .format-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
@@ -519,7 +513,6 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .format:hover { border-color: var(--ink); }
 .format.on { border-color: var(--ink); background: var(--sun); }
 .format.on small { color: var(--ink); }
-.format .plus-badge { position: absolute; top: 7px; right: 7px; }
 .pic-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .pic-art .ico { width: 56px; height: 56px; }
 .pic-choice { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px; border: 2px solid var(--line); border-radius: 14px; text-align: center; }
@@ -537,7 +530,6 @@ h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .shape-ghost svg { width: 100%; height: 100%; }
 .cat-item { position: relative; touch-action: none; }
 .cat-item.locked svg { opacity: .55; }
-.cat-item .plus-badge { position: absolute; top: 2px; right: 2px; font-size: 8px; }
 body[data-tool=lasso] #wk { cursor: crosshair; }
 
 /* Gradient picker */

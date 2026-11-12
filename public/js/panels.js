@@ -6,7 +6,7 @@ import { clone, pathBounds, localToWorld } from './model.js';
 import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
 import { esc, newDropShadow, newAutoShadow, newUnderbelly, WARPS } from './render.js';
-import { BASIC_SHAPES, PLUS_SHAPES, shapeThumb } from './shapes.js';
+import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
@@ -15,8 +15,6 @@ import {
 import { drawBlooks } from './blooks.js';
 import { drawLayers } from './layers.js';
 import { TEMPLATES, overlayLook } from './templates.js';
-import { isPlus } from './session.js';
-import { plusDialog } from './plus.js';
 import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
 
 export const BLOOKET_FONT = 'Titan One';
@@ -693,7 +691,7 @@ function renderCatalogGrid() {
   const grid = $('#catalog .cat-grid');
   grid.innerHTML = '';
   const groups = new Map();
-  for (const shape of [...BASIC_SHAPES, ...PLUS_SHAPES, ...S.catalog]) {
+  for (const shape of [...BASIC_SHAPES, ...MORE_SHAPES, ...S.catalog]) {
     if (search && !`${shape.name} ${shape.category}`.toLowerCase().includes(search)) continue;
     if (!groups.has(shape.category)) groups.set(shape.category, []);
     groups.get(shape.category).push(shape);
@@ -703,19 +701,14 @@ function renderCatalogGrid() {
     grid.append(html(`<h4>${esc(category)}</h4>`));
     const row = html('<div class="cat-row"></div>');
     for (const shape of shapes) {
-      const locked = shape.plus && !isPlus();
-      const b = html(`<button class="cat-item ${S.shape.id === shape.id ? 'on' : ''} ${locked ? 'locked' : ''}" title="${esc(shape.name)}">${shapeThumb(shape)}<span>${esc(shape.name)}</span>${locked ? '<em class="plus-badge">PLUS</em>' : ''}</button>`);
-      b.onclick = async () => {
+      const b = html(`<button class="cat-item ${S.shape.id === shape.id ? 'on' : ''}" title="${esc(shape.name)}">${shapeThumb(shape)}<span>${esc(shape.name)}</span></button>`);
+      b.onclick = () => {
         if (b.dataset.dragged) { delete b.dataset.dragged; return; }
-        if (locked) {
-          if (await plusDialog(`${shape.name} is a Plus shape`)) { renderCatalogGrid(); }
-          return;
-        }
         if (shape.id === 'line') { setTool('line'); return; }
         S.shape = shape;
         renderCatalogGrid();
       };
-      if (!locked) b.addEventListener('pointerdown', (e) => startPanelDrag(e, b, shapeThumb(shape), (p) => dropShape(shape, p)));
+      b.addEventListener('pointerdown', (e) => startPanelDrag(e, b, shapeThumb(shape), (p) => dropShape(shape, p)));
       row.append(b);
     }
     grid.append(row);

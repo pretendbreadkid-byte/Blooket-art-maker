@@ -73,8 +73,7 @@ async function uploadFiles(root, files) {
     try {
       const isSvg = /\.svg$/i.test(file.name);
       const shape = isSvg ? svgToShape(await readText(file)) : await imageToShape(await readDataUrl(file));
-      const plus = $('#uplus', root).checked;
-      await call('POST', '/api/shapes', { ...shape, plus, name: file.name.replace(/\.[^.]+$/, ''), category });
+      await call('POST', '/api/shapes', { ...shape, name: file.name.replace(/\.[^.]+$/, ''), category });
       added++;
     } catch (error) {
       if (error.status === 401) { renderLogin(root); return; }
@@ -157,7 +156,6 @@ async function renderManager(root) {
       </label>
       <div class="upload-side">
         <label class="field"><span>Add to category</span><input id="ucat" maxlength="40" value="${esc(lastCategory)}"></label>
-        <label class="check"><input type="checkbox" id="uplus"><span>Plus only</span></label>
       </div>
     </section>
     ${communitySection(packs)}
@@ -168,7 +166,6 @@ async function renderManager(root) {
         <span class="admin-thumb">${shapeThumb(s)}</span>
         <label class="field"><span>Name</span><input data-k="name" maxlength="60" value="${esc(s.name)}"></label>
         <label class="field"><span>Category</span><input data-k="category" maxlength="40" value="${esc(s.category)}"></label>
-        <label class="check"><input type="checkbox" data-plus ${s.plus ? 'checked' : ''}><span>Plus</span></label>
         <button class="ib" data-del aria-label="Delete ${esc(s.name)}" title="Delete">${icon('trash')}</button>
       </li>`).join('')}
     </ul>
@@ -184,15 +181,6 @@ async function renderManager(root) {
 
   $$('.admin-list li', root).forEach((row) => {
     const id = row.dataset.id;
-    $('[data-plus]', row).onchange = async (e) => {
-      try {
-        await call('PATCH', `/api/shapes/${id}`, { plus: e.target.checked });
-        toast('Saved.', 'ok');
-      } catch (error) {
-        if (error.status === 401) renderLogin(root);
-        else toast(error.message, 'warn');
-      }
-    };
     $$('[data-k]', row).forEach((field) => {
       field.onchange = async () => {
         try {
