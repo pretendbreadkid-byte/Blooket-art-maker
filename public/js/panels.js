@@ -14,6 +14,7 @@ import {
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { drawLayers } from './layers.js';
+import { canRemoveBackground, removeBackground } from './bg-remove.js';
 import { TEMPLATES, overlayLook } from './templates.js';
 import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
 
@@ -420,6 +421,7 @@ function selectedPanel() {
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canWeld()) box.append(button('Weld into one shape', 'weld', weldSelection, 'wide'));
   if (canUnweld()) box.append(button('Unweld', 'apart', unweldSelection, 'wide'));
+  if (canRemoveBackground()) box.append(button('Remove background', 'eraser', removeBackground, 'wide'));
   if (items.some(smoothable)) box.append(button('Smooth lines', 'smooth', () => { if (smoothLines(items)) commit(); }, 'wide'));
   if (canGroup() || canUngroup()) {
     const grouping = html('<div class="btn-grid"></div>');

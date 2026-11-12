@@ -28,6 +28,7 @@ Then open <http://localhost:5180>.
 | Line | N | Click to add points. Click the first point to close it, or double-click or press Enter to finish. Lines that touch connect. |
 | Pencil | P | Thin, sharp lines. |
 | Marker | M | Thick, see-through lines. |
+| Remove background | | Pick a picture and choose Remove background (Selected panel or right-click). Plain, gradient and photo backgrounds come away from the edges in; Strength sets how much, and clicking leftover background (like the inside of a hole) removes it too. |
 | Smooth lines | | After drawing with the Pencil or Marker, Smoothen your lines? takes out the bumps and wobbles. Always (or Auto smooth in the Pencil and Marker bar) does it every time, and Smooth lines in the Selected panel smooths lines drawn earlier. |
 | Shapes | S | Basic shapes, Plus shapes and the uploaded catalog. Click one, or drag it onto the canvas. |
 | Flip | Shift+H, Shift+V | Pick something, then flip it sideways or up and down. Things picked together flip as one. |

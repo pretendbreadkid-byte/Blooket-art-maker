@@ -841,3 +841,27 @@ test('smoothing a drawn line takes out the wobble but keeps its ends and shape',
   const short = strokeToSubpath([{ x: 0, y: 0 }, { x: 10, y: 0 }], 0.5);
   assert.equal(smoothStroke(short, 4), short, 'a two-point line is left alone');
 });
+
+test('the background remover takes away a gradient background and keeps the subject', async () => {
+  const { findBackground, cutOut } = await import('../public/js/bg-remove.js');
+  const W = 40, H = 40, px = new Uint8ClampedArray(W * H * 4);
+  const set = (x, y, [r, g, b]) => { const i = (y * W + x) * 4; px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255; };
+  // A sky that slowly fades from light blue to darker blue, with a red ring in the middle.
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) set(x, y, [120 - y, 180 - y, 255 - y * 2]);
+  for (let y = 10; y < 30; y++) for (let x = 10; x < 30; x++) {
+    const inHole = x >= 17 && x < 23 && y >= 17 && y < 23;
+    if (!inHole) set(x, y, [220, 30, 40]);
+  }
+  const bg = findBackground(px, W, H);
+  assert.equal(bg[0], 1, 'the corner goes');
+  assert.equal(bg[39 * W + 39], 1, 'the far, darker corner goes too, following the gradient');
+  assert.equal(bg[15 * W + 15], 0, 'the red ring stays');
+  assert.equal(bg[20 * W + 20], 0, 'the hole is kept until clicked, since it is cut off from the edge');
+  const clicked = findBackground(px, W, H, 40, [[20, 20]]);
+  assert.equal(clicked[20 * W + 20], 1, 'clicking the hole removes it');
+  assert.equal(clicked[15 * W + 15], 0, 'and the ring still stays');
+  const out = cutOut(px, W, H, clicked);
+  assert.equal(out[3], 0, 'background is see-through');
+  assert.equal(out[(15 * W + 15) * 4 + 3], 255, 'the inside of the subject is solid');
+  assert.ok(out[(10 * W + 15) * 4 + 3] < 255 && out[(10 * W + 15) * 4 + 3] > 0, 'its edge is softened');
+});

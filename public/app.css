@@ -887,3 +887,9 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 /* "Smoothen your lines?" sits top left, so it never covers "Expand canvas to fit?" */
 .fit-ask.smooth-ask { left: 14px; right: auto; }
 .ask-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+/* Background remover */
+.dlg.bg-remove { width: min(640px, 100%); }
+.bgr-stage { display: grid; place-items: center; min-height: 200px; padding: 10px; border-radius: 12px; background: repeating-conic-gradient(#ece9f3 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+.bgr-stage canvas { max-width: 100%; cursor: crosshair; }
+.bg-remove .slider { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; font-weight: 700; }

@@ -1061,6 +1061,7 @@ function contextMenu(e) {
   const special = [
     ...(canWeld() ? [{ label: 'Weld into one shape (Ctrl+J)', icon: 'weld', onClick: weldSelection }] : []),
     ...(canUnweld() ? [{ label: 'Unweld', icon: 'apart', onClick: unweldSelection }] : []),
+    ...(selected().some((o) => o.type === 'image') ? [{ label: 'Remove background', icon: 'eraser', onClick: () => import('./bg-remove.js').then((m) => m.removeBackground()) }] : []),
     ...(canGroup() ? [{ label: 'Group (Ctrl+G)', icon: 'group', onClick: groupSelection }] : []),
     ...(canUngroup() ? [{ label: 'Ungroup (Ctrl+Shift+G)', icon: 'ungroup', onClick: ungroupSelection }] : []),
     ...(canTakeApart() ? [{ label: 'Take apart', icon: 'apart', onClick: takeApart }] : []),
