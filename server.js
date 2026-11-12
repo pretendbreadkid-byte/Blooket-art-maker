@@ -521,10 +521,10 @@ function isAdmin(req) {
   return true;
 }
 
-function send(res, status, body, type = 'application/json') {
+function send(res, status, body, type = 'application/json', cache = 'no-cache') {
   res.writeHead(status, {
     'Content-Type': type,
-    'Cache-Control': 'no-cache',
+    'Cache-Control': cache,
     'X-Content-Type-Options': 'nosniff',
   });
   res.end(type === 'application/json' ? JSON.stringify(body) : body);
@@ -649,12 +649,27 @@ async function api(req, res, path) {
   return send(res, 404, { error: 'Not found.' });
 }
 
+// Every deploy serves its code from its own folder, /v/<version>/, so no browser
+// or Cloudflare can keep running an old copy after an update. Those files never
+// change, so they can be kept for a long time. The page itself is never kept.
+const VERSION = (process.env.RENDER_GIT_COMMIT || '').slice(0, 10) || Date.now().toString(36);
+const VERSIONED = /^\/v\/[\w-]{1,40}(\/.*)$/;
+const FOREVER = 'public, max-age=31536000, immutable';
+
+async function servePage(res) {
+  const html = (await readFile(join(PUBLIC, 'index.html'), 'utf8'))
+    .replace(/(href|src)="\/(app\.css|js\/[\w-]+\.js)"/g, `$1="/v/${VERSION}/$2"`);
+  return send(res, 200, html, TYPES['.html'], 'no-cache');
+}
+
 async function serveStatic(res, path) {
-  const rel = normalize(decodeURIComponent(path === '/' ? '/index.html' : path)).replace(/^[/\\]+/, '');
+  if (path === '/' || path === '/index.html') return servePage(res);
+  const versioned = path.match(VERSIONED);
+  const rel = normalize(decodeURIComponent(versioned ? versioned[1] : path)).replace(/^[/\\]+/, '');
   const file = join(PUBLIC, rel);
   if (!file.startsWith(PUBLIC + sep)) return send(res, 403, 'Forbidden', 'text/plain');
   try {
-    return send(res, 200, await readFile(file), TYPES[extname(file)] || 'application/octet-stream');
+    return send(res, 200, await readFile(file), TYPES[extname(file)] || 'application/octet-stream', versioned ? FOREVER : 'no-cache');
   } catch {
     return send(res, 404, 'Not found', 'text/plain');
   }

@@ -156,3 +156,17 @@ test('the admin password ignores stray spaces and quote marks', async () => {
   }
   assert.equal((await api('POST', '/api/admin/login', { password: `${PASSWORD}x` }, false)).status, 401);
 });
+
+test('each deploy serves its code from its own folder, so updates always show', async () => {
+  const page = await (await fetch(`${BASE}/`)).text();
+  const main = page.match(/src="(\/v\/[\w-]+\/js\/main\.js)"/)?.[1];
+  assert.ok(main, page);
+  assert.match(page, /href="\/v\/[\w-]+\/app\.css"/);
+  const js = await fetch(BASE + main);
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get('cache-control'), /immutable/, 'versioned files can be kept');
+  const sibling = await fetch(BASE + main.replace('main.js', 'state.js'));
+  assert.equal(sibling.status, 200, 'files the code imports come from the same folder');
+  assert.equal((await fetch(`${BASE}/`)).headers.get('cache-control'), 'no-cache', 'the page itself is never kept');
+  assert.notEqual((await fetch(`${BASE}/v/abc/..%2f..%2fserver.js`)).status, 200, 'no way out of public');
+});
