@@ -826,3 +826,18 @@ test('hidden things are not drawn, and locked things cannot be picked on the can
   assert.ok(editor.includes(`data-id="${locked.id}" pointer-events="none"`));
   assert.ok(!editor.includes(`data-id="${shown.id}" pointer-events`));
 });
+
+test('smoothing a drawn line takes out the wobble but keeps its ends and shape', async () => {
+  const { smoothStroke, strokeToSubpath, pathBounds } = await import('../public/js/model.js');
+  const wobbly = Array.from({ length: 200 }, (_, i) => ({ x: i * 1.5, y: Math.sin(i * 1.7) * 4 + Math.sin(i / 30) * 30 }));
+  const line = strokeToSubpath(wobbly, 0.5);
+  const smooth = smoothStroke(line, 6);
+  assert.ok(smooth.nodes.length < line.nodes.length / 5, `far fewer points: ${line.nodes.length} -> ${smooth.nodes.length}`);
+  assert.deepEqual([smooth.nodes[0].x, smooth.nodes[0].y], [line.nodes[0].x, line.nodes[0].y], 'starts where it was drawn');
+  const [a, b] = [line.nodes.at(-1), smooth.nodes.at(-1)];
+  assert.deepEqual([b.x, b.y], [a.x, a.y], 'ends where it was drawn');
+  assert.ok(pathBounds([smooth]).height > pathBounds([line]).height * 0.8, 'the big curve stays');
+  assert.ok(smooth.nodes.slice(1, -1).every((n) => n.ix || n.iy), 'curved, not jagged');
+  const short = strokeToSubpath([{ x: 0, y: 0 }, { x: 10, y: 0 }], 0.5);
+  assert.equal(smoothStroke(short, 4), short, 'a two-point line is left alone');
+});

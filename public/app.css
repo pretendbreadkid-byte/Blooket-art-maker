@@ -883,3 +883,7 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .pc-foot { display: flex; align-items: center; gap: 10px; }
 .pc-now { display: flex; align-items: center; gap: 8px; font-weight: 800; }
 .pc-now i { width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 0 0 1.5px var(--line); }
+
+/* "Smoothen your lines?" sits top left, so it never covers "Expand canvas to fit?" */
+.fit-ask.smooth-ask { left: 14px; right: auto; }
+.ask-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }

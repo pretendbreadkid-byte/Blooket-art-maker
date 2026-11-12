@@ -10,7 +10,7 @@ import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, canGroup, canUngroup, groupSelection, ungroupSelection,
+  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, canGroup, canUngroup, groupSelection, ungroupSelection, autoSmooth, setAutoSmooth, smoothable, smoothLines,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { drawLayers } from './layers.js';
@@ -107,6 +107,11 @@ function optionBar() {
   if (tool === 'pencil' || tool === 'marker' || tool === 'eraser' || tool === 'line') {
     if (tool !== 'eraser') add(ink('stroke', 'Colour'));
     add(slider({ label: 'Size', value: S.sizes[tool], min: 1, max: 200, unit: 'px', onInput: (v) => { S.sizes[tool] = v; } }));
+    if (tool === 'pencil' || tool === 'marker') {
+      const auto = html(`<label class="check"><input type="checkbox" ${autoSmooth() ? 'checked' : ''}><span>Auto smooth</span></label>`);
+      $('input', auto).onchange = (e) => setAutoSmooth(e.target.checked);
+      add(auto);
+    }
     if (tool === 'line') add(html('<span class="muted">To move a point later, use Vertices. To fill a closed line, use the Bucket.</span>'));
   } else if (tool === 'shapes') {
     // Shows the colours the next shape gets. Picking one stops copying the last shape.
@@ -415,6 +420,7 @@ function selectedPanel() {
   box.append(html(`<h3>${single ? esc(single.name) : `${items.length} things picked`}</h3>`));
   if (canWeld()) box.append(button('Weld into one shape', 'weld', weldSelection, 'wide'));
   if (canUnweld()) box.append(button('Unweld', 'apart', unweldSelection, 'wide'));
+  if (items.some(smoothable)) box.append(button('Smooth lines', 'smooth', () => { if (smoothLines(items)) commit(); }, 'wide'));
   if (canGroup() || canUngroup()) {
     const grouping = html('<div class="btn-grid"></div>');
     if (canGroup()) grouping.append(button('Group', 'group', groupSelection));

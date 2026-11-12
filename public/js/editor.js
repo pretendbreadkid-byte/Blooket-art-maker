@@ -54,6 +54,7 @@ const TEMPLATE = `
     <div id="brush" hidden></div>
     <div id="hint" class="hint"></div>
     <div id="fitask" class="fit-ask" role="alertdialog" hidden></div>
+    <div id="smoothask" class="fit-ask smooth-ask" role="alertdialog" hidden></div>
   </main>
   <aside class="ed-right">
     <section id="inspector" class="panel"></section>

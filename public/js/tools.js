@@ -9,7 +9,7 @@ import {
 import {
   newPath, newText, newImage, clone, pathD, fitSubpaths, strokeToSubpath, addVertex, removeVertices, smoothNode, sharpenNode,
   pointInPolygon, localToWorld, pathBounds, mapSubpaths, chainSubpaths, objectsOn, isPages, regroup, uid, nearestOnOutline, flipped,
-  worldToLocal, worldVectorToLocal, rad, simplify,
+  worldToLocal, worldVectorToLocal, rad, simplify, smoothStroke,
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
 import { loopToSubpath } from './trace.js';
@@ -593,11 +593,70 @@ function finishStroke() {
   const c = pathBounds([{ closed: false, nodes: pts }]);
   const cx = c.x + c.width / 2, cy = c.y + c.height / 2;
   const sp = strokeToSubpath(pts.map((q) => ({ x: q.x - cx, y: q.y - cy })), Math.max(0.5, 0.8 / S.zoom));
-  addObject(activeLayer(), newPath({
+  const line = newPath({
     name: tool === 'pencil' ? 'Pencil line' : 'Marker line', x: cx, y: cy, subpaths: [sp],
     stroke: S.stroke, strokeWidth: S.sizes[tool], opacity: tool === 'marker' ? 0.6 : 1,
-  }));
+  });
+  addObject(activeLayer(), line);
+  if (autoSmooth()) smoothLines([line]);
   commit();
+  if (!autoSmooth()) askToSmooth(line.id);
+}
+
+/* ---------- Smoothing lines ---------- */
+
+const AUTO_SMOOTH_KEY = 'blook-auto-smooth';
+let unsmoothed = [];
+
+export function autoSmooth() {
+  try { return localStorage.getItem(AUTO_SMOOTH_KEY) === 'yes'; } catch { return false; }
+}
+
+export function setAutoSmooth(on) {
+  try { localStorage.setItem(AUTO_SMOOTH_KEY, on ? 'yes' : 'no'); } catch { /* Just for this visit. */ }
+}
+
+// Lines whose wobble can be smoothed: drawn lines that are not closed shapes.
+export const smoothable = (o) => o?.type === 'path' && !o.parts?.length && posed(o).subpaths.some((sp) => !sp.closed && sp.nodes.length > 2);
+
+export function smoothLines(objects) {
+  let done = 0;
+  for (const o of objects) {
+    if (!smoothable(o)) continue;
+    const s = posed(o);
+    edit(o, { subpaths: s.subpaths.map((sp) => (sp.closed ? sp : smoothStroke(sp, s.strokeWidth || 4))) });
+    done++;
+  }
+  return done;
+}
+
+export function hideSmoothAsk() {
+  unsmoothed = [];
+  const box = $('#smoothask');
+  if (box) box.hidden = true;
+}
+
+// After drawing, ask once for everything drawn since the question came up.
+function askToSmooth(id) {
+  unsmoothed.push(id);
+  const box = $('#smoothask');
+  if (!box) return;
+  const count = unsmoothed.length;
+  box.innerHTML = `<b>Smoothen your ${count === 1 ? 'line' : `${count} lines`}?</b>
+    <p>Takes out the bumps and wobbles.</p>
+    <div class="ask-actions"><button class="btn ghost small" data-a="no">No</button><button class="btn ghost small" data-a="always" title="Smooth every line from now on">Always</button><button class="btn primary small" data-a="yes">Yes</button></div>`;
+  box.hidden = false;
+  box.onclick = (e) => {
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (!a) return;
+    if (a === 'always') setAutoSmooth(true);
+    if (a !== 'no') {
+      const lines = unsmoothed.map(findObj).filter(Boolean);
+      if (smoothLines(lines)) { commit(); refresh(); }
+      if (a === 'always') toast('Every line you draw will be smoothed. Turn it off in the Pencil or Marker bar.', 'ok');
+    }
+    hideSmoothAsk();
+  };
 }
 
 function eraseAlong(pts) {
@@ -1030,6 +1089,7 @@ function contextMenu(e) {
 
 export function setTool(name) {
   closeTextEditor();
+  if (!BRUSHES.has(name) || name === 'eraser') hideSmoothAsk();
   if (S.line) finishLine();
   S.lineSnap = null;
   S.vertexSpot = null;

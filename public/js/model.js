@@ -356,6 +356,56 @@ export function strokeToSubpath(points, tolerance = 0.8) {
   return sp;
 }
 
+// Points along a subpath's curves, spaced about `gap` apart.
+function walkSubpath(sp, gap) {
+  const N = sp.nodes.length, last = sp.closed ? N : N - 1;
+  const out = [{ x: sp.nodes[0].x, y: sp.nodes[0].y }];
+  for (let i = 0; i < last; i++) {
+    const a = sp.nodes[i], b = sp.nodes[(i + 1) % N];
+    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / gap));
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      out.push({
+        x: cubicAt(a.x, a.x + (a.ox || 0), b.x + (b.ix || 0), b.x, t),
+        y: cubicAt(a.y, a.y + (a.oy || 0), b.y + (b.iy || 0), b.y, t),
+      });
+    }
+  }
+  return out;
+}
+
+const SMOOTH_PASSES = 3;
+
+// Takes the wobble out of a hand-drawn line: its points are averaged with their
+// neighbours a few times (the ends stay where they were drawn), then it is
+// rebuilt from as few points as keep its shape, with smooth curves between.
+// width: how thick the line is drawn, which sets how big a bump counts as wobble.
+export function smoothStroke(sp, width = 4) {
+  if (sp.nodes.length < 3) return sp;
+  const gap = Math.max(0.75, width * 0.2);
+  let pts = walkSubpath(sp, gap);
+  const reach = Math.max(3, Math.min(14, Math.round((width * 1.6) / gap)));
+  const n = pts.length;
+  for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
+    pts = pts.map((p, i) => {
+      // Near the ends the window shrinks, so the ends stay put.
+      const r = sp.closed ? reach : Math.min(reach, i, n - 1 - i);
+      if (!r) return p;
+      let x = 0, y = 0;
+      for (let k = -r; k <= r; k++) {
+        const q = pts[sp.closed ? (i + k + n) % n : i + k];
+        x += q.x; y += q.y;
+      }
+      return { x: x / (r * 2 + 1), y: y / (r * 2 + 1) };
+    });
+  }
+  const kept = simplify(pts, Math.max(0.8, width * 0.3));
+  if (sp.closed && kept.length > 2) kept.pop();
+  const out = { closed: sp.closed, nodes: kept.map((p) => ({ x: p.x, y: p.y })) };
+  if (out.nodes.length > 2) out.nodes.forEach((_, i) => smoothNode(out, i));
+  return out;
+}
+
 /* ---------- Keyframes ---------- */
 
 export const POSE_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity', 'blur', 'fill', 'gradient', 'stroke', 'strokeWidth', 'subpaths'];
