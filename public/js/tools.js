@@ -13,6 +13,7 @@ import {
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
 import { loopToSubpath } from './trace.js';
+import { solidHit } from './hit.js';
 import { exportSVG, rasterize, esc } from './render.js';
 import { loopSelection } from './timeline.js';
 import { piecesFromPicture, piecesToObjects } from './pieces.js';
@@ -43,10 +44,12 @@ export const TOOLS = {
 // Each group shares one button with a drop-down under it.
 export const TOOL_GROUPS = [['select', 'vertices', 'lasso'], ['line', 'pencil', 'marker', 'bucket']];
 
+// The thing under the pointer. See-through parts of pictures don't count, so a
+// big picture with clear edges never hides what is under them.
 const pickable = (e) => {
+  if (e.clientX !== undefined) return solidHit(e.clientX, e.clientY);
   const el = e.target.closest?.('[data-id]');
-  if (!el) return null;
-  return findObj(el.dataset.id) || null;
+  return el ? findObj(el.dataset.id) || null : null;
 };
 
 /* ---------- Select ---------- */
@@ -218,12 +221,10 @@ function selectDown(e, p) {
   const h = e.target.dataset?.h;
   const adding = e.shiftKey || e.ctrlKey || e.metaKey;
   if (h && h !== 'move') { startTransform(h, p, e); return; }
-  if (h === 'move' && !adding) { startMove(p); return; }
   let hit = pickable(e);
-  if (h === 'move') {
-    const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el.closest('[data-id]'));
-    hit = under ? findObj(under.closest('[data-id]').dataset.id) : null;
-  }
+  // Inside the picked things' box: drag them, unless the click is on something
+  // else that shows through, like art under the clear part of a picked picture.
+  if (h === 'move' && !adding && (!hit || S.sel.has(hit.id))) { startMove(p); return; }
   if (hit) {
     const team = groupOf(hit);
     if (adding) {

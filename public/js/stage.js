@@ -4,6 +4,7 @@ import { layersMarkup, backgroundMarkup, frameClip } from './render.js';
 import { overlayMarkup } from './templates.js';
 import { localToWorld, isCorner, clamp, mapSubpaths, pathBounds } from './model.js';
 import { $ } from './ui.js';
+import { primeAlpha } from './hit.js';
 
 let art, overlay, frameEl, workspace;
 
@@ -62,6 +63,8 @@ export function drawStage() {
     : '';
   const clip = frameClip(d, 'stage');
   art.innerHTML = `${clip.defs}<g${clip.attr}>${backgroundMarkup(d, 'stage', S.frame)}${ghost}${layersMarkup(d, S.frame, { editor: true, prefix: 'stage' })}${overlayMarkup(d)}</g><g id="live" pointer-events="none"></g>`;
+  // Get ready to tell which parts of each picture can be clicked.
+  for (const layer of d.layers) for (const o of layer.objects) if (o.type === 'image') primeAlpha(o.href);
 }
 
 export const liveLayer = () => $('#live', art);
