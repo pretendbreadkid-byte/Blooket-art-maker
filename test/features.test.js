@@ -895,3 +895,41 @@ test('a thing or the background can have several textures, layered in order', as
   assert.ok(svg.includes('data:image/webp;base64,'), 'the Blooks texture carries its picture inside');
   assert.equal(texturesOf({ texture: newTexture('dots') }).length, 1, 'older art with one texture still has it');
 });
+
+test('fill and outline each have their own opacity, which can animate', () => {
+  const doc = newDoc({ name: 't' });
+  const box = newPath({ subpaths: square(), fill: '#ff0000', stroke: '#000000', strokeWidth: 4, fillOpacity: 0.5, strokeOpacity: 0.25 });
+  doc.layers[0].objects.push(box);
+  let svg = exportSVG(doc);
+  assert.ok(svg.includes('fill-opacity="0.5"') && svg.includes('stroke-opacity="0.25"'), svg);
+  box.look = { 'fill-opacity': 0.5 };
+  svg = exportSVG(doc);
+  assert.ok(svg.includes('fill-opacity="0.25"') && !svg.includes('fill-opacity="0.5"'), 'imported see-through art fades on top of its own, once');
+  const { doc: moving, obj } = animated();
+  setProps(moving, obj, 20, { fillOpacity: 0 });
+  assert.equal(sample(obj, 10).fillOpacity, 0.5, 'halfway between full and none');
+  assert.ok(exportSVG(moving, { animate: true }).includes('attributeName="fill-opacity"'));
+});
+
+test('the background can fade and blur, and stays solid to its edges when blurred', () => {
+  const doc = newDoc({ name: 't', width: 200, height: 100 });
+  doc.background = '#2ca5e8';
+  assert.ok(!exportSVG(doc).includes('bgblur'));
+  doc.bgOpacity = 0.4;
+  doc.bgBlur = 6;
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes('<feGaussianBlur stdDeviation="6"/>') && svg.includes('filter="url(#frame-bgblur)"') && svg.includes('opacity="0.4"'), svg);
+  assert.ok(svg.includes('<rect x="-18" y="-18" width="236" height="136" fill="#2ca5e8"/>'), 'reaches past the edges');
+});
+
+test('a blurred texture blurs across its tile edges, and underbellies can be soft', async () => {
+  const { newTexture } = await import('../public/js/textures.js');
+  const { newUnderbelly } = await import('../public/js/render.js');
+  const doc = newDoc({ name: 't' });
+  const box = newPath({ subpaths: square(), fill: '#ff0000', textures: [{ ...newTexture('stripes'), blur: 4 }], underbelly: { ...newUnderbelly(), blur: 3 } });
+  doc.layers[0].objects.push(box);
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes(`<filter id="erase-${box.id}-tex0-blur"`), 'the texture has its blur');
+  assert.equal((svg.match(/<rect width="40" height="16" fill="#ffffff"\/>/g) || []).length, 9, 'drawn with its neighbours, so no seams');
+  assert.ok(svg.includes('<feGaussianBlur in="band" stdDeviation="3" result="band"/>') && svg.includes('<feComposite in2="SourceAlpha" operator="in" result="belly"/>'), 'a soft underbelly that stays inside');
+});

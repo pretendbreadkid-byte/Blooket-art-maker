@@ -257,6 +257,10 @@ function documentPanel(box) {
     },
     onDone: commit,
   }));
+  box.append(
+    slider({ label: 'Background opacity', value: Math.round((d.bgOpacity ?? 1) * 100), min: 0, max: 100, unit: '%', onInput: (v) => { d.bgOpacity = v / 100; hooks.stage(); }, onChange: commit }),
+    slider({ label: 'Background blur', value: d.bgBlur || 0, min: 0, max: 60, unit: 'px', onInput: (v) => { d.bgBlur = v; hooks.stage(); }, onChange: commit }),
+  );
   box.append(textureList(() => bgTexturesOf(d), (list) => { d.bgTextures = list; delete d.bgTexture; hooks.stage(); }, 'Background texture', d.bgGradient?.from || d.background));
   box.append(slider({
     label: 'Round canvas corners', value: Math.round(d.cornerRadius || 0), min: 0, max: Math.floor(Math.min(d.width, d.height) / 2), unit: 'px',
@@ -307,6 +311,7 @@ function autoShadowControls(d) {
     box.append(
       slider({ label: 'Strength', value: Math.round(d.autoShadow.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
       slider({ label: 'Size', value: d.autoShadow.size, min: 1, max: 60, unit: 'px', onInput: (v) => set({ size: v }), onChange: commit }),
+      slider({ label: 'Softness', value: d.autoShadow.soft || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ soft: v }), onChange: commit }),
     );
   }
   return box;
@@ -353,6 +358,7 @@ function underbellyControls(items) {
       colorButton({ label: 'Underbelly colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
       slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', onInput: (v) => set({ size: v / 100 }), onChange: commit }),
       slider({ label: 'Opacity', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+      slider({ label: 'Blur', value: look.blur || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ blur: v }), onChange: commit }),
     );
   }
   return box;
@@ -499,6 +505,14 @@ function selectedPanel() {
       label: 'Outline size', value: Math.round(first.strokeWidth), min: 0, max: 200, unit: 'px',
       onInput: (v) => { paintable.forEach((o) => edit(o, { strokeWidth: v })); liveRefresh(); },
       onChange: commit,
+    }), slider({
+      label: 'Fill opacity', value: Math.round((first.fillOpacity ?? 1) * 100), min: 0, max: 100, unit: '%',
+      onInput: (v) => { paintable.forEach((o) => edit(o, { fillOpacity: v / 100 })); liveRefresh(); },
+      onChange: commit,
+    }), slider({
+      label: 'Outline opacity', value: Math.round((first.strokeOpacity ?? 1) * 100), min: 0, max: 100, unit: '%',
+      onInput: (v) => { paintable.forEach((o) => edit(o, { strokeOpacity: v / 100 })); liveRefresh(); },
+      onChange: commit,
     }));
   }
 
@@ -609,6 +623,7 @@ function textureControls(current, apply, label, under, relist = null, remove = '
       slider({ label: 'Size', value: tex.size, min: 6, max: 300, unit: 'px', onInput: (v) => set({ size: v }), onChange: commit }),
       slider({ label: 'Strength', value: Math.round(tex.opacity * 100), min: 5, max: 100, unit: '%', onInput: (v) => set({ opacity: v / 100 }), onChange: commit }),
       slider({ label: 'Turn', value: tex.angle, min: 0, max: 180, unit: '°', onInput: (v) => set({ angle: v }), onChange: commit }),
+      slider({ label: 'Blur', value: tex.blur || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ blur: v }), onChange: commit }),
     );
     if (S.doc.animated) {
       const moves = html(`<label class="tex-move"><span>Moves</span><select>${Object.entries(MOVES).map(([k, m]) => `<option value="${k}" ${k === tex.move ? 'selected' : ''}>${m.name}</option>`).join('')}</select>

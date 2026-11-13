@@ -19,8 +19,17 @@ function strokeAttrs(o) {
 // Extra drawing settings kept from imported art, like fill-opacity or dashes.
 function lookAttrs(o) {
   return Object.entries(o.look || {})
-    .filter(([k]) => k !== 'stroke-linecap' && k !== 'stroke-linejoin')
+    .filter(([k]) => !['stroke-linecap', 'stroke-linejoin', 'fill-opacity', 'stroke-opacity'].includes(k))
     .map(([k, v]) => ` ${esc(k)}="${esc(v)}"`).join('');
+}
+
+// How see-through the fill and the outline are: the panel's setting times any
+// that came with imported art.
+function opacityAttrs(o) {
+  const look = o.look || {};
+  const f = (o.fillOpacity ?? 1) * (look['fill-opacity'] !== undefined ? +look['fill-opacity'] : 1);
+  const s = (o.strokeOpacity ?? 1) * (look['stroke-opacity'] !== undefined ? +look['stroke-opacity'] : 1);
+  return (f < 1 ? ` fill-opacity="${round(Math.max(0, f), 3)}"` : '') + (s < 1 ? ` stroke-opacity="${round(Math.max(0, s), 3)}"` : '');
 }
 
 function gradientPoints(g) {
@@ -165,7 +174,7 @@ function body(o, inner = '', gradientId = '', textureIds = [], textureInner = ''
   const ids = textureIds || [];
   if (o.type === 'path') {
     const d = pathD(o.subpaths);
-    return `<path d="${d}" fill="${fillOf(o, gradientId)}" fill-rule="${o.fillRule}" ${strokeAttrs(o)}${lookAttrs(o)}>${inner}</path>`
+    return `<path d="${d}" fill="${fillOf(o, gradientId)}" fill-rule="${o.fillRule}" ${strokeAttrs(o)}${opacityAttrs(o)}${lookAttrs(o)}>${inner}</path>`
       + ids.map((id) => `<path d="${d}" fill-rule="${o.fillRule}" ${texturePaint(o, id)}>${textureInner}</path>`).join('');
   }
   if (o.type === 'text') {
@@ -177,7 +186,7 @@ function body(o, inner = '', gradientId = '', textureIds = [], textureInner = ''
     // wide, behind the fill, so the fill covers its inner half.
     const line = !o.stroke || o.stroke === 'none' || !o.strokeWidth ? 'stroke="none"'
       : `${strokeAttrs({ ...o, strokeWidth: o.strokeWidth * 2 })} paint-order="stroke"`;
-    return `${defs}${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${line}>${inner}${content}</text>`
+    return `${defs}${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${line}${opacityAttrs(o)}>${inner}${content}</text>`
       + ids.map((id) => `<text ${text} ${texturePaint(o, id)}>${content}</text>`).join('');
   }
   return `<image href="${esc(o.href)}" x="${round(-o.w / 2)}" y="${round(-o.h / 2)}" width="${round(o.w)}" height="${round(o.h)}" preserveAspectRatio="none"/>`;
@@ -225,8 +234,9 @@ function underbellyFilter(o, id) {
     + `<feOffset in="SourceAlpha" dx="0" dy="${round(-depth, 2)}" result="up"/>`
     + '<feComposite in="SourceAlpha" in2="up" operator="out"/>'
     + '<feComponentTransfer result="band"><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>'
+    + (u.blur > 0 ? `<feGaussianBlur in="band" stdDeviation="${round(u.blur, 2)}" result="band"/>` : '')
     + `<feFlood flood-color="${esc(u.color)}" flood-opacity="${round(u.strength, 3)}"/>`
-    + '<feComposite in2="band" operator="in" result="belly"/>'
+    + (u.blur > 0 ? '<feComposite in2="band" operator="in"/><feComposite in2="SourceAlpha" operator="in" result="belly"/>' : '<feComposite in2="band" operator="in" result="belly"/>')
     + '<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="belly"/></feMerge></filter>';
 }
 
@@ -285,6 +295,7 @@ function animatedObject(raw, doc, opt) {
 
   const shape = raw.type === 'path' ? animate('d', (s) => pathD(s.subpaths, { uniform: true })) : '';
   const inner = animate('fill', (s) => s.fill) + animate('stroke', (s) => s.stroke)
+    + animate('fill-opacity', (s) => round(s.fillOpacity ?? 1, 3)) + animate('stroke-opacity', (s) => round(s.strokeOpacity ?? 1, 3))
     + animate('stroke-width', (s) => round(s.strokeWidth)) + shape;
 
   const first = samples[0];
@@ -313,7 +324,7 @@ function animatedObject(raw, doc, opt) {
 
 // Shadows are flat and see-through, like Blooket's art, rather than soft and fading.
 export const newDropShadow = () => ({ strength: 0.3, distance: 10, soft: 0, angle: 90 });
-export const newAutoShadow = () => ({ on: true, strength: 0.25, size: 10 });
+export const newAutoShadow = () => ({ on: true, strength: 0.25, size: 10, soft: 0 });
 
 // Roughly where a piece sits on the canvas, to find the ones it overlaps.
 function worldBounds(raw, frame) {
@@ -376,7 +387,7 @@ function withShadows(list, frame, opt, layer, draw) {
   const boxes = autoOn ? list.map((o) => worldBounds(o, frame)) : [];
   const teams = shadowTeams(list);
   let defs = autoOn ? `<filter id="${prefix}-solid" ${region()}><feFlood flood-color="#fff"/><feComposite in2="SourceAlpha" operator="in"/></filter>`
-    + shadeFilter(`${prefix}-shade`, auto.strength, 0, 0, auto.size) : '';
+    + shadeFilter(`${prefix}-shade`, auto.strength, auto.soft || 0, 0, auto.size) : '';
   const parts = list.map((o, i) => {
     let before = '';
     const team = teams.get(i);
@@ -428,13 +439,23 @@ export function layersMarkup(doc, frame, opt = {}) {
 }
 
 export function backgroundMarkup(doc, prefix = 'frame', frame = 0, opt = {}) {
-  const texture = bgTexturesOf(doc).map((tex, i) => `${patternMarkup(tex, `${prefix}-bgtex${i ? i : ''}`, null, frame, { ...opt, doc })}<rect width="${doc.width}" height="${doc.height}" fill="url(#${prefix}-bgtex${i ? i : ''})"/>`).join('');
+  const blur = Math.max(0, doc.bgBlur || 0), fade = doc.bgOpacity ?? 1;
+  const pad = round(blur * 3);
+  const area = pad ? `x="${-pad}" y="${-pad}" width="${doc.width + pad * 2}" height="${doc.height + pad * 2}"` : `width="${doc.width}" height="${doc.height}"`;
+  const texture = bgTexturesOf(doc).map((tex, i) => `${patternMarkup(tex, `${prefix}-bgtex${i ? i : ''}`, null, frame, { ...opt, doc })}<rect ${area} fill="url(#${prefix}-bgtex${i ? i : ''})"/>`).join('');
+  let art;
   if (doc.bgGradient) {
     const id = `${prefix}-bg`;
-    return `${gradientMarkup(doc.bgGradient, id)}<rect width="${doc.width}" height="${doc.height}" fill="url(#${id})"/>${texture}`;
+    art = `${gradientMarkup(doc.bgGradient, id)}<rect ${area} fill="url(#${id})"/>${texture}`;
+  } else if (!doc.background || doc.background === 'none') {
+    art = texture;
+  } else {
+    art = `<rect ${area} fill="${esc(doc.background)}"/>${texture}`;
   }
-  if (!doc.background || doc.background === 'none') return texture;
-  return `<rect width="${doc.width}" height="${doc.height}" fill="${esc(doc.background)}"/>${texture}`;
+  if (!art || (fade >= 1 && !blur)) return art;
+  const half = MASK_SIZE / 2;
+  const filter = blur ? `<filter id="${prefix}-bgblur" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}"><feGaussianBlur stdDeviation="${round(blur, 2)}"/></filter>` : '';
+  return `${filter}<g${fade < 1 ? ` opacity="${round(Math.max(0, fade), 3)}"` : ''}${blur ? ` filter="url(#${prefix}-bgblur)"` : ''}>${art}</g>`;
 }
 
 // Rounded canvases are cut to shape with a clip around all the art.

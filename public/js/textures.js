@@ -106,6 +106,11 @@ export function textureOffset(tex, frame, doc) {
 
 // o: where the textured thing sits, so the pattern can undo that and stay put
 // on the canvas. Leave it out for the background.
+function blurredTile(kind, t, th, color, tex, id) {
+  const copies = [-1, 0, 1].flatMap((dy) => [-1, 0, 1].map((dx) => `<g transform="translate(${round(dx * t)} ${round(dy * th)})">${kind.tile(t, color, tex, `${id}-${dx + 1}${dy + 1}`, th)}</g>`)).join('');
+  return `<filter id="${id}-blur" filterUnits="userSpaceOnUse" x="${-t}" y="${-th}" width="${t * 3}" height="${th * 3}"><feGaussianBlur stdDeviation="${round(Math.min(tex.blur, t / 2), 2)}"/></filter><g filter="url(#${id}-blur)">${copies}</g>`;
+}
+
 export function patternMarkup(tex, id, o, frame, opt = {}) {
   const kind = TEXTURES[tex.kind];
   if (!kind) return '';
@@ -119,5 +124,5 @@ export function patternMarkup(tex, id, o, frame, opt = {}) {
   const slide = live
     ? `<animateTransform attributeName="patternTransform" type="translate" additive="sum" from="0 0" to="${round(move.dx * (tex.speed || 1) * t)} ${round(move.dy * (tex.speed || 1) * th)}" dur="${round(opt.doc.frames / opt.doc.fps, 3)}s" repeatCount="indefinite"/>`
     : '';
-  return `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${t}" height="${th}" patternTransform="${undo}rotate(${round(tex.angle || 0)}) translate(${round(ox)} ${round(oy)})">${slide}<g opacity="${round(tex.opacity ?? 0.5, 3)}">${kind.tile(t, color, tex, id, th)}</g></pattern>`;
+  return `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${t}" height="${th}" patternTransform="${undo}rotate(${round(tex.angle || 0)}) translate(${round(ox)} ${round(oy)})">${slide}<g opacity="${round(tex.opacity ?? 0.5, 3)}">${tex.blur > 0 ? blurredTile(kind, t, th, color, tex, id) : kind.tile(t, color, tex, id, th)}</g></pattern>`;
 }

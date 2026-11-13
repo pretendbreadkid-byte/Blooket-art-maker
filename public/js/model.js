@@ -408,7 +408,9 @@ export function smoothStroke(sp, width = 4) {
 
 /* ---------- Keyframes ---------- */
 
-export const POSE_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity', 'blur', 'fill', 'gradient', 'stroke', 'strokeWidth', 'subpaths'];
+export const POSE_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'opacity', 'blur', 'fillOpacity', 'strokeOpacity', 'fill', 'gradient', 'stroke', 'strokeWidth', 'subpaths'];
+// Settings older art may not have, and what they mean when missing.
+const POSE_DEFAULTS = { blur: 0, fillOpacity: 1, strokeOpacity: 1 };
 
 export const EASINGS = {
   linear: { label: 'Steady', fn: (t) => t },
@@ -457,8 +459,8 @@ function lerpSubpaths(a, b, t) {
 function lerpPose(a, b, t) {
   const out = {};
   for (const k of POSE_PROPS) {
-    // Older art has no blur, so a missing one counts as none.
-    if (k === 'blur' && (a.blur || b.blur)) { out.blur = lerp(a.blur || 0, b.blur || 0, t); continue; }
+    // Older art may not have these, so a missing one counts as the default.
+    if (k in POSE_DEFAULTS && (a[k] !== undefined || b[k] !== undefined)) { out[k] = lerp(a[k] ?? POSE_DEFAULTS[k], b[k] ?? POSE_DEFAULTS[k], t); continue; }
     if (a[k] === undefined) continue;
     if (k === 'fill' || k === 'stroke') out[k] = lerpColor(a[k], b[k], t);
     else if (k === 'gradient') out[k] = lerpGradient(a[k], b[k], t);
