@@ -17,11 +17,11 @@ async function route() {
   document.querySelector('.popover')?.remove();
   const hash = location.hash.replace(/^#/, '') || '/';
   if (hash === '/admin') { await renderAdmin(root); return; }
-  // First visit: the welcome page. After that, straight to your art.
-  if (hash === '/welcome' || (hash === '/' && !hasStarted() && !(await listProjects()).length)) { await renderWelcome(root); return; }
+  // blookberry.com opens on the welcome page. Your art is at #/art.
   const project = hash.match(/^\/p\/([\w-]+)$/);
   if (project) await openEditor(root, project[1]);
-  else await renderHome(root, route);
+  else if (hash === '/art') await renderHome(root, route);
+  else await renderWelcome(root, hasStarted() || (await listProjects()).length > 0);
 }
 
 // Exports carry the Blooket font inside them, so it looks right anywhere.

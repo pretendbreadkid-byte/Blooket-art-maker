@@ -35,7 +35,7 @@ function blookDoc(name, animated) {
 
 async function go(what) {
   markStarted();
-  if (what === 'packs') { showTestPage(); location.hash = '#/'; return; }
+  if (what === 'packs') { showTestPage(); location.hash = '#/art'; return; }
   const doc = what === 'draw' ? newDoc({ name: 'My drawing' })
     : blookDoc(what === 'animate' ? 'My animated Blook' : 'My Blook', what === 'animate');
   try {
@@ -47,14 +47,15 @@ async function go(what) {
   }
 }
 
-export async function renderWelcome(root) {
+// returning: this browser already has art, so the top button says "My art".
+export async function renderWelcome(root, returning = false) {
   document.title = 'Blook Berry · Make your own Blooket-style Blooks';
   root.innerHTML = `<div class="landing">
     <header class="land-top">
-      <a class="land-brand" href="#/welcome"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
+      <a class="land-brand" href="#/"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
       <nav>
         <a class="land-nav-tuts" href="/tutorials">${icon('play')}<span>Tutorials</span></a>
-        <button class="btn primary" data-start>Start drawing</button>
+        <button class="btn primary" data-start>${returning ? 'My art' : 'Start drawing'}</button>
       </nav>
     </header>
     <section class="land-hero">
@@ -90,7 +91,7 @@ export async function renderWelcome(root) {
     </section>
     <footer class="land-foot"><a href="/tutorials">Tutorials</a> · <a href="/privacy.html">Privacy</a> · Blook Berry is a fan-made tool and is not made by Blooket.</footer>
   </div>`;
-  $$('[data-start]', root).forEach((b) => { b.onclick = () => { markStarted(); location.hash = '#/'; }; });
+  $$('[data-start]', root).forEach((b) => { b.onclick = () => { markStarted(); location.hash = '#/art'; }; });
   $$('[data-go]', root).forEach((b) => { b.onclick = () => go(b.dataset.go); });
 
   $('.land-show', root).innerHTML = shuffled(SHOWCASE_ART).slice(0, SHOWCASE)

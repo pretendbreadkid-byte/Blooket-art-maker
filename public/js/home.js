@@ -82,7 +82,7 @@ export async function renderHome(root, onLeave = leave) {
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
-      <a class="brand" href="#/welcome" title="Welcome page"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
+      <a class="brand" href="#/" title="Welcome page"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
       <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
       <ul class="folders">

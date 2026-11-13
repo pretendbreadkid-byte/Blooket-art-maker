@@ -320,7 +320,7 @@ function tutorialShell({ title, description, url, image, body }) {
 <body>
   <header class="tut-top">
     <a class="tut-brand" href="/"><img src="/logo.svg" alt=""><b>Blook Berry</b></a>
-    <nav><a href="/tutorials">Tutorials</a><a class="tut-cta" href="/#/">Start drawing</a></nav>
+    <nav><a href="/tutorials">Tutorials</a><a class="tut-cta" href="/#/art">Start drawing</a></nav>
   </header>
   <main class="tut-main">${body}</main>
   <footer class="tut-foot"><a href="/">Blook Berry</a> · <a href="/tutorials">Tutorials</a> · <a href="/privacy.html">Privacy</a></footer>

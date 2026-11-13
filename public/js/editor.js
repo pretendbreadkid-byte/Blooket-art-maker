@@ -25,7 +25,7 @@ import { $, $$, icon, menu, toast, dialog, readDataUrl, pictureSources } from '.
 const TEMPLATE = `
 <div class="ed">
   <header class="ed-top">
-    <a class="btn ghost" href="#/" id="back">${icon('back')}<span>My art</span></a>
+    <a class="btn ghost" href="#/art" id="back">${icon('back')}<span>My art</span></a>
     <input id="docname" class="doc-name" maxlength="80" aria-label="Project name">
     <span id="saved" class="saved"></span>
     <div class="grow"></div>
@@ -357,7 +357,7 @@ function wireTop(root) {
 
 export async function openEditor(root, id) {
   const doc = await getDoc(id);
-  if (!doc) { location.hash = '#/'; toast('That project could not be found.', 'warn'); return; }
+  if (!doc) { location.hash = '#/art'; toast('That project could not be found.', 'warn'); return; }
   const meta = await getMeta(id);
   openDoc(doc, meta?.thumb || null);
   // The project's own fonts, before its text is drawn.
