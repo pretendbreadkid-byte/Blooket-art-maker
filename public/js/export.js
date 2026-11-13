@@ -12,11 +12,12 @@ const FORMATS = [
 ];
 
 const JPEG_QUALITY = 0.92;
-const MARK_KEY = 'bb-mark';
+// A new name, so choices saved while it was on by default start over as off.
+const MARK_KEY = 'bb-mark-choice';
 const MARK_TEXT = 'Made with Blook Berry';
 
-// Whether exports get the small "Made with Blook Berry" tag. On unless turned off.
-const markOn = () => { try { return localStorage.getItem(MARK_KEY) !== 'off'; } catch { return true; } };
+// Whether exports get the small "Made with Blook Berry" tag. Off unless turned on.
+const markOn = () => { try { return localStorage.getItem(MARK_KEY) === 'on'; } catch { return false; } };
 const setMark = (on) => { try { localStorage.setItem(MARK_KEY, on ? 'on' : 'off'); } catch { /* fine */ } };
 
 // A small see-through tag in the bottom-right corner, sized to the art.
