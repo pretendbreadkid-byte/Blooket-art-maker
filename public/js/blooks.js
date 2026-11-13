@@ -80,8 +80,7 @@ export function drawBlooks() {
       <button class="ib blook-close" title="Close" aria-label="Close assets">${icon('x')}</button></div>
     <label class="cat-search">${icon('search')}<input placeholder="Find an asset" aria-label="Find an asset" value="${esc(search)}"></label>
     <p class="muted blook-tip">Drag one onto the canvas.</p>
-    <div class="cat-grid"><p class="muted">Loading...</p></div>
-    <p class="muted blook-tip">Blook art by Blooket, used with permission.</p>`;
+    <div class="cat-grid"><p class="muted">Loading...</p></div>`;
   $('.blook-close', box).onclick = () => toggleBlooks('blooks');
   $('input', box).oninput = (e) => { search = e.target.value.toLowerCase(); if (list) renderGrid(); };
   const ready = list ? Promise.resolve(list) : fetchBlooks();
