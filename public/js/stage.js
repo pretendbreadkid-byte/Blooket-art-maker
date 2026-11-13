@@ -206,7 +206,16 @@ function verticesOverlay() {
 
 export function drawOverlay() {
   if (S.tool === 'line') overlay.innerHTML = lineOverlay();
-  else overlay.innerHTML = S.tool === 'vertices' ? verticesOverlay() : selectionOverlay();
+  else overlay.innerHTML = (S.tool === 'vertices' ? verticesOverlay() : selectionOverlay()) + guidesOverlay();
+}
+
+// The pink lines that show what a drag snapped to.
+function guidesOverlay() {
+  if (!S.guides?.length) return '';
+  const z = S.zoom, big = 20000, look = 'class="guide" stroke="#ff3d8b" stroke-width="1.5"';
+  return S.guides.map((g) => (g.x !== undefined
+    ? `<line ${look} x1="${g.x * z}" y1="${-big}" x2="${g.x * z}" y2="${big}"/>`
+    : `<line ${look} x1="${-big}" y1="${g.y * z}" x2="${big}" y2="${g.y * z}"/>`)).join('');
 }
 
 export const hasCorners = (o) => o.type === 'path' && o.subpaths.some((sp) => sp.nodes.some((_, i) => isCorner(sp, i)));

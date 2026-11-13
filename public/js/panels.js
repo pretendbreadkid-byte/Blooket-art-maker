@@ -22,8 +22,10 @@ import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './u
 export const BLOOKET_FONT = 'Titan One';
 const FONTS = [[BLOOKET_FONT, 'Blooket (Titan One)'], ...['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'].map((f) => [f, f])];
 
-function slider({ label, value, min, max, step = 1, unit = '', onInput, onChange }) {
-  const row = html(`<label class="slider"><span>${esc(label)}</span>
+// Double-click a slider to put it back to its usual value.
+function slider({ label, value, min, max, step = 1, unit = '', onInput, onChange, reset }) {
+  const back = reset ?? (/opacity/i.test(label) ? max : min);
+  const row = html(`<label class="slider" title="Double-click to reset"><span>${esc(label)}</span>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${value}">
     <span class="val"><input type="number" min="${min}" step="${step}" value="${value}" aria-label="${esc(label)}"><i>${unit}</i></span></label>`);
   const [range, number] = $$('input', row);
@@ -35,7 +37,26 @@ function slider({ label, value, min, max, step = 1, unit = '', onInput, onChange
   range.oninput = () => set(+range.value, range);
   number.oninput = () => { if (number.value !== '' && Number.isFinite(+number.value)) set(+number.value, number); };
   range.onchange = number.onchange = () => onChange?.();
+  row.ondblclick = (e) => {
+    if (e.target === number) return;
+    e.preventDefault();
+    set(back);
+    onChange?.();
+  };
   return row;
+}
+
+// A part of the panel that folds away. It stays open or shut as you left it.
+const FOLD_KEY = 'bb-folds';
+const folds = (() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY)) || {}; } catch { return {}; } })();
+function fold(key, title, nodes, openByDefault = true) {
+  const box = html(`<details class="fold" ${(folds[key] ?? openByDefault) ? 'open' : ''}><summary>${esc(title)}</summary><div class="fold-body"></div></details>`);
+  box.querySelector('.fold-body').append(...nodes.filter(Boolean));
+  box.ontoggle = () => {
+    folds[key] = box.open;
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch { /* fine */ }
+  };
+  return box;
 }
 
 function colorButton({ label, value, allowNone, allowGradient, onInput, onDone }) {
@@ -357,7 +378,7 @@ function underbellyControls(items) {
     const set = (patch) => { Object.assign(look, patch); items.forEach((o) => { o.underbelly = { ...look }; }); liveRefresh(); };
     box.append(
       colorButton({ label: 'Underbelly colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
-      slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', onInput: (v) => set({ size: v / 100 }), onChange: commit }),
+      slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', reset: 100, onInput: (v) => set({ size: v / 100 }), onChange: commit }),
       slider({ label: 'Opacity', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
       slider({ label: 'Blur', value: look.blur || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ blur: v }), onChange: commit }),
     );
@@ -453,12 +474,12 @@ function selectedPanel() {
     box.append(grouping);
   }
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
-  box.append(opacitySlider(items), blurSlider(items), slider({
+  box.append(arrangeRow());
+  const effects = [opacitySlider(items), blurSlider(items), slider({
     label: 'Pixelate', value: Math.max(0, ...items.map((o) => o.pixel || 0)), min: 0, max: 60, unit: 'px',
     onInput: (v) => { items.forEach((o) => { o.pixel = v < 2 ? 0 : v; }); liveRefresh(); },
     onChange: commit,
-  }), dropShadowControls(items), arrangeRow());
-  box.append(underbellyControls(items));
+  })];
 
   if (single) {
     const s = posed(single);
@@ -510,7 +531,8 @@ function selectedPanel() {
       label: 'Outline size', value: Math.round(first.strokeWidth), min: 0, max: 200, unit: 'px',
       onInput: (v) => { paintable.forEach((o) => edit(o, { strokeWidth: v })); liveRefresh(); },
       onChange: commit,
-    }), slider({
+    }));
+    effects.push(slider({
       label: 'Fill opacity', value: Math.round((first.fillOpacity ?? 1) * 100), min: 0, max: 100, unit: '%',
       onInput: (v) => { paintable.forEach((o) => edit(o, { fillOpacity: v / 100 })); liveRefresh(); },
       onChange: commit,
@@ -520,15 +542,19 @@ function selectedPanel() {
       onChange: commit,
     }));
   }
+  box.append(colorSwaps(items));
+  box.append(fold('effects', 'Effects', effects));
+  const hasShadow = items.some((o) => o.dropShadow || o.underbelly);
+  box.append(fold('shadows', 'Shadows', [dropShadowControls(items), underbellyControls(items)], hasShadow));
 
   if (paintable.length) {
     const look = posed(paintable[0]);
-    box.append(textureList(() => texturesOf(posed(paintable[0])), (list) => {
+    const count = texturesOf(look).length;
+    box.append(fold('texture', count ? `Texture (${count})` : 'Texture', [textureList(() => texturesOf(posed(paintable[0])), (list) => {
       paintable.forEach((o) => { o.textures = clone(list); delete o.texture; });
       liveRefresh();
-    }, paintable.length > 1 ? 'Texture for all of these' : 'Texture', look.fill !== 'none' ? (look.gradient?.from || look.fill) : look.stroke));
+    }, paintable.length > 1 ? 'Texture for all of these' : 'Texture', look.fill !== 'none' ? (look.gradient?.from || look.fill) : look.stroke)], count > 0));
   }
-  box.append(colorSwaps(items));
 
   if (single && hasCorners(posed(single))) {
     box.append(roundingSlider(single));

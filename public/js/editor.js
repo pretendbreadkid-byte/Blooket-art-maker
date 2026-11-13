@@ -36,10 +36,11 @@ const TEMPLATE = `
       <button class="ib" id="redo" title="Redo (Ctrl+Y)" aria-label="Redo">${icon('redo')}</button>
     </div>
     <div class="group">
-      <button class="ib" id="zoomout" title="Zoom out" aria-label="Zoom out">${icon('minus')}</button>
-      <button class="zoomval" id="zoomval" title="Fit to screen"></button>
-      <button class="ib" id="zoomin" title="Zoom in" aria-label="Zoom in">${icon('plus')}</button>
+      <button class="ib" id="zoomout" title="Zoom out (Ctrl -)" aria-label="Zoom out">${icon('minus')}</button>
+      <button class="zoomval" id="zoomval" title="Fit to screen (Ctrl 0)"></button>
+      <button class="ib" id="zoomin" title="Zoom in (Ctrl +)" aria-label="Zoom in">${icon('plus')}</button>
     </div>
+    <button class="ib keys-btn" id="keys" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
     <button class="btn ghost" id="import">${icon('image')}<span>Add picture</span></button>
     <button class="btn primary" id="export">${icon('download')}<span>Export</span></button>
     <input type="file" id="file" accept="image/*,.svg" hidden multiple>
@@ -73,6 +74,8 @@ export async function closeEditor() {
   if (S.playing) stop();
   removeEventListener('keydown', keyHandler);
   removeEventListener('keyup', keyUpHandler);
+  for (const t of ['copy', 'cut']) document.removeEventListener(t, onCopy);
+  document.removeEventListener('paste', onPaste);
   stageWatcher?.disconnect();
   const saving = persist();
   S.doc = null;
@@ -102,18 +105,59 @@ function watchStage(wk) {
 
 const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
 
+const SHORTCUTS = [
+  ['Ctrl Z / Ctrl Shift Z', 'Undo / redo'],
+  ['Ctrl C, Ctrl X, Ctrl V', 'Copy, cut, paste (pictures from other apps paste too)'],
+  ['Ctrl D', 'Make a copy'],
+  ['Alt + drag', 'Drag out a copy'],
+  ['Ctrl + drag', 'Move without snapping'],
+  ['Ctrl A', 'Pick everything'],
+  ['Ctrl G / Ctrl Shift G', 'Group / ungroup'],
+  ['Ctrl J', 'Weld into one shape'],
+  ['Ctrl ] [ / Ctrl Shift ] [', 'Forward, backward / to front, to back'],
+  ['Arrows (Shift for 10)', 'Nudge'],
+  ['Shift H / Shift V', 'Flip sideways / up and down'],
+  ['Delete', 'Delete'],
+  ['Esc', 'Let go of what is picked'],
+  ['Space + drag', 'Move the view'],
+  ['Ctrl + / Ctrl -', 'Zoom in / out'],
+  ['Ctrl 0 / Ctrl 1', 'Fit to screen / actual size'],
+  ['[ / ]', 'Brush size'],
+  ['Enter, comma, full stop', 'Play, frame back, frame forward (animations)'],
+  ['Double-click a slider', 'Reset it'],
+  ['?', 'This list'],
+];
+
+function shortcutsDialog() {
+  const tools = Object.values(TOOLS).map((t) => [t.key, t.label]);
+  return dialog((box, close) => {
+    box.innerHTML = `<h2>Keyboard shortcuts</h2>
+      <div class="keys-list">${[...SHORTCUTS, ...tools].map(([k, what]) => `<kbd>${esc(k)}</kbd><span>${esc(what)}</span>`).join('')}</div>
+      <div class="dlg-actions"><button class="btn" data-no>Done</button></div>`;
+    $('[data-no]', box).onclick = () => close();
+  });
+}
+
+function zoomKey(e) {
+  const z = { '=': 1.25, '+': 1.25, '-': 0.8, _: 0.8 }[e.key];
+  if (z) { zoomAt(S.zoom * z); refresh(); return true; }
+  if (e.key === '0') { fitView(); refresh(); return true; }
+  if (e.key === '1') { zoomAt(1); refresh(); return true; }
+  return false;
+}
+
 function onKey(e) {
   if (typing(e)) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
+  if (ctrl && zoomKey(e)) { e.preventDefault(); return; }
   if (ctrl) {
     const actions = {
       z: () => (e.shiftKey ? redo() : undo()), y: redo, d: duplicateSelection,
-      c: copySelection, v: pasteClipboard, s: persist, j: weldSelection,
+      s: persist, j: weldSelection,
       g: () => (e.shiftKey ? ungroupSelection() : groupSelection()),
       ']': () => reorderSelection('up'), '[': () => reorderSelection('down'),
       '}': () => reorderSelection('front'), '{': () => reorderSelection('back'),
-      x: () => { copySelection(); deleteSelection(); },
       a: () => {
         S.sel = new Set(pickableObjects().map((o) => o.id));
         refresh();
@@ -122,6 +166,7 @@ function onKey(e) {
     if (actions[key]) { e.preventDefault(); actions[key](); }
     return;
   }
+  if (e.key === '?') { shortcutsDialog(); return; }
   if (e.key === ' ') { e.preventDefault(); setSpaceHeld(true); document.body.classList.add('panning'); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
@@ -154,6 +199,32 @@ function onKey(e) {
   if (e.shiftKey && (key === 'h' || key === 'v') && selected().length) { flipSelection(key === 'h' ? 'x' : 'y'); return; }
   const tool = Object.keys(TOOLS).find((t) => TOOLS[t].key.toLowerCase() === key);
   if (tool) setTool(tool);
+}
+
+// Copy, cut and paste go through the computer's clipboard, so a picture copied
+// in another app pastes in. A copy made here leaves a mark, so pasting after it
+// pastes the art, not an older picture.
+const CLIP_MARK = 'blookberry-art';
+function onCopy(e) {
+  if (typing(e) || !S.sel.size) return;
+  copySelection();
+  e.clipboardData?.setData('text/plain', CLIP_MARK);
+  e.preventDefault();
+  if (e.type === 'cut') deleteSelection();
+}
+function onPaste(e) {
+  if (typing(e)) return;
+  const data = e.clipboardData;
+  const mine = data?.getData('text/plain') === CLIP_MARK;
+  const pictures = mine ? [] : [...(data?.files || [])].filter((f) => f.type.startsWith('image/'));
+  e.preventDefault();
+  if (pictures.length) { importFiles(pictures); return; }
+  const text = !mine && data?.getData('text/plain');
+  if (text && /^(https?:|data:image\/)/.test(text.trim()) && /\.(png|jpe?g|gif|webp|svg)(\?|$)|^data:image/i.test(text.trim())) {
+    addImageFromUrl(text.trim()).catch(() => toast('That picture could not be pasted.', 'warn'));
+    return;
+  }
+  pasteClipboard();
 }
 
 function onKeyUp(e) {
@@ -241,6 +312,7 @@ function wireTop(root) {
   $('#zoomout', root).onclick = () => zoomBy(0.8);
   $('#zoomval', root).onclick = () => { fitView(); refresh(); };
   $('#export', root).onclick = exportDialog;
+  $('#keys', root).onclick = shortcutsDialog;
   const file = $('#file', root);
   $('#import', root).onclick = () => file.click();
   file.onchange = () => { importFiles([...file.files]); file.value = ''; };
@@ -330,6 +402,8 @@ export async function openEditor(root, id) {
   keyUpHandler = onKeyUp;
   addEventListener('keydown', keyHandler);
   addEventListener('keyup', keyUpHandler);
+  for (const t of ['copy', 'cut']) document.addEventListener(t, onCopy);
+  document.addEventListener('paste', onPaste);
   watchStage($('#wk', root));
 
   S.catalog = await fetchCatalog();

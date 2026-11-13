@@ -54,11 +54,65 @@ const pickable = (e) => {
 
 /* ---------- Select ---------- */
 
-function startMove(p) {
+function startMove(p, e) {
   drag = {
-    type: 'move', p0: p, moved: false,
+    type: 'move', p0: p, moved: false, copy: !!e?.altKey,
     items: selected().map((o) => { const s = posed(o); return { o, x: s.x, y: s.y }; }),
   };
+}
+
+/* ---------- Snapping ---------- */
+
+const MOVE_SNAP_PX = 6;
+
+// Lines the picked things can snap to: the canvas edges and middle, and the
+// edges and middles of everything else that shows.
+function snapTargets(skip) {
+  const xs = [0, S.doc.width / 2, S.doc.width], ys = [0, S.doc.height / 2, S.doc.height];
+  for (const o of visibleObjects()) {
+    if (skip.has(o.id)) continue;
+    const b = worldBox([o.id]);
+    if (!b) continue;
+    xs.push(b.x, b.x + b.width / 2, b.x + b.width);
+    ys.push(b.y, b.y + b.height / 2, b.y + b.height);
+  }
+  return { xs, ys };
+}
+
+// How far to shift a box so one of its edges or its middle lands on a line.
+function snapAxis(edges, lines, reach) {
+  let best = null;
+  for (const e of edges) for (const l of lines) {
+    const d = l - e;
+    if (Math.abs(d) <= reach && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at: l };
+  }
+  return best;
+}
+
+// The move, nudged to snap. Alt (or Ctrl) moves freely.
+function snapMove(dx, dy, e) {
+  S.guides = [];
+  if (e.altKey && !drag.copy) return { dx, dy };
+  if (e.ctrlKey || e.metaKey || !drag.box) return { dx, dy };
+  drag.targets ||= snapTargets(new Set(drag.items.map((it) => it.o.id)));
+  const b = drag.box, reach = MOVE_SNAP_PX / S.zoom;
+  const x = snapAxis([b.x + dx, b.x + dx + b.width / 2, b.x + dx + b.width], drag.targets.xs, reach);
+  const y = snapAxis([b.y + dy, b.y + dy + b.height / 2, b.y + dy + b.height], drag.targets.ys, reach);
+  if (x) { dx += x.d; S.guides.push({ x: x.at }); }
+  if (y) { dy += y.d; S.guides.push({ y: y.at }); }
+  return { dx, dy };
+}
+
+// Alt+drag: a copy stays where the art was, and the art moves.
+function leaveCopies() {
+  const copies = [];
+  for (const it of drag.items) {
+    const layer = layerOf(it.o.id);
+    const copy = { ...clone(it.o), id: uid('o') };
+    layer.objects.splice(layer.objects.indexOf(it.o), 0, copy);
+    copies.push(copy);
+  }
+  regroup(copies);
 }
 
 /* ---------- Original size ---------- */
@@ -224,7 +278,7 @@ function selectDown(e, p) {
   let hit = pickable(e);
   // Inside the picked things' box: drag them, unless the click is on something
   // else that shows through, like art under the clear part of a picked picture.
-  if (h === 'move' && !adding && (!hit || S.sel.has(hit.id))) { startMove(p); return; }
+  if (h === 'move' && !adding && (!hit || S.sel.has(hit.id))) { startMove(p, e); return; }
   if (hit) {
     const team = groupOf(hit);
     if (adding) {
@@ -236,7 +290,7 @@ function selectDown(e, p) {
       select(team);
     }
     refresh();
-    startMove(p);
+    startMove(p, e);
     return;
   }
   // Empty space moves the view. A click without moving lets go of what's picked.
@@ -1271,8 +1325,13 @@ function move(e) {
     case 'move': {
       const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y;
       if (!drag.moved && Math.hypot(dx, dy) * S.zoom < 3) return;
+      if (!drag.moved) {
+        drag.box = worldBox(drag.items.map((it) => it.o.id));
+        if (drag.copy) leaveCopies();
+      }
       drag.moved = true;
-      for (const it of drag.items) edit(it.o, { x: it.x + dx, y: it.y + dy });
+      const snapped = snapMove(dx, dy, e);
+      for (const it of drag.items) edit(it.o, { x: it.x + snapped.dx, y: it.y + snapped.dy });
       break;
     }
     case 'scale': drag.moved = true; moveScale(p, e); break;
@@ -1300,6 +1359,7 @@ function up(e) {
   document.body.classList.remove('busy');
   if (!drag) return;
   const d = drag;
+  if (S.guides?.length) { S.guides = []; hooks.overlay(); }
   if (d.type === 'line') { lineUp(toDoc(e)); drag = null; return; }
   if (d.type === 'marquee') { finishMarquee(); drag = null; drawOverlay(); return; }
   if (d.type === 'pan') {
