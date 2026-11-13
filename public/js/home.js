@@ -1,11 +1,9 @@
 // The home screen: folders, projects and the new project steps.
 import {
-  listFolders, listProjects, saveFolder, deleteFolder, saveDoc, getDoc, deleteProject,
+  listFolders, listProjects, saveFolder, deleteFolder, saveDoc, getDoc, deleteProject, backupAll, restoreBackup,
 } from './store.js';
 import { newDoc, uid, clamp } from './model.js';
 import { esc } from './render.js';
-import { session, logOut } from './session.js';
-import { syncArt, flushUploads, resetSync } from './sync.js';
 import { TEMPLATES, templatePreview } from './templates.js';
 import {
   drawCollection, editPack, newPackProject, savePack, marketCard, shopPack,
@@ -42,6 +40,7 @@ const TEST_TITLES = { packs: 'Your packs', blooks: 'My Blooks' };
 const TEST_TABS = [['packs', 'Your packs'], ['blooks', 'My Blooks']];
 
 let currentFolder = 'all';
+export const showTestPage = () => { currentFolder = 'packs'; };
 let search = '';
 let sortBy = 'recent';
 const SORTS = { recent: (a, b) => b.updatedAt - a.updatedAt, old: (a, b) => a.updatedAt - b.updatedAt, name: (a, b) => a.name.localeCompare(b.name) };
@@ -83,7 +82,7 @@ export async function renderHome(root, onLeave = leave) {
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
-      <a class="brand" href="#/"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
+      <a class="brand" href="#/welcome" title="Welcome page"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
       <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
       <ul class="folders">
@@ -102,16 +101,16 @@ export async function renderHome(root, onLeave = leave) {
       </ul>
       <button class="btn ghost" id="newfolder">${icon('folderplus')}<span>New folder</span></button>
       <div class="grow"></div>
-      <div class="who">
-        <span class="who-icon">${icon('user')}</span>
-        <span class="who-name"><b>${esc(session.user?.name || 'Guest')}</b></span>
-        <button class="ib" id="logout" title="${session.guest ? 'Back to the welcome screen' : 'Log out'}" aria-label="Log out">${icon('logout')}</button>
+      <a class="side-tuts" href="/tutorials">${icon('play')}<span>Watch tutorials</span></a>
+      <div class="backup">
+        <p>Your art saves in this browser.</p>
+        <div><button class="btn ghost" id="backup" title="Download all your art as one file">${icon('download')}<span>Back up</span></button>
+        <button class="btn ghost" id="restore" title="Bring art back from a backup file">${icon('upload')}<span>Restore</span></button></div>
+        <input type="file" id="restorefile" accept=".json,application/json" hidden>
       </div>
-      <a class="admin-link" href="/tutorials">${icon('play')}<span>Tutorials</span></a>
       <a class="admin-link" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
     </aside>
     <main class="home-main">
-      ${session.guest ? '<p class="guest-note">You are playing as a guest. Your art disappears when you close this page, so export anything you want to keep.</p>' : ''}
       ${head}
       ${inPacks ? testView() : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : search && inView.length ? `<p class="muted">Nothing called "${esc(search)}" here.</p>` : emptyState(group && made))}
     </main>
@@ -138,11 +137,29 @@ export async function renderHome(root, onLeave = leave) {
   $$('[data-tab]', root).forEach((b) => { b.onclick = () => { testTab = b.dataset.tab; redraw(); }; });
   if (inPacks) fillTest($('#market', root), packs, redraw);
   $('#newfolder', root).onclick = () => createFolder();
-  $('#logout', root).onclick = async () => {
-    await flushUploads();
-    resetSync();
-    logOut();
-    leave();
+  $('#backup', root).onclick = async () => {
+    const data = await backupAll();
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: `blook-berry-backup-${new Date().toISOString().slice(0, 10)}.json` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    toast('Backup downloaded. Keep it somewhere safe.', 'ok');
+  };
+  const restoreFile = $('#restorefile', root);
+  $('#restore', root).onclick = () => restoreFile.click();
+  restoreFile.onchange = async () => {
+    const file = restoreFile.files[0];
+    restoreFile.value = '';
+    if (!file) return;
+    try {
+      const added = await restoreBackup(JSON.parse(await file.text()));
+      toast(added ? `Brought back ${added} project${added === 1 ? '' : 's'}.` : 'Everything in that backup is already here.', 'ok');
+      renderHome(root);
+    } catch (error) {
+      toast(error instanceof SyntaxError ? 'That is not a Blook Berry backup file.' : error.message, 'warn');
+    }
   };
   $('.empty-new', root)?.addEventListener('click', () => (group ? newHere() : newProjectWizard(folders)));
 
@@ -176,10 +193,6 @@ export async function renderHome(root, onLeave = leave) {
     };
   });
 
-  // Shows what is here straight away, then brings in anything from other devices.
-  syncArt().then((changed) => {
-    if (changed && root.querySelector('.home')) renderHome(root);
-  });
 }
 
 function testView() {

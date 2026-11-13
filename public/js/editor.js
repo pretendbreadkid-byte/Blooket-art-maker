@@ -18,8 +18,6 @@ import { esc } from './render.js';
 import { exportDialog } from './export.js';
 import { checkOverflow, resetFitPrompt } from './fit.js';
 import { imageToShape } from './trace.js';
-import { session } from './session.js';
-import { syncArt, flushUploads, syncStatus } from './sync.js';
 import { pathD, pathBounds } from './model.js';
 import { loadDocFonts } from './fonts.js';
 import { $, $$, icon, menu, toast, dialog, readDataUrl, pictureSources } from './ui.js';
@@ -79,10 +77,12 @@ export async function closeEditor() {
   stageWatcher?.disconnect();
   const saving = persist();
   S.doc = null;
-  syncStatus.changed = () => {};
   await saving;
-  flushUploads();
 }
+
+// A tool to pick when the next project opens, for the welcome page's shortcuts.
+let nextTool = null;
+export const openWithTool = (tool) => { nextTool = tool; };
 
 // Keeps the art in view when a panel opens or the window resizes. If you have
 // zoomed or panned by hand, the view stays as you left it.
@@ -356,11 +356,7 @@ function wireTop(root) {
 }
 
 export async function openEditor(root, id) {
-  let doc = await getDoc(id);
-  if (!doc && session.user) {
-    await syncArt();
-    doc = await getDoc(id);
-  }
+  const doc = await getDoc(id);
   if (!doc) { location.hash = '#/'; toast('That project could not be found.', 'warn'); return; }
   const meta = await getMeta(id);
   openDoc(doc, meta?.thumb || null);
@@ -383,10 +379,8 @@ export async function openEditor(root, id) {
   hooks.saved = (state) => {
     const el = $('#saved');
     if (!el) return;
-    if (session.guest) el.textContent = 'Guest: not saved';
-    else el.textContent = state === 'saving' ? 'Saving…' : syncStatus.label();
+    el.textContent = state === 'saving' ? 'Saving…' : 'Saved in this browser';
   };
-  syncStatus.changed = () => hooks.saved('saved');
 
   mountStage(root);
   wireTop(root);
@@ -397,6 +391,7 @@ export async function openEditor(root, id) {
   fitView();
   refresh();
   hooks.saved('saved');
+  if (nextTool) { setTool(nextTool); nextTool = null; }
 
   keyHandler = onKey;
   keyUpHandler = onKeyUp;

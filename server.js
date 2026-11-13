@@ -1,12 +1,11 @@
 // Blook Berry server. Serves the app and the shared shapes catalog.
 // No dependencies: run it with `node server.js`.
 import { createServer } from 'node:http';
-import { randomBytes, timingSafeEqual, createHash, createHmac, scrypt as scryptCallback } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -21,24 +20,11 @@ const PORT = Number(process.env.PORT || 5180);
 const HOST = process.env.HOST || '127.0.0.1';
 
 const MAX_BODY = 2 * 1024 * 1024;
-const MAX_ART_BODY = 16 * 1024 * 1024;
-const MAX_PROJECTS = 300;
-const MAX_UPLOAD_BODY = 12 * 1024 * 1024;
-const MAX_UPLOADS = 200;
 const MAX_NODES = 20000;
 const SESSION_MS = 8 * 60 * 60 * 1000;
-const ACCOUNT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const KEEP_AWAKE_MS = 10 * 60 * 1000;
 const TRY_WINDOW_MS = 15 * 60 * 1000;
 const MAX_TRIES = 20;
-
-// Render's free disk is wiped on restart, so accounts can also be kept in a
-// private GitHub repo. Set GITHUB_TOKEN and DATA_REPO (owner/name) to turn it on.
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const DATA_REPO = process.env.DATA_REPO;
-const GITHUB_API = process.env.GITHUB_API || 'https://api.github.com';
-const USERS_IN_GITHUB = !!(GITHUB_TOKEN && DATA_REPO);
-const USERS_FILE = join(DATA, 'users.json');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -72,80 +58,9 @@ function saveShapes() {
   renameSync(tmp, SHAPES_FILE);
 }
 
-/* ---------- Accounts ---------- */
+/* ---------- Admin ---------- */
 
-const scrypt = promisify(scryptCallback);
-let sessionSecret = createHash('sha256').update(`blook-session:${adminPassword}`).digest();
-const contentsUrl = `${GITHUB_API}/repos/${DATA_REPO}/contents`;
-const usersUrl = `${contentsUrl}/users.json`;
-const githubHeaders = {
-  Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'blook-maker',
-};
-
-let users = {};
-let usersSha = null;
-let usersWrite = Promise.resolve();
-
-async function loadUsers() {
-  if (!USERS_IN_GITHUB) {
-    if (existsSync(USERS_FILE)) users = JSON.parse(readFileSync(USERS_FILE, 'utf8'));
-    return;
-  }
-  const res = await fetch(usersUrl, { headers: githubHeaders });
-  if (res.status === 404) return;
-  if (!res.ok) throw new Error(`Could not read accounts from GitHub (${res.status}).`);
-  const file = await res.json();
-  usersSha = file.sha;
-  users = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
-}
-
-async function writeUsers() {
-  const json = JSON.stringify(users);
-  if (!USERS_IN_GITHUB) {
-    const tmp = USERS_FILE + '.tmp';
-    writeFileSync(tmp, json);
-    renameSync(tmp, USERS_FILE);
-    return;
-  }
-  const res = await fetch(usersUrl, {
-    method: 'PUT',
-    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message: 'Update accounts',
-      content: Buffer.from(json).toString('base64'),
-      ...(usersSha ? { sha: usersSha } : {}),
-    }),
-  });
-  if (!res.ok) throw new Error(`Could not save accounts to GitHub (${res.status}).`);
-  usersSha = (await res.json()).content.sha;
-}
-
-// One save at a time, and a failed save does not block the next one.
-function saveUsers() {
-  const next = usersWrite.catch(() => {}).then(writeUsers);
-  usersWrite = next;
-  return next;
-}
-
-const hashPassword = async (password, salt) => (await scrypt(password, salt, 32)).toString('hex');
-const publicUser = (u) => ({ name: u.name });
-const sign = (payload) => createHmac('sha256', sessionSecret).update(payload).digest('base64url');
-
-function issueToken(key) {
-  const payload = Buffer.from(JSON.stringify({ u: key, e: Date.now() + ACCOUNT_SESSION_MS })).toString('base64url');
-  return `${payload}.${sign(payload)}`;
-}
-
-function currentUser(req) {
-  const [payload, signature] = (req.headers.authorization || '').replace(/^Bearer /, '').split('.');
-  if (!payload || !signature) return null;
-  const expected = Buffer.from(sign(payload));
-  const given = Buffer.from(signature);
-  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
-  const { u, e } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-  return e > Date.now() ? users[u] || null : null;
-}
-
+// Wrong admin passwords are limited per address.
 function triesFor(req) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
   const now = Date.now();
@@ -158,231 +73,6 @@ function triesFor(req) {
 }
 
 const TOO_MANY = { error: 'Too many tries. Wait a few minutes and try again.' };
-
-async function register(req, res) {
-  const record = triesFor(req);
-  if (record.count >= MAX_TRIES) return send(res, 429, TOO_MANY);
-  record.count += 1;
-  const { username, password } = await readJson(req);
-  if (typeof username !== 'string' || !/^[\w-]{3,20}$/.test(username)) {
-    return send(res, 400, { error: 'Usernames need 3 to 20 letters or numbers.' });
-  }
-  if (typeof password !== 'string' || password.length < 6 || password.length > 100) {
-    return send(res, 400, { error: 'Passwords need at least 6 characters.' });
-  }
-  const key = username.toLowerCase();
-  const salt = randomBytes(16).toString('hex');
-  const hash = await hashPassword(password, salt);
-  if (users[key]) return send(res, 409, { error: 'That username is taken.' });
-  users[key] = { name: username, salt, hash, createdAt: Date.now() };
-  await saveUsers();
-  return send(res, 201, { token: issueToken(key), user: publicUser(users[key]) });
-}
-
-async function login(req, res) {
-  const record = triesFor(req);
-  if (record.count >= MAX_TRIES) return send(res, 429, TOO_MANY);
-  const { username, password } = await readJson(req);
-  const key = String(username || '').toLowerCase();
-  const user = users[key];
-  const attempt = user && typeof password === 'string' ? await hashPassword(password, user.salt) : '';
-  if (!user || attempt.length !== user.hash.length || !timingSafeEqual(Buffer.from(attempt), Buffer.from(user.hash))) {
-    record.count += 1;
-    return send(res, 401, { error: 'That username or password is not right.' });
-  }
-  return send(res, 200, { token: issueToken(key), user: publicUser(user) });
-}
-
-/* ---------- Art saved to accounts ---------- */
-
-// Each account has an index of its projects, and one file per project. They
-// live beside accounts: on this disk, or in the private GitHub repo.
-const artIndexes = new Map();
-const uploadIndexes = new Map();
-const artQueues = new Map();
-const artShas = new Map();
-
-async function readArtFile(path) {
-  if (!USERS_IN_GITHUB) {
-    const file = join(DATA, path);
-    return existsSync(file) ? readFile(file, 'utf8') : null;
-  }
-  const res = await fetch(`${contentsUrl}/${path}`, { headers: { ...githubHeaders, Accept: 'application/vnd.github.raw+json' } });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Could not read art from GitHub (${res.status}).`);
-  return res.text();
-}
-
-async function artSha(path) {
-  if (artShas.has(path)) return artShas.get(path);
-  const res = await fetch(`${contentsUrl}/${path}`, { headers: githubHeaders });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Could not read art from GitHub (${res.status}).`);
-  return (await res.json()).sha;
-}
-
-async function writeArtFile(path, text, retry = true) {
-  if (!USERS_IN_GITHUB) {
-    const file = join(DATA, path);
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(`${file}.tmp`, text);
-    renameSync(`${file}.tmp`, file);
-    return;
-  }
-  const sha = await artSha(path);
-  const res = await fetch(`${contentsUrl}/${path}`, {
-    method: 'PUT',
-    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: 'Save art', content: Buffer.from(text).toString('base64'), ...(sha ? { sha } : {}) }),
-  });
-  if ((res.status === 409 || res.status === 422) && retry) {
-    artShas.delete(path);
-    return writeArtFile(path, text, false);
-  }
-  if (!res.ok) throw new Error(`Could not save art to GitHub (${res.status}).`);
-  artShas.set(path, (await res.json()).content.sha);
-}
-
-async function removeArtFile(path) {
-  if (!USERS_IN_GITHUB) { await rm(join(DATA, path), { force: true }); return; }
-  const sha = await artSha(path);
-  if (!sha) return;
-  const res = await fetch(`${contentsUrl}/${path}`, {
-    method: 'DELETE',
-    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: 'Delete art', sha }),
-  });
-  if (!res.ok && res.status !== 404) throw new Error(`Could not delete art from GitHub (${res.status}).`);
-  artShas.delete(path);
-}
-
-async function artIndex(key) {
-  if (!artIndexes.has(key)) {
-    const text = await readArtFile(`art/${key}/index.json`);
-    artIndexes.set(key, text ? JSON.parse(text) : { projects: {}, deleted: {}, folders: [], foldersAt: 0 });
-  }
-  return artIndexes.get(key);
-}
-
-// One change at a time for each account, so two saves never trip over each other.
-function inArtQueue(key, job) {
-  const next = (artQueues.get(key) || Promise.resolve()).catch(() => {}).then(job);
-  artQueues.set(key, next);
-  return next;
-}
-
-async function saveProject(res, key, id, { doc, thumb }) {
-  if (doc?.id !== id || !Array.isArray(doc.layers) || !Number.isFinite(doc.updatedAt)) {
-    return send(res, 400, { error: 'That project is not valid.' });
-  }
-  return inArtQueue(key, async () => {
-    const index = await artIndex(key);
-    if (index.deleted[id] >= doc.updatedAt) return send(res, 410, { error: 'That project was deleted.' });
-    if (index.projects[id] > doc.updatedAt) return send(res, 409, { error: 'A newer copy is already saved.' });
-    if (index.projects[id] === doc.updatedAt) return send(res, 200, { ok: true });
-    if (!index.projects[id] && Object.keys(index.projects).length >= MAX_PROJECTS) {
-      return send(res, 413, { error: `An account can keep up to ${MAX_PROJECTS} projects.` });
-    }
-    await writeArtFile(`art/${key}/${id}.json`, JSON.stringify({ doc, thumb: typeof thumb === 'string' ? thumb : null }));
-    index.projects[id] = doc.updatedAt;
-    delete index.deleted[id];
-    await writeArtFile(`art/${key}/index.json`, JSON.stringify(index));
-    return send(res, 200, { ok: true });
-  });
-}
-
-async function art(req, res, path) {
-  const user = currentUser(req);
-  if (!user) return send(res, 401, { error: 'Please log in.' });
-  const key = user.name.toLowerCase();
-
-  if (path === '/api/art' && req.method === 'GET') return send(res, 200, await artIndex(key));
-  if (path === '/api/art/folders' && req.method === 'PUT') {
-    const { folders, at } = await readJson(req);
-    if (!Array.isArray(folders) || !Number.isFinite(at)) return send(res, 400, { error: 'Bad request.' });
-    const clean = folders.map((f) => ({ id: String(f.id).slice(0, 40), name: cleanText(f.name, 80, 'Folder') }));
-    return inArtQueue(key, async () => {
-      const index = await artIndex(key);
-      if (at > index.foldersAt) {
-        Object.assign(index, { folders: clean, foldersAt: at });
-        await writeArtFile(`art/${key}/index.json`, JSON.stringify(index));
-      }
-      return send(res, 200, { ok: true });
-    });
-  }
-
-  const id = path.match(/^\/api\/art\/([\w-]{1,60})$/)?.[1];
-  if (!id) return send(res, 404, { error: 'Not found.' });
-  if (req.method === 'GET') {
-    const text = await inArtQueue(key, () => readArtFile(`art/${key}/${id}.json`));
-    return text ? send(res, 200, JSON.parse(text)) : send(res, 404, { error: 'That project could not be found.' });
-  }
-  if (req.method === 'PUT') return saveProject(res, key, id, await readJson(req, MAX_ART_BODY));
-  if (req.method === 'DELETE') {
-    return inArtQueue(key, async () => {
-      const index = await artIndex(key);
-      await removeArtFile(`art/${key}/${id}.json`);
-      delete index.projects[id];
-      index.deleted[id] = Date.now();
-      await writeArtFile(`art/${key}/index.json`, JSON.stringify(index));
-      return send(res, 200, { ok: true });
-    });
-  }
-  return send(res, 404, { error: 'Not found.' });
-}
-
-/* ---------- Uploaded assets ---------- */
-
-const PICTURE = /^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
-
-async function uploadIndex(key) {
-  if (!uploadIndexes.has(key)) {
-    const text = await readArtFile(`art/${key}/uploads/index.json`);
-    uploadIndexes.set(key, text ? JSON.parse(text) : []);
-  }
-  return uploadIndexes.get(key);
-}
-
-async function uploads(req, res, path) {
-  const user = currentUser(req);
-  if (!user) return send(res, 401, { error: 'Please log in.' });
-  const key = user.name.toLowerCase();
-
-  if (path === '/api/uploads' && req.method === 'GET') {
-    return send(res, 200, { uploads: await inArtQueue(key, () => uploadIndex(key)) });
-  }
-  const id = path.match(/^\/api\/uploads\/(up-[\w-]{1,40})$/)?.[1];
-  if (!id) return send(res, 404, { error: 'Not found.' });
-  const file = `art/${key}/uploads/${id}.json`;
-
-  if (req.method === 'GET') {
-    const text = await inArtQueue(key, () => readArtFile(file));
-    return text ? send(res, 200, JSON.parse(text)) : send(res, 404, { error: 'That picture could not be found.' });
-  }
-  if (req.method === 'PUT') {
-    const { name, href } = await readJson(req, MAX_UPLOAD_BODY);
-    if (typeof href !== 'string' || !PICTURE.test(href)) return send(res, 400, { error: 'That is not a picture.' });
-    return inArtQueue(key, async () => {
-      const index = await uploadIndex(key);
-      if (index.some((item) => item.id === id)) return send(res, 200, { ok: true });
-      if (index.length >= MAX_UPLOADS) return send(res, 413, { error: `An account can keep up to ${MAX_UPLOADS} pictures.` });
-      await writeArtFile(file, JSON.stringify({ href }));
-      index.unshift({ id, name: cleanText(name, 80, 'Picture') });
-      await writeArtFile(`art/${key}/uploads/index.json`, JSON.stringify(index));
-      return send(res, 200, { ok: true });
-    });
-  }
-  if (req.method === 'DELETE') {
-    return inArtQueue(key, async () => {
-      const index = await uploadIndex(key);
-      await removeArtFile(file);
-      uploadIndexes.set(key, index.filter((item) => item.id !== id));
-      await writeArtFile(`art/${key}/uploads/index.json`, JSON.stringify(uploadIndexes.get(key)));
-      return send(res, 200, { ok: true });
-    });
-  }
-  return send(res, 404, { error: 'Not found.' });
-}
 
 const digest = (s) => createHash('sha256').update(String(s)).digest();
 const passwordMatches = (attempt) => timingSafeEqual(digest(cleanPassword(attempt)), digest(adminPassword));
@@ -465,19 +155,10 @@ function cleanShape(input) {
 
 async function api(req, res, path) {
   if (req.method === 'GET' && path === '/api/shapes') {
-    return send(res, 200, { shapes, temporary: TEMPORARY_DISK, accountsTemporary: TEMPORARY_DISK && !USERS_IN_GITHUB });
+    return send(res, 200, { shapes, temporary: TEMPORARY_DISK });
   }
   if (req.method === 'GET' && path === '/api/blooks') return send(res, 200, { blooks: listBlooks() });
-  if (req.method === 'POST' && path === '/api/auth/register') return register(req, res);
-  if (req.method === 'POST' && path === '/api/auth/login') return login(req, res);
-  if (path === '/api/art' || path.startsWith('/api/art/')) return art(req, res, path);
-  if (path === '/api/uploads' || path.startsWith('/api/uploads/')) return uploads(req, res, path);
   if (path === '/api/tutorials' && req.method === 'GET') return send(res, 200, { tutorials: tutorialSummaries() });
-  if (path === '/api/me' && req.method === 'GET') {
-    const user = currentUser(req);
-    if (!user) return send(res, 401, { error: 'Please log in.' });
-    return send(res, 200, { user: publicUser(user) });
-  }
 
   if (req.method === 'POST' && path === '/api/admin/login') {
     const record = triesFor(req);
@@ -629,7 +310,7 @@ function tutorialShell({ title, description, url, image, body }) {
   <meta property="og:url" content="${SITE_URL}${url}">
   <meta property="og:image" content="${image}">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="theme-color" content="#a83f78">
+  <meta name="theme-color" content="#b8344f">
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800&display=swap">
@@ -714,29 +395,7 @@ server.on('error', (err) => {
   throw err;
 });
 
-// Render wipes the disk, so without ADMIN_PASSWORD the admin password changes on
-// every restart. Logins are signed with a secret kept beside the accounts instead.
-async function loadSessionSecret() {
-  if (cleanPassword(process.env.ADMIN_PASSWORD)) return;
-  try {
-    let secret = await readArtFile('session-secret.txt');
-    if (!secret) {
-      secret = randomBytes(32).toString('hex');
-      await writeArtFile('session-secret.txt', secret);
-    }
-    sessionSecret = createHash('sha256').update(`blook-session:${secret}`).digest();
-  } catch (error) {
-    // Better a site that signs people out on restart than one that won't start.
-    console.log(`Warning: logins will not last through a restart. ${error.message}`);
-  }
-}
-
 console.log('Starting Blook Berry...');
-await loadUsers();
-await loadSessionSecret();
-if (TEMPORARY_DISK && !USERS_IN_GITHUB) {
-  console.log('Warning: accounts will be lost on restart. Set GITHUB_TOKEN and DATA_REPO to keep them.');
-}
 // Render's free plan sleeps after 15 quiet minutes and shows its own loading page
 // to the next visitor. KEEP_AWAKE=true visits the site from here so it stays up.
 if (process.env.KEEP_AWAKE === 'true' && process.env.RENDER_EXTERNAL_URL) {

@@ -1,10 +1,10 @@
 // Picks the screen to show from the address bar.
 import { renderHome } from './home.js';
 import { renderAdmin } from './admin.js';
-import { renderLogin, renderLanding } from './login.js';
+import { renderWelcome } from './welcome.js';
 import { openEditor, closeEditor } from './editor.js';
-import { session, restoreSession } from './session.js';
-import { resetSync } from './sync.js';
+import { hasStarted } from './session.js';
+import { useLocal, listProjects } from './store.js';
 import { S } from './state.js';
 import { embedFont } from './render.js';
 import { $ } from './ui.js';
@@ -17,11 +17,8 @@ async function route() {
   document.querySelector('.popover')?.remove();
   const hash = location.hash.replace(/^#/, '') || '/';
   if (hash === '/admin') { await renderAdmin(root); return; }
-  if (!session.user && !session.guest) {
-    if (hash === '/login' || hash === '/signup') renderLogin(root, route, hash === '/signup' ? 'signup' : 'login');
-    else await renderLanding(root, route);
-    return;
-  }
+  // First visit: the welcome page. After that, straight to your art.
+  if (hash === '/welcome' || (hash === '/' && !hasStarted() && !(await listProjects()).length)) { await renderWelcome(root); return; }
   const project = hash.match(/^\/p\/([\w-]+)$/);
   if (project) await openEditor(root, project[1]);
   else await renderHome(root, route);
@@ -38,5 +35,5 @@ async function loadFonts() {
 
 addEventListener('hashchange', route);
 await loadFonts();
-await restoreSession(() => { resetSync(); route(); });
+await useLocal();
 route();

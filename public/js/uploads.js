@@ -1,7 +1,6 @@
-// Uploaded assets: pictures kept on the account, ready to use in any project.
-// Guests keep theirs until the page closes, the same as the rest of their art.
+// Uploaded assets: pictures kept in this browser, ready to use in any project.
 import { S } from './state.js';
-import { session, call } from './session.js';
+import { listUploads, saveUpload, deleteUpload } from './store.js';
 import { uid } from './model.js';
 import { esc } from './render.js';
 import { addImageFromUrl } from './tools.js';
@@ -10,23 +9,16 @@ import { $, confirmBox, html, icon, readDataUrl, toast } from './ui.js';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
-let listFor = null;
+let loaded = false;
 let list = [];
-const pictures = new Map();
 
 async function loadList() {
-  const owner = session.user?.name ?? '';
-  if (listFor === owner) return;
-  listFor = owner;
-  list = [];
-  pictures.clear();
-  if (session.user) list = (await call('GET', '/api/uploads')).uploads;
+  if (loaded) return;
+  list = await listUploads();
+  loaded = true;
 }
 
-async function picture(item) {
-  if (!pictures.has(item.id)) pictures.set(item.id, (await call('GET', `/api/uploads/${item.id}`)).href);
-  return pictures.get(item.id);
-}
+const picture = async (item) => item.href;
 
 async function place(item, x, y) {
   try {
@@ -40,9 +32,8 @@ async function remove(item) {
   const sure = await confirmBox({ title: `Delete ${item.name}?`, message: 'It leaves your uploaded assets for good. Art already using it stays as it is.', action: 'Delete', danger: true });
   if (!sure) return;
   try {
-    if (session.user) await call('DELETE', `/api/uploads/${item.id}`);
+    await deleteUpload(item.id);
     list = list.filter((other) => other !== item);
-    pictures.delete(item.id);
     renderList();
   } catch (error) {
     toast(error.message, 'warn');
@@ -61,9 +52,8 @@ async function upload(files) {
     }
     try {
       const href = await readDataUrl(file);
-      const item = { id: uid('up-'), name: file.name.replace(/\.[^.]+$/, '') };
-      if (session.user) await call('PUT', `/api/uploads/${item.id}`, { name: item.name, href });
-      pictures.set(item.id, href);
+      const item = { id: uid('up-'), name: file.name.replace(/\.[^.]+$/, ''), href, at: Date.now() };
+      await saveUpload(item);
       list = [item, ...list];
       renderList();
     } catch (error) {
@@ -112,14 +102,14 @@ export function drawUploads(box, onClose) {
       <button class="ib blook-close" title="Close" aria-label="Close uploaded assets">${icon('x')}</button></div>
     <button class="btn primary upload-add">${icon('upload')}<span>Upload pictures</span></button>
     <input class="upload-file" type="file" accept="image/*,.svg" multiple hidden>
-    <p class="muted blook-tip">${session.user ? 'Saved to your account. Drag one onto the canvas.' : 'Log in to keep these. As a guest, they go when the page closes.'}</p>
+    <p class="muted blook-tip">Saved in this browser. Drag one onto the canvas.</p>
     <div class="cat-grid"><p class="muted">Loading...</p></div>`;
   $('.blook-close', box).onclick = onClose;
   const file = $('.upload-file', box);
   $('.upload-add', box).onclick = () => file.click();
   file.onchange = () => { upload([...file.files]); file.value = ''; };
   loadList().then(renderList).catch(() => {
-    listFor = null;
+    loaded = false;
     const grid = $('#blooks .cat-grid');
     if (grid) grid.innerHTML = '<p class="muted">Your uploads could not be loaded. Close this and try again.</p>';
   });

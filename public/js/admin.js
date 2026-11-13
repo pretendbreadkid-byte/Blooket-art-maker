@@ -84,7 +84,7 @@ async function uploadFiles(root, files) {
 }
 
 async function renderManager(root) {
-  const { shapes = [], temporary = false, accountsTemporary = false } = await call('GET', '/api/shapes');
+  const { shapes = [], temporary = false } = await call('GET', '/api/shapes');
   const lastCategory = shapes[shapes.length - 1]?.category || 'Uploaded';
   root.innerHTML = `<div class="admin">
     <header class="admin-top">
@@ -94,7 +94,6 @@ async function renderManager(root) {
       <button class="btn ghost" id="signout">Sign out</button>
     </header>
     ${temporary ? '<p class="admin-note">Shapes uploaded on this live site disappear when it restarts. To keep a shape, upload it in your VS Code preview, then push to GitHub.</p>' : ''}
-    ${accountsTemporary ? '<p class="admin-note">Accounts are not being kept yet, so everyone loses their login when this site restarts. Set GITHUB_TOKEN and DATA_REPO to fix that.</p>' : ''}
     <section class="upload">
       <label class="drop" id="drop">
         ${icon('upload')}

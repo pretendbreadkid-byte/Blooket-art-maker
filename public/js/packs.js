@@ -9,7 +9,6 @@ import {
   RARITIES, balanceOdds, chanceOf, gemOf, newPack, pickBlook, pullsOf, rarityOf, recordPull, whyNotOpen,
 } from './pack-rules.js';
 import { confettiLayer } from './confetti.js';
-import { call, session } from './session.js';
 import { $, $$, confirmBox, dialog, html, icon, toast } from './ui.js';
 
 const BLOOK_SIZE = 512;
