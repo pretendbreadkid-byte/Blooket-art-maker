@@ -166,7 +166,7 @@ function onKey(e) {
     if (actions[key]) { e.preventDefault(); actions[key](); }
     return;
   }
-  if (e.key === '?') { shortcutsDialog(); return; }
+  if (e.key === '?') { if (!document.querySelector('.keys-list')) shortcutsDialog(); return; }
   if (e.key === ' ') { e.preventDefault(); setSpaceHeld(true); document.body.classList.add('panning'); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
