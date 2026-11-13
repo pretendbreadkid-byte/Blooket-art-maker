@@ -3,7 +3,7 @@ import {
   S, hooks, liveRefresh, commit, selected, posed, edit, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
 import { clone, pathBounds, localToWorld } from './model.js';
-import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup } from './textures.js';
+import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup, texturesOf, bgTexturesOf } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
 import { esc, newDropShadow, newAutoShadow, newUnderbelly, WARPS } from './render.js';
 import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
@@ -257,7 +257,7 @@ function documentPanel(box) {
     },
     onDone: commit,
   }));
-  box.append(textureControls(() => d.bgTexture, (tex) => { d.bgTexture = tex; hooks.stage(); }, 'Background texture', d.bgGradient?.from || d.background));
+  box.append(textureList(() => bgTexturesOf(d), (list) => { d.bgTextures = list; delete d.bgTexture; hooks.stage(); }, 'Background texture', d.bgGradient?.from || d.background));
   box.append(slider({
     label: 'Round canvas corners', value: Math.round(d.cornerRadius || 0), min: 0, max: Math.floor(Math.min(d.width, d.height) / 2), unit: 'px',
     onInput: (v) => { d.cornerRadius = v; refreshFrameCorners(); },
@@ -504,8 +504,8 @@ function selectedPanel() {
 
   if (paintable.length) {
     const look = posed(paintable[0]);
-    box.append(textureControls(() => posed(paintable[0]).texture, (tex) => {
-      paintable.forEach((o) => { o.texture = tex ? clone(tex) : null; });
+    box.append(textureList(() => texturesOf(posed(paintable[0])), (list) => {
+      paintable.forEach((o) => { o.textures = clone(list); delete o.texture; });
       liveRefresh();
     }, paintable.length > 1 ? 'Texture for all of these' : 'Texture', look.fill !== 'none' ? (look.gradient?.from || look.fill) : look.stroke));
   }
@@ -549,7 +549,7 @@ function selectedPanel() {
 const TEXTURE_PICTURE_SIZE = 256;
 const textureThumb = (kind) => (kind === 'none'
   ? '<svg viewBox="0 0 30 30"><path d="M6 24L24 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>'
-  : `<svg viewBox="0 0 30 30"><defs>${patternMarkup({ ...newTexture(kind), color: '#43204f', size: 10, opacity: 1 }, `thumb-${kind}`, null, 0)}</defs>${kind === 'picture'
+  : `<svg viewBox="0 0 30 30"><defs>${patternMarkup({ ...newTexture(kind), color: '#43204f', size: kind === 'blooks' ? 30 : 10, opacity: 1 }, `thumb-${kind}`, null, 0)}</defs>${kind === 'picture'
     ? '<path d="M5 22l6-7 5 5 3-3 6 5M20 10a2 2 0 1 0 .1 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
     : `<rect width="30" height="30" fill="url(#thumb-${kind})"/>`}</svg>`);
 
@@ -572,20 +572,24 @@ function contrastFor(color) {
 }
 
 // current() reads the texture now. apply(texture or null) sets it. under is the colour beneath.
-function textureControls(current, apply, label, under) {
+function textureControls(current, apply, label, under, relist = null, remove = '') {
   const box = html('<div class="texture"></div>');
   const set = (patch, done) => {
     const tex = current();
     apply(patch === null ? null : { ...(tex || { ...newTexture(), color: contrastFor(under) }), ...patch });
-    if (done) { commit(); draw(); }
+    if (!done) return;
+    commit();
+    // Adding or taking away a texture changes the list, not just this one.
+    if (relist && (patch === null || !tex)) relist(); else draw();
   };
   const draw = () => {
     const tex = current();
     const kind = tex?.kind || 'none';
-    box.innerHTML = `<span class="sub">${esc(label)}</span>
+    box.innerHTML = `<span class="sub tex-head"><span>${esc(label)}</span>${remove && tex ? `<button class="ib tex-x" title="${esc(remove)}" aria-label="${esc(remove)}">${icon('x')}</button>` : ''}</span>
       <div class="tex-pick">${['none', ...Object.keys(TEXTURES)].map((k) => `<button class="tex-btn ${k === kind ? 'on' : ''}" data-k="${k}" title="${k === 'none' ? 'No texture' : TEXTURES[k].name}" aria-label="${k === 'none' ? 'No texture' : TEXTURES[k].name}">${textureThumb(k)}</button>`).join('')}</div>
       <input type="file" accept="image/*,.svg" hidden>`;
     const file = $('input[type=file]', box);
+    $('.tex-x', box)?.addEventListener('click', () => set(null, true));
     $$('.tex-btn', box).forEach((b) => {
       b.onclick = () => {
         if (b.dataset.k === 'none') set(null, true);
@@ -613,6 +617,36 @@ function textureControls(current, apply, label, under) {
       where.onchange = () => set({ move: where.value }, true);
       speed.onchange = () => set({ speed: +speed.value }, true);
       box.append(moves);
+    }
+  };
+  draw();
+  return box;
+}
+
+// Any number of textures, drawn over each other in order. get/put read and
+// write the list; under is the colour beneath, for a new texture's colour.
+function textureList(get, put, label, under) {
+  const box = html('<div class="texture-list"></div>');
+  let adding = false;
+  const draw = () => {
+    box.innerHTML = '';
+    const list = get();
+    const name = (i) => (list.length + (adding ? 1 : 0) > 1 ? `${label} ${i + 1}` : label);
+    list.forEach((_, i) => {
+      box.append(textureControls(() => get()[i], (next) => {
+        const now = [...get()];
+        if (next) now[i] = next; else now.splice(i, 1);
+        put(now);
+      }, name(i), under, draw, 'Remove this texture'));
+    });
+    if (!list.length || adding) {
+      box.append(textureControls(() => null, (next) => {
+        if (!next) { adding = false; return; }
+        adding = false;
+        put([...get(), next]);
+      }, name(list.length), under, draw));
+    } else {
+      box.append(button('Add another texture', 'plus', () => { adding = true; draw(); }, 'wide'));
     }
   };
   draw();
@@ -771,10 +805,18 @@ function toolbarState() {
   $('#uploadbtn').classList.toggle('on', S.blooksOpen && S.assetView === 'uploads');
 }
 
+let panelFor = null;
+
 export function drawPanels() {
   optionBar();
+  const inspector = $('#inspector'), layersBox = $('#layers');
+  const same = panelFor === [...S.sel].join();
+  const keep = [inspector?.scrollTop || 0, layersBox?.scrollTop || 0];
   selectedPanel();
+  panelFor = [...S.sel].join();
+  if (same && inspector) inspector.scrollTop = keep[0];
   drawLayers();
+  if (layersBox) layersBox.scrollTop = keep[1];
   catalogPanel();
   drawBlooks();
   toolbarState();

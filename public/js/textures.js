@@ -3,6 +3,7 @@
 // can slide, a whole number of tiles per loop so the loop never jumps.
 import { round } from './model.js';
 import { esc } from './render.js';
+import { BLOOKS_TILE } from './texture-art.js';
 
 const star = (t) => {
   const c = t / 2, a = t * 0.32, q = t * 0.04;
@@ -56,6 +57,16 @@ export const TEXTURES = {
       return `<path transform="scale(${round(k, 4)})" d="M12 19.5C6 15 4 12.3 4 9.6 4 7.5 5.7 6 7.700 6c1.700 0 3.200 1 4.300 2.600C13.100 7 14.600 6 16.300 6 18.300 6 20 7.500 20 9.600c0 2.700-2 5.400-8 9.900z" fill="${c}"/>`;
     },
   },
+  // White Blook shapes like the pattern behind Blooket's screens. The picture is a
+  // mask, so the texture colour tints it.
+  blooks: {
+    name: 'Blooks',
+    ratio: BLOOKS_TILE.height / BLOOKS_TILE.width,
+    look: { size: 200, angle: 0, opacity: 0.25 },
+    tile: (t, c, tex, id, th) => `<mask id="${id}-m" maskUnits="userSpaceOnUse" x="0" y="0" width="${t}" height="${th}">`
+      + `<image href="data:image/webp;base64,${BLOOKS_TILE.data}" width="${t}" height="${th}" preserveAspectRatio="none"/></mask>`
+      + `<rect width="${t}" height="${th}" fill="${c}" mask="url(#${id}-m)"/>`,
+  },
   picture: { name: 'Picture', tile: (t, c, tex) => (tex.href ? `<image href="${esc(tex.href)}" width="${t}" height="${t}" preserveAspectRatio="xMidYMid slice"/>` : '') },
 };
 
@@ -74,6 +85,10 @@ export const MOVES = {
   diagonal: { name: 'Diagonal', dx: 1, dy: 1 },
 };
 
+// A thing's textures, top last. Older art kept just one, as `texture`.
+export const texturesOf = (o) => (Array.isArray(o?.textures) ? o.textures : o?.texture ? [o.texture] : []);
+export const bgTexturesOf = (doc) => (Array.isArray(doc?.bgTextures) ? doc.bgTextures : doc?.bgTexture ? [doc.bgTexture] : []);
+
 export const newTexture = (kind = 'dots', animated = false) => ({
   kind, color: '#ffffff', size: 40, angle: 0, opacity: 0.5, move: 'none', speed: 1, ...kindLook(kind, animated),
 });
@@ -86,7 +101,7 @@ export function textureOffset(tex, frame, doc) {
   if (!moving(tex, doc)) return [0, 0];
   const move = MOVES[tex.move];
   const k = ((frame % doc.frames) / doc.frames) * (tex.speed || 1) * tileOf(tex);
-  return [move.dx * k, move.dy * k];
+  return [move.dx * k, move.dy * k * (TEXTURES[tex.kind]?.ratio || 1)];
 }
 
 // o: where the textured thing sits, so the pattern can undo that and stay put
@@ -95,13 +110,14 @@ export function patternMarkup(tex, id, o, frame, opt = {}) {
   const kind = TEXTURES[tex.kind];
   if (!kind) return '';
   const t = tileOf(tex);
+  const th = round(t * (kind.ratio || 1), 2);
   const color = esc(tex.color || '#ffffff');
   const undo = o ? `scale(${round(1 / (o.scaleX || 1), 6)} ${round(1 / (o.scaleY || 1), 6)}) rotate(${round(-o.rotation)}) translate(${round(-o.x)} ${round(-o.y)}) ` : '';
   const live = opt.animate && moving(tex, opt.doc);
   const [ox, oy] = live ? [0, 0] : textureOffset(tex, frame, opt.doc);
   const move = MOVES[tex.move];
   const slide = live
-    ? `<animateTransform attributeName="patternTransform" type="translate" additive="sum" from="0 0" to="${round(move.dx * (tex.speed || 1) * t)} ${round(move.dy * (tex.speed || 1) * t)}" dur="${round(opt.doc.frames / opt.doc.fps, 3)}s" repeatCount="indefinite"/>`
+    ? `<animateTransform attributeName="patternTransform" type="translate" additive="sum" from="0 0" to="${round(move.dx * (tex.speed || 1) * t)} ${round(move.dy * (tex.speed || 1) * th)}" dur="${round(opt.doc.frames / opt.doc.fps, 3)}s" repeatCount="indefinite"/>`
     : '';
-  return `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${t}" height="${t}" patternTransform="${undo}rotate(${round(tex.angle || 0)}) translate(${round(ox)} ${round(oy)})">${slide}<g opacity="${round(tex.opacity ?? 0.5, 3)}">${kind.tile(t, color, tex)}</g></pattern>`;
+  return `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${t}" height="${th}" patternTransform="${undo}rotate(${round(tex.angle || 0)}) translate(${round(ox)} ${round(oy)})">${slide}<g opacity="${round(tex.opacity ?? 0.5, 3)}">${kind.tile(t, color, tex, id, th)}</g></pattern>`;
 }

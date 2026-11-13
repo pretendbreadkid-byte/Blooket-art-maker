@@ -37,7 +37,7 @@ Then open <http://localhost:5180>.
 | Eraser | E | Rubs out art. |
 | Assets | | Search the Blook art and drag one onto the canvas. |
 | Uploads | | Upload your own pictures. They stay on your account, ready for any project. |
-| Textures | | Dots, stripes, checks, grid, waves, sparkles, shine, bricks, planks, scales, zigzag, diamonds, hearts or your own picture, on some pieces, a whole Blook or the background. In an animation they can slide, and the shine sweeps across by itself. |
+| Textures | | Dots, stripes, checks, grid, waves, sparkles, shine, bricks, planks, scales, zigzag, diamonds, hearts, Blooks or your own picture, on some pieces, a whole Blook or the background. Add as many as you like, layered in order, each with its own settings. In an animation they can slide, and the shine sweeps across by itself. |
 | Swap colours | | Change one colour everywhere in the picked art, including SVG and other pictures. |
 | Blur | | Soften any picked art, from 0 to 60 px. In an animation it can blur in and out. |
 | Shadow | | A solid, see-through drop shadow under picked art, with darkness, distance and direction. Softness blurs it if you want. A whole Blook casts one shadow together. |

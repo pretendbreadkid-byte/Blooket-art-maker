@@ -46,7 +46,7 @@ function slots(o, visit) {
     if (g?.raw) g.raw.stops.forEach((stop) => visit(stop[1], (v) => { stop[1] = v; }));
     else if (g) { visit(g.from, (v) => { g.from = v; }); visit(g.to, (v) => { g.to = v; }); }
   }
-  if (o.texture) visit(o.texture.color, (v) => { o.texture.color = v; });
+  for (const tex of [...(o.textures || []), ...(o.texture ? [o.texture] : [])]) visit(tex.color, (v) => { tex.color = v; });
   // A welded shape's pieces keep their own colours.
   for (const part of o.parts || []) slots(part, visit);
 }

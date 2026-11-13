@@ -2,7 +2,7 @@
 // export all use this file, so what you see is what you get.
 import { pathD, pathBounds, localToWorld, sample, round, rad, isPages, objectsOn } from './model.js';
 import { overlayMarkup } from './templates.js';
-import { patternMarkup } from './textures.js';
+import { patternMarkup, texturesOf, bgTexturesOf } from './textures.js';
 
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -151,12 +151,22 @@ function texturePaint(o, textureId) {
   return `fill="none" ${strokeAttrs({ ...o, stroke: `url(#${textureId})` })}`;
 }
 
-function body(o, inner = '', gradientId = '', textureId = '', textureInner = '') {
-  const textured = textureId && o.texture;
+// The patterns for a thing's textures, and their ids, one per texture.
+function texturePatterns(o, base, frame, opt) {
+  const list = o.type === 'image' ? [] : texturesOf(o);
+  return {
+    defs: list.map((tex, i) => patternMarkup(tex, `${base}${i}`, o, frame, opt)).join(''),
+    ids: list.map((_, i) => `${base}${i}`),
+  };
+}
+
+// textureIds: one pattern per texture, each drawn over the last.
+function body(o, inner = '', gradientId = '', textureIds = [], textureInner = '') {
+  const ids = textureIds || [];
   if (o.type === 'path') {
     const d = pathD(o.subpaths);
     return `<path d="${d}" fill="${fillOf(o, gradientId)}" fill-rule="${o.fillRule}" ${strokeAttrs(o)}${lookAttrs(o)}>${inner}</path>`
-      + (textured ? `<path d="${d}" fill-rule="${o.fillRule}" ${texturePaint(o, textureId)}>${textureInner}</path>` : '');
+      + ids.map((id) => `<path d="${d}" fill-rule="${o.fillRule}" ${texturePaint(o, id)}>${textureInner}</path>`).join('');
   }
   if (o.type === 'text') {
     const { content, defs, anchor } = textLines(o, gradientId.replace(/-paint$/, ''));
@@ -168,7 +178,7 @@ function body(o, inner = '', gradientId = '', textureId = '', textureInner = '')
     const line = !o.stroke || o.stroke === 'none' || !o.strokeWidth ? 'stroke="none"'
       : `${strokeAttrs({ ...o, strokeWidth: o.strokeWidth * 2 })} paint-order="stroke"`;
     return `${defs}${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${line}>${inner}${content}</text>`
-      + (textured ? `<text ${text} ${texturePaint(o, textureId)}>${content}</text>` : '');
+      + ids.map((id) => `<text ${text} ${texturePaint(o, id)}>${content}</text>`).join('');
   }
   return `<image href="${esc(o.href)}" x="${round(-o.w / 2)}" y="${round(-o.h / 2)}" width="${round(o.w)}" height="${round(o.h)}" preserveAspectRatio="none"/>`;
 }
@@ -231,11 +241,11 @@ function blurred(markup, id, amount, values = '') {
 // A welded shape's pieces, each in its own colours, cut to the joined outline. The
 // outline is filled first, so anywhere the outline was stretched past the pieces
 // still has colour. Its texture and line go on top of the pieces.
-function weldedParts(o, id, frame, opt, shape = '', textureId = '') {
+function weldedParts(o, id, frame, opt, shape = '', textureIds = []) {
   if (o.type !== 'path' || !o.parts?.length) return { defs: '', art: '' };
   const d = pathD(o.subpaths, { uniform: !!shape });
   const parts = o.parts.map((p, i) => objectMarkup(p, frame, { ...opt, editor: false, prefix: `${id}-p${i}`, part: i })).join('');
-  const textured = textureId && o.texture ? `<path d="${d}" fill-rule="${esc(o.fillRule || 'nonzero')}" ${texturePaint(o, textureId)}>${shape}</path>` : '';
+  const textured = textureIds.map((t) => `<path d="${d}" fill-rule="${esc(o.fillRule || 'nonzero')}" ${texturePaint(o, t)}>${shape}</path>`).join('');
   const line = strokeAttrs(o) === 'stroke="none"' ? '' : `<path d="${d}" fill="none" ${strokeAttrs(o)}>${shape}</path>`;
   return {
     defs: `<clipPath id="${id}-weld"><path d="${d}" clip-rule="${esc(o.fillRule || 'nonzero')}">${shape}</path></clipPath>`,
@@ -250,13 +260,13 @@ function objectMarkup(raw, frame, opt) {
   // Locked things can't be picked on the canvas.
   const tag = opt.part !== undefined ? ` data-part="${opt.part}"` : opt.editor ? ` data-id="${raw.id}"${raw.locked ? ' pointer-events="none"' : ''}` : '';
   const gradientId = `${maskId}-paint`;
-  const textureId = `${maskId}-tex`;
   const clip = clipsOf(raw, maskId);
-  const texture = o.texture && o.type !== 'image' ? patternMarkup(o.texture, textureId, o, frame, opt) : '';
+  const textures = texturePatterns(o, `${maskId}-tex`, frame, opt);
+  const texture = textures.defs;
   const belly = underbellyFilter(o, `${maskId}-belly`);
-  const parts = weldedParts(o, maskId, frame, opt, '', texture && textureId);
+  const parts = weldedParts(o, maskId, frame, opt, '', textures.ids);
   const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + belly + parts.defs;
-  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? '' : texture && textureId)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? [] : textures.ids)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -284,10 +294,10 @@ function animatedObject(raw, doc, opt) {
   const painted = samples.find((s) => s.gradient)?.gradient;
   const gradientTag = (attr, fn) => animate(attr, (s) => fn(s.gradient || painted));
   const clip = clipsOf(raw, maskId);
-  const textureId = `${maskId}-tex`;
-  const texture = raw.texture && raw.type !== 'image' ? patternMarkup(raw.texture, textureId, first, 0, opt) : '';
+  const textures = texturePatterns({ ...first, textures: texturesOf(raw) }, `${maskId}-tex`, 0, opt);
+  const texture = textures.defs;
   const belly = underbellyFilter(first, `${maskId}-belly`);
-  const parts = weldedParts(first, maskId, 0, opt, shape, texture && textureId);
+  const parts = weldedParts(first, maskId, 0, opt, shape, textures.ids);
   const blurs = animate('stdDeviation', (s) => round(s.blur || 0, 2));
   return blurred(`<g opacity="${round(first.opacity, 3)}">`
     + motion('translate', (s) => `${round(s.x)} ${round(s.y)}`)
@@ -296,7 +306,7 @@ function animatedObject(raw, doc, opt) {
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
     + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + belly + parts.defs
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, parts.art ? '' : texture && textureId, shape)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, parts.art ? [] : textures.ids, shape)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
 }
 
 /* ---------- Shadows ---------- */
@@ -418,7 +428,7 @@ export function layersMarkup(doc, frame, opt = {}) {
 }
 
 export function backgroundMarkup(doc, prefix = 'frame', frame = 0, opt = {}) {
-  const texture = doc.bgTexture ? `${patternMarkup(doc.bgTexture, `${prefix}-bgtex`, null, frame, { ...opt, doc })}<rect width="${doc.width}" height="${doc.height}" fill="url(#${prefix}-bgtex)"/>` : '';
+  const texture = bgTexturesOf(doc).map((tex, i) => `${patternMarkup(tex, `${prefix}-bgtex${i ? i : ''}`, null, frame, { ...opt, doc })}<rect width="${doc.width}" height="${doc.height}" fill="url(#${prefix}-bgtex${i ? i : ''})"/>`).join('');
   if (doc.bgGradient) {
     const id = `${prefix}-bg`;
     return `${gradientMarkup(doc.bgGradient, id)}<rect width="${doc.width}" height="${doc.height}" fill="url(#${id})"/>${texture}`;

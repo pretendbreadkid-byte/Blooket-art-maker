@@ -837,7 +837,7 @@ function silhouette(raw) {
   const o = clone(posed(raw));
   const ink = (paint) => (paint && paint !== 'none' ? '#000000' : 'none');
   return {
-    ...o, keys: [], page: undefined, opacity: 1, blur: 0, gradient: null, texture: null, look: undefined,
+    ...o, keys: [], page: undefined, opacity: 1, blur: 0, gradient: null, texture: null, textures: null, look: undefined,
     dropShadow: null, underbelly: null, shadow: false, fill: o.type === 'text' ? '#000000' : ink(o.fill), stroke: ink(o.stroke),
   };
 }
@@ -891,7 +891,7 @@ export async function weldSelection() {
     name: 'Welded shape', x: cx, y: cy, subpaths, fillRule: 'evenodd',
     fill: looks.fill && looks.fill !== 'none' ? looks.fill : '#000000', gradient: clone(looks.gradient ?? null),
     stroke: looks.stroke || 'none', strokeWidth: looks.strokeWidth || 0, opacity: looks.opacity ?? 1,
-    ...(top.texture ? { texture: clone(top.texture) } : {}), ...(top.underbelly ? { underbelly: clone(top.underbelly) } : {}),
+    ...(top.textures || top.texture ? { textures: clone(top.textures || [top.texture]) } : {}), ...(top.underbelly ? { underbelly: clone(top.underbelly) } : {}),
     ...(top.dropShadow ? { dropShadow: clone(top.dropShadow) } : {}), ...(isPages(S.doc) && top.page ? { page: top.page } : {}),
     parts: stacked.map((o) => weldPart(o, cx, cy)),
   });

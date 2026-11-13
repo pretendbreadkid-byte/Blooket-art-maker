@@ -903,3 +903,10 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .font-card:hover { border-color: var(--brand); background: var(--brand-soft); }
 .font-any { margin: 0; }
 #fupload { cursor: pointer; }
+
+/* Several textures */
+.texture-list { display: flex; flex-direction: column; gap: 14px; }
+.texture-list .texture + .texture { padding-top: 12px; border-top: 1px dashed var(--line); }
+.tex-head { display: flex; align-items: center; justify-content: space-between; }
+.tex-head .ib { width: 26px; height: 26px; }
+.tex-head .ico { width: 15px; height: 15px; }

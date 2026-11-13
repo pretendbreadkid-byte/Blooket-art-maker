@@ -664,8 +664,8 @@ test('a texture sits over the fill, lines up across the canvas, and outlines get
   const svg = exportSVG(doc);
   assert.equal((svg.match(/<pattern /g) || []).length, 2);
   assert.match(svg, /patternTransform="scale\(1 1\) rotate\(0\) translate\(-40 -10\) rotate\(0\)/);
-  assert.match(svg, /fill="url\(#erase-[^"]+-tex\)" stroke="none"/);
-  assert.match(svg, /fill="none" stroke="url\(#erase-[^"]+-tex\)"/);
+  assert.match(svg, /fill="url\(#erase-[^"]+-tex0\)" stroke="none"/);
+  assert.match(svg, /fill="none" stroke="url\(#erase-[^"]+-tex0\)"/);
   doc.bgTexture = newTexture('checks');
   assert.match(exportSVG(doc), /fill="url\(#frame-bgtex\)"/);
 });
@@ -880,4 +880,18 @@ test('fonts a project added are built into its exports, in their own format', ()
   assert.ok(!svg.includes('Unused'), 'only fonts in use are carried');
   doc.fonts[0].data = '") </style><script>';
   assert.ok(!exportSVG(doc).includes('<script>'), 'a broken font is left out, not written in');
+});
+
+test('a thing or the background can have several textures, layered in order', async () => {
+  const { newTexture, texturesOf } = await import('../public/js/textures.js');
+  const doc = newDoc({ name: 't', width: 200, height: 200 });
+  const box = newPath({ subpaths: square(), fill: '#ff0000', textures: [newTexture('dots'), newTexture('stripes'), newTexture('blooks')] });
+  doc.layers[0].objects.push(box);
+  doc.bgTextures = [newTexture('checks'), newTexture('sparkles')];
+  const svg = exportSVG(doc);
+  const used = [...svg.matchAll(/fill="url\(#erase-[^"]+-tex(\d)\)"/g)].map((m) => +m[1]);
+  assert.deepEqual(used, [0, 1, 2], 'each texture drawn, first to last');
+  assert.ok(svg.includes('fill="url(#frame-bgtex)"') && svg.includes('fill="url(#frame-bgtex1)"'), 'two background textures');
+  assert.ok(svg.includes('data:image/webp;base64,'), 'the Blooks texture carries its picture inside');
+  assert.equal(texturesOf({ texture: newTexture('dots') }).length, 1, 'older art with one texture still has it');
 });
