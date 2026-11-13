@@ -27,12 +27,83 @@ async function floatBlooks(layer) {
   }).join('');
 }
 
-export function renderLogin(root, onDone) {
+const FEATURES = [
+  ['pencil', 'Draw and shape', 'Pencil, shapes, curves and text. Warp, weld and smooth anything you make.'],
+  ['blook', 'The real Blook look', 'Thick outlines, underbelly shadows, shine and textures in one click.'],
+  ['play', 'Animate', 'Make your Blook bounce, blink and wave, then export it to play anywhere.'],
+  ['pack', 'Test your own packs', 'Turn your Blooks into a pack and open it with the real odds and confetti.'],
+];
+const SHOWCASE = 6;
+const GALLERY = 12;
+
+// What a new visitor sees first: what the site does, real art, and a way in.
+export async function renderLanding(root, onDone) {
+  document.title = 'Blook Berry · Make your own Blooket-style Blooks';
+  root.innerHTML = `<div class="landing">
+    <header class="land-top">
+      <a class="land-brand" href="#/"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
+      <nav>
+        <a href="/tutorials">Tutorials</a>
+        <a href="#/login">Log in</a>
+        <button class="btn primary" data-start>Start drawing</button>
+      </nav>
+    </header>
+    <section class="land-hero">
+      <div class="land-copy">
+        <h1>Make your own Blooks</h1>
+        <p>A free art maker for Blooket-style art. Draw a Blook, give it the real look, animate it, and test open your own packs.</p>
+        <div class="land-ctas">
+          <button class="btn primary big" data-start>${icon('play')}<span>Start drawing</span></button>
+          <a class="btn ghost big" href="#/signup">${icon('user')}<span>Make a free account</span></a>
+        </div>
+        <p class="land-small">No account needed to try it. Make one to keep your art on any device.</p>
+      </div>
+      <div class="land-show" aria-hidden="true"></div>
+    </section>
+    <section class="land-features">${FEATURES.map(([ic, title, text]) => `<div class="land-feature"><span>${icon(ic)}</span><h2>${title}</h2><p>${text}</p></div>`).join('')}</section>
+    <section class="land-gallery-wrap">
+      <h2>Blooks you can start from</h2>
+      <p>Over 200 Blooks to drag in, recolour, take apart and remix.</p>
+      <div class="land-gallery"></div>
+    </section>
+    <section class="land-tuts" hidden>
+      <h2>Learn how</h2>
+      <div class="land-tut-grid"></div>
+      <a class="btn ghost" href="/tutorials">See all tutorials</a>
+    </section>
+    <section class="land-end">
+      <h2>Ready to make one?</h2>
+      <button class="btn primary big" data-start>${icon('play')}<span>Start drawing</span></button>
+    </section>
+    <footer class="land-foot"><a href="/tutorials">Tutorials</a> · <a href="/privacy.html">Privacy</a> · Blook Berry is a fan-made tool and is not made by Blooket.</footer>
+  </div>`;
+  $$('[data-start]', root).forEach((b) => { b.onclick = () => { playAsGuest(); location.hash = '#/'; onDone(); }; });
+
+  const blooks = (await fetchBlooks()).filter((b) => !/animation|shape/.test(b.file)).sort(() => Math.random() - 0.5);
+  const pic = (b) => `<img src="/blooks/${esc(encodeURIComponent(b.file))}" alt="${esc(b.name)}" loading="lazy">`;
+  const show = $('.land-show', root);
+  if (show) show.innerHTML = blooks.slice(0, SHOWCASE).map((b, i) => `<span class="land-tile t${i}">${pic(b)}</span>`).join('');
+  const gallery = $('.land-gallery', root);
+  if (gallery) gallery.innerHTML = blooks.slice(SHOWCASE, SHOWCASE + GALLERY).map((b) => `<figure>${pic(b)}<figcaption>${esc(b.name)}</figcaption></figure>`).join('');
+
+  try {
+    const { tutorials } = await (await fetch('/api/tutorials')).json();
+    const box = $('.land-tuts', root);
+    if (box && tutorials?.length) {
+      $('.land-tut-grid', box).innerHTML = tutorials.slice(0, 3).map((t) => `<a class="land-tut" href="/tutorials/${t.id}">
+        <span>${t.hasThumb ? `<img src="/api/tutorials/${t.id}/thumb?v=${t.at}" alt="" loading="lazy">` : t.video?.kind === 'youtube' ? `<img src="https://i.ytimg.com/vi/${esc(t.video.yt)}/hqdefault.jpg" alt="" loading="lazy">` : '<img src="/logo.svg" alt="" class="noimg">'}</span><b>${esc(t.name)}</b></a>`).join('');
+      box.hidden = false;
+    }
+  } catch { /* No tutorials to show. */ }
+}
+
+export function renderLogin(root, onDone, startMode = 'login') {
   document.title = 'Welcome · Blook Berry';
-  let mode = 'login';
+  let mode = startMode;
 
   root.innerHTML = `<div class="welcome">
     <div class="floaters" aria-hidden="true"></div>
+    <a class="welcome-back" href="#/">${icon('back')}<span>Back</span></a>
     <section class="welcome-art">
       <div class="welcome-copy">
         <span class="brand-mark big" data-sideways-logo><img src="/logo.svg" alt=""></span>
@@ -69,7 +140,7 @@ export function renderLogin(root, onDone) {
     pass.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     err.hidden = true;
   };
-  setMode('login');
+  setMode(mode);
   $$('.login-tabs button', root).forEach((b) => { b.onclick = () => setMode(b.dataset.mode); });
   $('#lguest', root).onclick = () => { playAsGuest(); location.hash = '#/'; onDone(); };
   $('form', root).onsubmit = async (e) => {

@@ -107,6 +107,7 @@ export async function renderHome(root, onLeave = leave) {
         <span class="who-name"><b>${esc(session.user?.name || 'Guest')}</b></span>
         <button class="ib" id="logout" title="${session.guest ? 'Back to the welcome screen' : 'Log out'}" aria-label="Log out">${icon('logout')}</button>
       </div>
+      <a class="admin-link" href="/tutorials">${icon('play')}<span>Tutorials</span></a>
       <a class="admin-link" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
     </aside>
     <main class="home-main">

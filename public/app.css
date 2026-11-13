@@ -892,3 +892,69 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .tex-head .ib { width: 26px; height: 26px; }
 .tex-head .ico { width: 15px; height: 15px; }
 .keys-btn { font-weight: 900; font-size: 16px; }
+
+/* Landing page */
+.landing { height: 100%; overflow-y: auto; overflow-x: hidden; background: var(--pattern), linear-gradient(150deg, #20c9d6, #2f9cec); color: #fff; }
+.land-top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 16px; padding: 10px 24px; background: var(--bg); box-shadow: 0 3px 0 rgba(0, 0, 0, .15); }
+.land-brand { display: flex; align-items: center; gap: 10px; }
+.land-brand b { font: 24px 'Titan One', system-ui, sans-serif; text-shadow: 0 2px 0 rgba(0, 0, 0, .2); }
+.land-top nav { margin-left: auto; display: flex; align-items: center; gap: 18px; font-weight: 800; font-size: 15px; }
+.land-hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; width: min(1140px, 100%); margin: 0 auto; padding: 56px 24px 40px; }
+.land-copy h1 { font: clamp(40px, 6.5vw, 72px)/1.02 'Titan One', system-ui, sans-serif; text-shadow: 5px 6px 0 rgba(0, 0, 0, .22); }
+.land-copy > p { margin-top: 16px; font-size: 19px; font-weight: 800; max-width: 34em; text-shadow: 0 2px 0 rgba(0, 0, 0, .15); }
+.land-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.land-ctas .btn { width: auto; padding-left: 22px; padding-right: 22px; }
+.land-ctas .btn.ghost { background: #fff; color: var(--ink); }
+.land-small { margin-top: 12px; font-weight: 700; opacity: .9; }
+.land-show { position: relative; height: 380px; }
+.land-tile { position: absolute; display: grid; place-items: center; width: 150px; height: 150px; padding: 16px; background: #fff; border-radius: 22px; box-shadow: 0 7px 0 rgba(0, 0, 0, .2); animation: bob 5s ease-in-out infinite; }
+.land-tile img { width: 100%; height: 100%; object-fit: contain; }
+.land-tile.t0 { left: 4%; top: 4%; --r: -8deg; }
+.land-tile.t1 { left: 38%; top: 0; --r: 6deg; animation-delay: -1s; width: 170px; height: 170px; }
+.land-tile.t2 { right: 0; top: 18%; --r: -4deg; animation-delay: -2s; }
+.land-tile.t3 { left: 0; top: 50%; --r: 5deg; animation-delay: -3s; }
+.land-tile.t4 { left: 34%; top: 48%; --r: -6deg; animation-delay: -1.5s; width: 180px; height: 180px; }
+.land-tile.t5 { right: 4%; top: 62%; --r: 8deg; animation-delay: -2.5s; width: 130px; height: 130px; }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(var(--r)); } 50% { transform: translateY(-12px) rotate(var(--r)); } }
+@media (prefers-reduced-motion: reduce) { .land-tile { animation: none; transform: rotate(var(--r)); } }
+.land-features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; width: min(1140px, 100%); margin: 0 auto; padding: 16px 24px 40px; }
+.land-feature { padding: 20px; background: #fff; color: var(--ink); border-radius: 18px; box-shadow: 0 6px 0 rgba(0, 0, 0, .18); }
+.land-feature span { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px; background: var(--bg); color: #fff; }
+.land-feature span .ico { width: 26px; height: 26px; }
+.land-feature h2 { margin: 12px 0 6px; font: 21px 'Titan One', system-ui, sans-serif; }
+.land-feature p { color: var(--muted); font-weight: 600; }
+.land-gallery-wrap, .land-tuts, .land-end { width: min(1140px, 100%); margin: 0 auto; padding: 24px 24px 40px; text-align: center; }
+.land-gallery-wrap h2, .land-tuts h2, .land-end h2 { font: clamp(28px, 4vw, 42px) 'Titan One', system-ui, sans-serif; text-shadow: 4px 5px 0 rgba(0, 0, 0, .18); }
+.land-gallery-wrap > p { margin: 8px 0 20px; font-weight: 800; font-size: 17px; }
+.land-gallery { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+.land-gallery figure { margin: 0; padding: 12px 10px 8px; background: rgba(255, 255, 255, .95); border-radius: 16px; box-shadow: 0 5px 0 rgba(0, 0, 0, .15); color: var(--ink); }
+.land-gallery img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.land-gallery figcaption { font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.land-tut-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 20px 0; text-align: left; }
+.land-tut { display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 14px; background: #fff; color: var(--ink); border-radius: 16px; box-shadow: 0 5px 0 rgba(0, 0, 0, .15); }
+.land-tut span { aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #f5d3e4; }
+.land-tut img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.land-tut img.noimg { object-fit: contain; padding: 16%; }
+.land-tuts .btn.ghost { background: #fff; color: var(--ink); display: inline-flex; }
+.land-end .btn { margin-top: 18px; display: inline-flex; }
+.land-foot { padding: 20px 24px 28px; text-align: center; font-weight: 700; background: rgba(0, 0, 0, .12); }
+.land-foot a { text-decoration: underline; }
+.welcome-back { position: absolute; z-index: 2; top: 16px; left: 16px; display: flex; align-items: center; gap: 6px; color: #fff; font-weight: 800; }
+@media (max-width: 900px) {
+  .land-hero { grid-template-columns: 1fr; padding-top: 32px; }
+  .land-show { height: 300px; transform: scale(.85); transform-origin: top center; }
+  .land-features { grid-template-columns: repeat(2, 1fr); }
+  .land-gallery { grid-template-columns: repeat(4, 1fr); }
+  .land-tut-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .land-top { padding: 10px 16px; gap: 10px; }
+  .land-brand b, .land-top nav a[href="/tutorials"] { display: none; }
+  .land-top nav { gap: 12px; }
+  .land-hero, .land-features, .land-gallery-wrap, .land-tuts, .land-end { padding-left: 16px; padding-right: 16px; }
+  .land-features { grid-template-columns: 1fr; }
+  .land-gallery { grid-template-columns: repeat(3, 1fr); }
+  .land-show { height: auto; transform: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 6px; }
+  .land-tile { position: static; width: auto !important; height: auto !important; min-width: 0; aspect-ratio: 1; padding: 10px; border-radius: 16px; }
+  .land-tile img { min-width: 0; max-width: 100%; }
+}

@@ -1,7 +1,7 @@
 // Picks the screen to show from the address bar.
 import { renderHome } from './home.js';
 import { renderAdmin } from './admin.js';
-import { renderLogin } from './login.js';
+import { renderLogin, renderLanding } from './login.js';
 import { openEditor, closeEditor } from './editor.js';
 import { session, restoreSession } from './session.js';
 import { resetSync } from './sync.js';
@@ -17,7 +17,11 @@ async function route() {
   document.querySelector('.popover')?.remove();
   const hash = location.hash.replace(/^#/, '') || '/';
   if (hash === '/admin') { await renderAdmin(root); return; }
-  if (!session.user && !session.guest) { renderLogin(root, route); return; }
+  if (!session.user && !session.guest) {
+    if (hash === '/login' || hash === '/signup') renderLogin(root, route, hash === '/signup' ? 'signup' : 'login');
+    else await renderLanding(root, route);
+    return;
+  }
   const project = hash.match(/^\/p\/([\w-]+)$/);
   if (project) await openEditor(root, project[1]);
   else await renderHome(root, route);

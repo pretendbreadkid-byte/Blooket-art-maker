@@ -12,6 +12,26 @@ const FORMATS = [
 ];
 
 const JPEG_QUALITY = 0.92;
+const MARK_KEY = 'bb-mark';
+const MARK_TEXT = 'Made with Blook Berry';
+
+// Whether exports get the small "Made with Blook Berry" tag. On unless turned off.
+const markOn = () => { try { return localStorage.getItem(MARK_KEY) !== 'off'; } catch { return true; } };
+const setMark = (on) => { try { localStorage.setItem(MARK_KEY, on ? 'on' : 'off'); } catch { /* fine */ } };
+
+// A small see-through tag in the bottom-right corner, sized to the art.
+export function withMark(svg, width, height) {
+  const size = Math.max(9, Math.round(Math.min(width, height) * 0.032));
+  const textW = size * 0.56 * MARK_TEXT.length;
+  const padX = size * 0.6, padY = size * 0.38, gap = size * 0.6;
+  const w = textW + padX * 2, h = size + padY * 2;
+  const x = width - w - gap, y = height - h - gap;
+  const r = (n) => Math.round(n * 100) / 100;
+  const tag = `<g class="bb-mark" pointer-events="none"><rect x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" rx="${r(h / 2)}" fill="#000" fill-opacity="0.35"/>`
+    + `<text x="${r(x + w / 2)}" y="${r(y + h / 2)}" fill="#fff" fill-opacity="0.92" font-family="Nunito, Arial, Helvetica, sans-serif" font-weight="800" font-size="${size}" text-anchor="middle" dominant-baseline="central" textLength="${r(textW)}" lengthAdjust="spacingAndGlyphs">${MARK_TEXT}</text></g>`;
+  const end = svg.lastIndexOf('</svg>');
+  return end < 0 ? svg : svg.slice(0, end) + tag + svg.slice(end);
+}
 const WEBP_QUALITY = 0.92;
 
 function download(name, blob) {
@@ -68,9 +88,10 @@ function onWhite(canvas) {
   return flat;
 }
 
-async function makeFile(doc, format, { animate, frame }) {
-  if (format === 'svg') return new Blob([exportSVG(doc, { frame, animate })], { type: 'image/svg+xml' });
-  const canvas = await rasterize(exportSVG(doc, { frame }), doc.width, doc.height);
+async function makeFile(doc, format, { animate, frame, mark }) {
+  const svg = (opts) => (mark ? withMark(exportSVG(doc, opts), doc.width, doc.height) : exportSVG(doc, opts));
+  if (format === 'svg') return new Blob([svg({ frame, animate })], { type: 'image/svg+xml' });
+  const canvas = await rasterize(svg({ frame }), doc.width, doc.height);
   if (format === 'png') return toBlob(canvas, 'image/png');
   if (format === 'webp') {
     const blob = await toBlob(canvas, 'image/webp', WEBP_QUALITY);
@@ -101,6 +122,7 @@ export function exportDialog() {
           <label class="radio"><input type="radio" name="kind" value="frame"><span><b>Just this frame</b><small>A still picture of frame ${S.frame + 1}</small></span></label>
         </div>` : ''}
         ${doc.animated && format !== 'svg' ? `<p class="muted">This saves frame ${S.frame + 1} as a still picture.</p>` : ''}
+        <label class="check"><input type="checkbox" id="xmark" ${markOn() ? 'checked' : ''}><span>Add a small "Made with Blook Berry" tag in the corner</span></label>
         <div class="dlg-actions">
           <button class="btn ghost" data-no>Cancel</button>
           <button class="btn primary" data-yes>${icon('download')}<span>Download</span></button>
@@ -112,6 +134,7 @@ export function exportDialog() {
           const name = $('#xname', box).value;
           const pick = () => {
             format = chosen.id;
+            setMark($('#xmark', box).checked);
             paint();
             $('#xname', box).value = name;
           };
@@ -119,10 +142,11 @@ export function exportDialog() {
         };
       });
       $('[data-yes]', box).onclick = async () => {
+        setMark($('#xmark', box).checked);
         const animate = doc.animated && format === 'svg' && $('[name=kind]:checked', box).value === 'anim';
         const name = ($('#xname', box).value.trim() || safe).replace(/\.(svg|webp|png|jpe?g|pdf)$/i, '');
         try {
-          download(`${name}.${format}`, await makeFile(doc, format, { animate, frame: S.frame }));
+          download(`${name}.${format}`, await makeFile(doc, format, { animate, frame: S.frame, mark: $('#xmark', box).checked }));
           close();
           toast('Your file is downloading.', 'ok');
         } catch (error) {
