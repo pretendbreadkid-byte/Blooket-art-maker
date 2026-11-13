@@ -56,7 +56,7 @@ function moveEverything(dx, dy) {
   }
 }
 
-function resizeCanvas(x, y, width, height) {
+export function resizeCanvas(x, y, width, height) {
   const doc = S.doc;
   if (width > MAX_SIZE || height > MAX_SIZE) {
     toast(`A canvas can be up to ${MAX_SIZE} px wide. Your art is bigger than that.`, 'warn');

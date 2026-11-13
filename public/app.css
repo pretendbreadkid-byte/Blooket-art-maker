@@ -710,6 +710,13 @@ body[data-tool=lasso] #wk { cursor: crosshair; }
 /* Textures and swapping colours, in the Selected and Canvas panels */
 .texture, .swaps, .shadow-box { display: flex; flex-direction: column; gap: 8px; }
 .guide { pointer-events: none !important; }
+.align-row { display: flex; flex-wrap: wrap; gap: 1px; }
+.align-row .ib { width: 26px; height: 28px; padding: 0; }
+.align-row .ib:disabled { opacity: .35; }
+.readout { position: fixed; z-index: 50; pointer-events: none; background: #2b1d38; color: #fff; font: 700 12px/1 system-ui, sans-serif; padding: 5px 8px; border-radius: 6px; white-space: nowrap; }
+.home-tools { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.home-tools input, .home-tools select { height: 38px; border: 1.5px solid var(--line); border-radius: 10px; padding: 0 10px; font: inherit; background: #fff; }
+.home-tools input { width: 200px; }
 .fold { border-top: 1.5px solid var(--line); padding-top: 8px; }
 .fold > summary { cursor: pointer; font-weight: 800; font-size: 13px; list-style: none; display: flex; align-items: center; gap: 6px; user-select: none; }
 .fold > summary::-webkit-details-marker { display: none; }

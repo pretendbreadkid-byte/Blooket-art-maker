@@ -61,6 +61,87 @@ function startMove(p, e) {
   };
 }
 
+/* ---------- Align and distribute ---------- */
+
+// What is picked, as things that move together: a group counts as one.
+function units() {
+  const map = new Map();
+  for (const o of selected()) {
+    const key = o.group || o.id;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(o);
+  }
+  return [...map.values()].map((objs) => ({ objs, box: worldBox(objs.map((o) => o.id)) })).filter((u) => u.box);
+}
+
+const shift = (u, dx, dy) => { for (const o of u.objs) { const s = posed(o); edit(o, { x: s.x + dx, y: s.y + dy }); } };
+
+// Lines picked things up along an edge or middle. One thing (or one group)
+// lines up with the canvas instead.
+export function alignSelection(how) {
+  const list = units();
+  if (!list.length) return;
+  const all = list.length === 1
+    ? { x: 0, y: 0, width: S.doc.width, height: S.doc.height }
+    : worldBox(list.flatMap((u) => u.objs.map((o) => o.id)));
+  for (const u of list) {
+    const b = u.box;
+    const dx = { l: all.x - b.x, c: all.x + all.width / 2 - (b.x + b.width / 2), r: all.x + all.width - (b.x + b.width) }[how] ?? 0;
+    const dy = { t: all.y - b.y, m: all.y + all.height / 2 - (b.y + b.height / 2), b: all.y + all.height - (b.y + b.height) }[how] ?? 0;
+    shift(u, dx, dy);
+  }
+  commit();
+}
+
+// Even gaps between three or more things, from the first to the last.
+export function distributeSelection(axis) {
+  const list = units();
+  if (list.length < 3) return;
+  const pos = axis === 'x' ? 'x' : 'y', size = axis === 'x' ? 'width' : 'height';
+  list.sort((a, b) => a.box[pos] - b.box[pos]);
+  const first = list[0].box, last = list[list.length - 1].box;
+  const used = list.reduce((t, u) => t + u.box[size], 0);
+  const gap = (last[pos] + last[size] - first[pos] - used) / (list.length - 1);
+  let at = first[pos];
+  for (const u of list) {
+    const d = at - u.box[pos];
+    shift(u, axis === 'x' ? d : 0, axis === 'x' ? 0 : d);
+    at += u.box[size] + gap;
+  }
+  commit();
+}
+
+export const alignCount = () => units().length;
+
+/* ---------- Size readout ---------- */
+
+let readout = null;
+// A little label by the pointer saying the size or turn while you change it.
+function showReadout(e, text) {
+  if (!readout) {
+    readout = document.createElement('div');
+    readout.className = 'readout';
+    document.body.append(readout);
+  }
+  readout.textContent = text;
+  readout.style.left = `${e.clientX + 16}px`;
+  readout.style.top = `${e.clientY + 18}px`;
+  readout.hidden = false;
+}
+function hideReadout() { if (readout) readout.hidden = true; }
+
+function sizeText() {
+  const items = selected();
+  if (items.length === 1) {
+    const s = posed(items[0]);
+    const el = objectEl(items[0].id)?.querySelector('.b');
+    const b = el?.getBBox();
+    if (b) return `${Math.round(b.width * Math.abs(s.scaleX))} × ${Math.round(b.height * Math.abs(s.scaleY))}`;
+  }
+  const b = worldBox(items.map((o) => o.id));
+  return b ? `${Math.round(b.width)} × ${Math.round(b.height)}` : '';
+}
+
 /* ---------- Snapping ---------- */
 
 const MOVE_SNAP_PX = 6;
@@ -1334,8 +1415,16 @@ function move(e) {
       for (const it of drag.items) edit(it.o, { x: it.x + snapped.dx, y: it.y + snapped.dy });
       break;
     }
-    case 'scale': drag.moved = true; moveScale(p, e); break;
-    case 'rotate': drag.moved = true; moveRotate(p, e); break;
+    case 'scale': drag.moved = true; moveScale(p, e); liveRefresh(); showReadout(e, sizeText()); return;
+    case 'rotate': {
+      drag.moved = true;
+      moveRotate(p, e);
+      liveRefresh();
+      const [one] = selected();
+      const turn = ((Math.round(posed(one).rotation) % 360) + 360) % 360;
+      showReadout(e, `${turn > 180 ? turn - 360 : turn}°`);
+      return;
+    }
     case 'marquee': marquee(p); return;
     case 'nodes': moveNodes(p); break;
     case 'handle': moveHandle(p, e); drag.moved = true; break;
@@ -1360,6 +1449,7 @@ function up(e) {
   if (!drag) return;
   const d = drag;
   if (S.guides?.length) { S.guides = []; hooks.overlay(); }
+  hideReadout();
   if (d.type === 'line') { lineUp(toDoc(e)); drag = null; return; }
   if (d.type === 'marquee') { finishMarquee(); drag = null; drawOverlay(); return; }
   if (d.type === 'pan') {

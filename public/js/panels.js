@@ -10,13 +10,14 @@ import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, canGroup, canUngroup, groupSelection, ungroupSelection, autoSmooth, setAutoSmooth, smoothable, smoothLines,
+  canTakeApart, takeApart, stackEnds, alignSelection, distributeSelection, alignCount, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, canGroup, canUngroup, groupSelection, ungroupSelection, autoSmooth, setAutoSmooth, smoothable, smoothLines,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { drawLayers } from './layers.js';
 import { fontDialog } from './fonts.js';
 import { canRemoveBackground, removeBackground } from './bg-remove.js';
 import { TEMPLATES, overlayLook } from './templates.js';
+import { resizeCanvas } from './fit.js';
 import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
 
 export const BLOOKET_FONT = 'Titan One';
@@ -267,7 +268,24 @@ function numberField(label, value, onInput) {
 function documentPanel(box) {
   const d = S.doc;
   box.append(html('<h3>Canvas</h3>'));
-  box.append(html(`<p class="muted">${d.width} × ${d.height} px${d.animated ? ' · Animation' : ''}</p>`));
+  const size = html('<div class="num-grid"></div>');
+  let w = d.width, h = d.height;
+  const resize = () => {
+    if (w === d.width && h === d.height) return;
+    // The art stays in the middle.
+    resizeCanvas(Math.round((d.width - w) / 2), Math.round((d.height - h) / 2), w, h);
+    hooks.panels();
+  };
+  const sizeField = (label, value, set) => {
+    const el = html(`<label class="num"><span>${label}</span><input type="number" min="16" max="8192" value="${value}"></label>`);
+    const input = $('input', el);
+    input.onchange = () => { const v = Math.round(+input.value); if (v >= 16 && v <= 8192) { set(v); resize(); } else input.value = value; };
+    input.onkeydown = (e) => { if (e.key === 'Enter') input.blur(); };
+    return el;
+  };
+  size.append(sizeField('Canvas width', d.width, (v) => { w = v; }), sizeField('Canvas height', d.height, (v) => { h = v; }));
+  box.append(size);
+  if (d.animated) box.append(html('<p class="muted">Animation</p>'));
   box.append(colorButton({
     label: 'Background', value: d.bgGradient || d.background, allowNone: true, allowGradient: true,
     onInput: (c) => {
@@ -437,6 +455,29 @@ function blurSlider(items) {
   });
 }
 
+// Line things up, or space them out evenly.
+function alignRow() {
+  const n = alignCount();
+  const row = html('<div class="align-row"></div>');
+  const b = (name, label, onClick, off = false) => {
+    const el = html(`<button class="ib" title="${label}" aria-label="${label}" ${off ? 'disabled' : ''}>${icon(name)}</button>`);
+    el.onclick = onClick;
+    return el;
+  };
+  const to = n > 1 ? '' : ' of the canvas';
+  row.append(
+    b('alignl', `Line up left edges${to}`, () => alignSelection('l')),
+    b('alignch', `Line up middles${to}`, () => alignSelection('c')),
+    b('alignr', `Line up right edges${to}`, () => alignSelection('r')),
+    b('alignt', `Line up tops${to}`, () => alignSelection('t')),
+    b('alignm', `Line up middles${to}`, () => alignSelection('m')),
+    b('alignb', `Line up bottoms${to}`, () => alignSelection('b')),
+    b('disth', 'Space out evenly across (3 or more)', () => distributeSelection('x'), n < 3),
+    b('distv', 'Space out evenly down (3 or more)', () => distributeSelection('y'), n < 3),
+  );
+  return row;
+}
+
 function arrangeRow() {
   const { atFront, atBack } = stackEnds();
   const row = html('<div class="arrange"></div>');
@@ -474,7 +515,7 @@ function selectedPanel() {
     box.append(grouping);
   }
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
-  box.append(arrangeRow());
+  box.append(arrangeRow(), alignRow());
   const effects = [opacitySlider(items), blurSlider(items), slider({
     label: 'Pixelate', value: Math.max(0, ...items.map((o) => o.pixel || 0)), min: 0, max: 60, unit: 'px',
     onInput: (v) => { items.forEach((o) => { o.pixel = v < 2 ? 0 : v; }); liveRefresh(); },

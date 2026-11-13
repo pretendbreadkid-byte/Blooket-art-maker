@@ -42,6 +42,9 @@ const TEST_TITLES = { packs: 'Your packs', community: 'Community packs', blooks:
 const TEST_TABS = [['packs', 'Your packs'], ['community', 'Community'], ['blooks', 'My Blooks']];
 
 let currentFolder = 'all';
+let search = '';
+let sortBy = 'recent';
+const SORTS = { recent: (a, b) => b.updatedAt - a.updatedAt, old: (a, b) => a.updatedAt - b.updatedAt, name: (a, b) => a.name.localeCompare(b.name) };
 let testTab = 'packs';
 let host = null;
 let leave = () => {};
@@ -59,8 +62,14 @@ export async function renderHome(root, onLeave = leave) {
   const group = GROUPS.find((g) => currentFolder === `group:${g.id}`);
   if (currentFolder !== 'all' && !inPacks && !group && !folders.some((f) => f.id === currentFolder)) currentFolder = 'all';
 
-  const shown = currentFolder === 'all' ? projects
+  const inView = currentFolder === 'all' ? projects
     : group ? projects.filter((p) => groupOf(p) === group.id) : projects.filter((p) => p.folderId === currentFolder);
+  const matches = (p) => !search || p.name.toLowerCase().includes(search.toLowerCase());
+  const shown = inView.filter(matches).sort(SORTS[sortBy]);
+  const finder = inView.length > 1 || search ? `<div class="home-tools">
+      <input type="search" id="findproj" placeholder="Search projects" value="${esc(search)}" aria-label="Search projects">
+      <select id="sortproj" aria-label="Sort projects">${[['recent', 'Newest first'], ['old', 'Oldest first'], ['name', 'A to Z']].map(([v, l]) => `<option value="${v}" ${sortBy === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    </div>` : '';
   const count = (id) => projects.filter((p) => p.folderId === id).length;
   const inGroup = (id) => projects.filter((p) => groupOf(p) === id).length;
   // Other art only shows up once there is some.
@@ -70,7 +79,7 @@ export async function renderHome(root, onLeave = leave) {
   const made = group ? (group.made || TEMPLATES[group.id].name) : '';
   const head = inPacks
     ? `<div class="page-head"><h1>${esc(title)}</h1><div class="test-tabs">${TEST_TABS.map(([id, label]) => `<button class="${testTab === id ? 'on' : ''}" data-tab="${id}">${label}</button>`).join('')}</div></div>`
-    : `<div class="page-head"><h1>${esc(title)}</h1>${group ? `<button class="btn primary" id="newingroup">${icon('plus')}<span>New ${esc(made)}</span></button>` : ''}</div>`;
+    : `<div class="page-head"><h1>${esc(title)}</h1>${finder}${group ? `<button class="btn primary" id="newingroup">${icon('plus')}<span>New ${esc(made)}</span></button>` : ''}</div>`;
 
   root.innerHTML = `<div class="home">
     <aside class="home-side">
@@ -103,11 +112,23 @@ export async function renderHome(root, onLeave = leave) {
     <main class="home-main">
       ${session.guest ? '<p class="guest-note">You are playing as a guest. Your art disappears when you close this page, so export anything you want to keep.</p>' : ''}
       ${head}
-      ${inPacks ? testView() : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : emptyState(group && made))}
+      ${inPacks ? testView() : (shown.length ? `<div class="cards">${shown.map(card).join('')}</div>` : search && inView.length ? `<p class="muted">Nothing called "${esc(search)}" here.</p>` : emptyState(group && made))}
     </main>
   </div>`;
 
   $('#new', root).onclick = () => newProjectWizard(folders);
+  const find = $('#findproj', root);
+  if (find) {
+    find.oninput = async () => {
+      search = find.value;
+      const at = find.selectionStart;
+      await renderHome(root, onLeave);
+      const again = $('#findproj', root);
+      again?.focus();
+      again?.setSelectionRange(at, at);
+    };
+    $('#sortproj', root).onchange = (e) => { sortBy = e.target.value; renderHome(root, onLeave); };
+  }
   const newHere = () => newProjectWizard(folders, group.id === 'other' ? null : group.id);
   $('#newingroup', root)?.addEventListener('click', newHere);
   $$('[data-g]', root).forEach((b) => { b.onclick = () => { currentFolder = `group:${b.dataset.g}`; renderHome(root); }; });

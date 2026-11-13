@@ -13,6 +13,14 @@ export function html(markup) {
 }
 
 const ICONS = {
+  alignl: 'M4 3v18M8 6h12v4H8zM8 14h7v4H8z',
+  alignch: 'M12 3v18M6 6h12v4H6zM8 14h8v4H8z',
+  alignr: 'M20 3v18M4 6h12v4H4zM9 14h7v4H9z',
+  alignt: 'M3 4h18M6 8h4v12H6zM14 8h4v7h-4z',
+  alignm: 'M3 12h18M6 6h4v12H6zM14 8h4v8h-4z',
+  alignb: 'M3 20h18M6 4h4v12H6zM14 9h4v7h-4z',
+  disth: 'M4 4v16M20 4v16M10 7h4v10h-4z',
+  distv: 'M4 4h16M4 20h16M7 10h10v4H7z',
   select: 'M5 3l14 8-6 2-3 6z',
   lasso: 'M12 4c5 0 9 2.500 9 6s-4 6-9 6c-1.500 0-3-.200-4.200-.700M12 4C7 4 3 6.500 3 10c0 2 1.300 3.700 3.300 4.800M6.300 14.800a2 2 0 1 0 1.500.5c.3 1.700-.3 3.700-1.800 5.700',
   vertices: 'M6 18L18 6M4 16h4v4H4zM16 4h4v4h-4zM12 9.5a2.5 2.5 0 1 1 0 5',
