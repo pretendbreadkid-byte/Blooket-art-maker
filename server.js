@@ -472,7 +472,7 @@ async function api(req, res, path) {
   if (req.method === 'POST' && path === '/api/auth/login') return login(req, res);
   if (path === '/api/art' || path.startsWith('/api/art/')) return art(req, res, path);
   if (path === '/api/uploads' || path.startsWith('/api/uploads/')) return uploads(req, res, path);
-  if (path === '/api/tutorials' || path.startsWith('/api/tutorials/')) return tutorialApi(req, res, path);
+  if (path === '/api/tutorials' && req.method === 'GET') return send(res, 200, { tutorials: tutorialSummaries() });
   if (path === '/api/me' && req.method === 'GET') {
     const user = currentUser(req);
     if (!user) return send(res, 401, { error: 'Please log in.' });
@@ -535,9 +535,10 @@ async function servePage(res) {
   return send(res, 200, html, TYPES['.html'], 'no-cache');
 }
 
-async function serveStatic(res, path) {
+async function serveStatic(req, res, path) {
   if (path === '/' || path === '/index.html') return servePage(res);
   if (path === '/tutorials' || path.startsWith('/tutorials/')) return serveTutorials(res, path);
+  if (path.startsWith('/tutorials-media/')) return serveTutorialMedia(req, res, path);
   if (path === '/sitemap.xml') return serveSitemap(res);
   const versioned = path.match(VERSIONED);
   const rel = normalize(decodeURIComponent(versioned ? versioned[1] : path)).replace(/^[/\\]+/, '');
@@ -552,201 +553,59 @@ async function serveStatic(res, path) {
 
 /* ---------- Tutorials ---------- */
 
-// Video guides on /tutorials. Only the accounts in TUTORIAL_OWNERS (breadblook
-// unless set) can add, change or remove them. Each has a name, a description, a
-// thumbnail, and either an uploaded video or a YouTube link.
-const TUTORIAL_OWNERS = (process.env.TUTORIAL_OWNERS || 'breadblook').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-const TUTORIALS_INDEX = 'tutorials/index.json';
-const MAX_VIDEO = 50 * 1024 * 1024;
-const MAX_THUMB = 600 * 1024;
-const VIDEO_TYPES = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
+// Video guides on /tutorials. They live in the tutorials folder beside this
+// file: tutorials.json lists them, and their videos and thumbnails sit next to it.
+//   { "slug": "first-blook", "name": "...", "description": "...", "date": "2026-11-13",
+//     "video": "first-blook.mp4" or "youtube": "https://youtu.be/...", "thumbnail": "first-blook.jpg" }
+const TUTORIALS_DIR = join(ROOT, 'tutorials');
 const SITE_URL = (process.env.SITE_URL || 'https://blookberry.com').replace(/\/$/, '');
-let tutorials = null;
+const MEDIA_TYPES = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 
-const isTutorialOwner = (req) => {
-  const user = currentUser(req);
-  return !!user && TUTORIAL_OWNERS.includes(user.name.toLowerCase());
-};
-
-async function tutorialList() {
-  if (!tutorials) {
-    const text = await readArtFile(TUTORIALS_INDEX);
-    tutorials = text ? JSON.parse(text).list || [] : [];
-  }
-  return tutorials;
-}
-const saveTutorials = () => writeArtFile(TUTORIALS_INDEX, JSON.stringify({ list: tutorials }));
-
-async function readArtBytes(path) {
-  if (!USERS_IN_GITHUB) {
-    const file = join(DATA, path);
-    return existsSync(file) ? readFile(file) : null;
-  }
-  const res = await fetch(`${contentsUrl}/${path}`, { headers: { ...githubHeaders, Accept: 'application/vnd.github.raw+json' } });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Could not read that video (${res.status}).`);
-  return Buffer.from(await res.arrayBuffer());
-}
-
-function readBytes(req, limit) {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    const chunks = [];
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > limit) { reject(Object.assign(new Error(`Videos can be up to ${Math.round(limit / 1048576)} MB.`), { status: 413 })); req.destroy(); return; }
-      chunks.push(c);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
-
-// A YouTube link, in any of its usual shapes, down to its video id.
 function youtubeId(v) {
   if (typeof v !== 'string') return null;
   const m = v.trim().match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/) || v.trim().match(/^([\w-]{11})$/);
   return m ? m[1] : null;
 }
 
-const THUMB = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
-
-function tutorialFields(input, old = {}) {
-  const out = {
-    name: cleanText(input?.name, 100, old.name || ''),
-    description: typeof input?.description === 'string' ? input.description.trim().slice(0, 4000) : (old.description || ''),
-  };
-  if (!out.name) throw Object.assign(new Error('Give the tutorial a name.'), { status: 400 });
-  if (input?.thumb !== undefined) {
-    if (input.thumb !== null && (!THUMB.test(input.thumb) || input.thumb.length > MAX_THUMB * 1.4)) {
-      throw Object.assign(new Error('The thumbnail needs to be a PNG, JPG or WEBP picture under 600 KB.'), { status: 400 });
-    }
-    out.thumb = input.thumb;
+// Read fresh each time, so a new tutorial shows as soon as it is deployed.
+function tutorialList() {
+  try {
+    const list = JSON.parse(readFileSync(join(TUTORIALS_DIR, 'tutorials.json'), 'utf8'));
+    return (Array.isArray(list) ? list : []).filter((t) => t && /^[a-z0-9-]{1,80}$/.test(t.slug) && t.name).map((t) => ({
+      ...t, yt: youtubeId(t.youtube),
+    }));
+  } catch {
+    return [];
   }
-  if (input?.youtube !== undefined && input.youtube !== '') {
-    const yt = youtubeId(input.youtube);
-    if (!yt) throw Object.assign(new Error('That YouTube link does not look right.'), { status: 400 });
-    out.video = { kind: 'youtube', yt };
-  }
-  return out;
 }
 
-const publicTutorial = (t) => ({
-  id: t.id, name: t.name, description: t.description, at: t.at, hasThumb: !!t.thumb,
-  video: t.video ? (t.video.kind === 'youtube' ? { kind: 'youtube', yt: t.video.yt } : { kind: 'file', type: t.video.type, size: t.video.size }) : null,
-});
+const mediaUrl = (file) => `/tutorials-media/${encodeURIComponent(file)}`;
+const thumbUrl = (t) => (t.thumbnail ? mediaUrl(t.thumbnail) : t.yt ? `https://i.ytimg.com/vi/${t.yt}/hqdefault.jpg` : null);
+const absolute = (u) => (u ? (u.startsWith('http') ? u : `${SITE_URL}${u}`) : `${SITE_URL}/og.png`);
 
-// Sends part of a video when the player asks for it, so it can skip around.
-function sendVideo(req, res, bytes, type) {
+// Videos and thumbnails, sent a part at a time when a player asks, so it can skip around.
+async function serveTutorialMedia(req, res, path) {
+  const name = decodeURIComponent(path.slice('/tutorials-media/'.length));
+  if (!/^[\w.-]{1,120}$/.test(name) || name.startsWith('.') || name === 'tutorials.json') return send(res, 404, 'Not found', 'text/plain');
+  const type = MEDIA_TYPES[extname(name).toLowerCase()];
+  const file = join(TUTORIALS_DIR, name);
+  if (!type || !existsSync(file)) return send(res, 404, 'Not found', 'text/plain');
+  const bytes = await readFile(file);
   const total = bytes.length;
-  const range = String(req.headers.range || '').match(/^bytes=(\d*)-(\d*)$/);
   const head = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' };
+  const range = String(req.headers.range || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!range || (range[1] === '' && range[2] === '')) {
     res.writeHead(200, { ...head, 'Content-Length': total });
     return res.end(bytes);
   }
-  let start = range[1] === '' ? total - Number(range[2]) : Number(range[1]);
-  let end = range[1] === '' || range[2] === '' ? total - 1 : Math.min(Number(range[2]), total - 1);
-  start = Math.max(0, start);
+  const start = Math.max(0, range[1] === '' ? total - Number(range[2]) : Number(range[1]));
+  const end = range[1] === '' || range[2] === '' ? total - 1 : Math.min(Number(range[2]), total - 1);
   if (start > end || start >= total) {
     res.writeHead(416, { 'Content-Range': `bytes */${total}` });
     return res.end();
   }
   res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${total}`, 'Content-Length': end - start + 1 });
   return res.end(bytes.subarray(start, end + 1));
-}
-
-// Videos are kept on this server's disk once fetched, so each is read from
-// GitHub only once per start-up.
-const videoCache = new Map();
-async function videoBytes(t) {
-  if (videoCache.has(t.id)) return videoCache.get(t.id);
-  const cached = join(DATA, 'video-cache', `${t.id}-${t.video.v || 0}`);
-  let bytes = existsSync(cached) ? await readFile(cached) : null;
-  if (!bytes) {
-    bytes = await readArtBytes(`tutorials/${t.id}.bin`);
-    if (bytes && USERS_IN_GITHUB) {
-      mkdirSync(dirname(cached), { recursive: true });
-      writeFileSync(cached, bytes);
-    }
-  }
-  if (bytes && bytes.length < 80 * 1024 * 1024) videoCache.set(t.id, bytes);
-  return bytes;
-}
-
-async function tutorialApi(req, res, path) {
-  if (path === '/api/tutorials' && req.method === 'GET') {
-    const list = await inArtQueue('tutorials', tutorialList);
-    return send(res, 200, { tutorials: list.map(publicTutorial), canEdit: isTutorialOwner(req) });
-  }
-  const [, id, part] = path.match(/^\/api\/tutorials\/(t-[0-9a-f]{12})(?:\/(video|thumb))?$/) || [];
-  if (id && req.method === 'GET') {
-    const t = (await inArtQueue('tutorials', tutorialList)).find((x) => x.id === id);
-    if (!t) return send(res, 404, { error: 'That tutorial could not be found.' });
-    if (!part) return send(res, 200, { tutorial: publicTutorial(t) });
-    if (part === 'thumb') {
-      if (!t.thumb) return send(res, 404, 'No thumbnail', 'text/plain');
-      const [, type, data] = t.thumb.match(/^data:(image\/\w+);base64,(.*)$/);
-      return send(res, 200, Buffer.from(data, 'base64'), type, 'public, max-age=3600');
-    }
-    if (t.video?.kind !== 'file') return send(res, 404, 'No video file', 'text/plain');
-    const bytes = await videoBytes(t);
-    return bytes ? sendVideo(req, res, bytes, t.video.type) : send(res, 404, 'Video missing', 'text/plain');
-  }
-
-  if (!isTutorialOwner(req)) return send(res, 403, { error: 'Only the tutorial account can change tutorials.' });
-
-  if (path === '/api/tutorials' && req.method === 'POST') {
-    const fields = tutorialFields(await readJson(req, MAX_THUMB * 2));
-    return inArtQueue('tutorials', async () => {
-      const list = await tutorialList();
-      const t = { id: `t-${randomBytes(6).toString('hex')}`, ...fields, at: Date.now() };
-      list.unshift(t);
-      await saveTutorials();
-      return send(res, 201, { tutorial: publicTutorial(t) });
-    });
-  }
-  if (id && part === 'video' && req.method === 'PUT') {
-    const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    if (!VIDEO_TYPES[type]) return send(res, 400, { error: 'Videos need to be MP4, WEBM or MOV files.' });
-    const bytes = await readBytes(req, MAX_VIDEO);
-    if (!bytes.length) return send(res, 400, { error: 'That video is empty.' });
-    return inArtQueue('tutorials', async () => {
-      const t = (await tutorialList()).find((x) => x.id === id);
-      if (!t) return send(res, 404, { error: 'That tutorial could not be found.' });
-      await writeArtFile(`tutorials/${id}.bin`, bytes);
-      t.video = { kind: 'file', type, size: bytes.length, v: Date.now() };
-      videoCache.delete(id);
-      await saveTutorials();
-      return send(res, 200, { tutorial: publicTutorial(t) });
-    });
-  }
-  if (id && !part && req.method === 'PATCH') {
-    const body = await readJson(req, MAX_THUMB * 2);
-    return inArtQueue('tutorials', async () => {
-      const t = (await tutorialList()).find((x) => x.id === id);
-      if (!t) return send(res, 404, { error: 'That tutorial could not be found.' });
-      const fields = tutorialFields(body, t);
-      if (fields.video?.kind === 'youtube' && t.video?.kind === 'file') await removeArtFile(`tutorials/${id}.bin`);
-      Object.assign(t, fields);
-      if (fields.thumb === null) delete t.thumb;
-      await saveTutorials();
-      return send(res, 200, { tutorial: publicTutorial(t) });
-    });
-  }
-  if (id && !part && req.method === 'DELETE') {
-    return inArtQueue('tutorials', async () => {
-      const list = await tutorialList();
-      const t = list.find((x) => x.id === id);
-      if (!t) return send(res, 404, { error: 'That tutorial could not be found.' });
-      if (t.video?.kind === 'file') await removeArtFile(`tutorials/${id}.bin`);
-      tutorials = list.filter((x) => x.id !== id);
-      videoCache.delete(id);
-      await saveTutorials();
-      return send(res, 200, { ok: true });
-    });
-  }
-  return send(res, 404, { error: 'Not found.' });
 }
 
 /* ---------- Pages Google and Discord can read ---------- */
@@ -784,44 +643,40 @@ function tutorialShell({ title, description, url, image, body }) {
   </header>
   <main class="tut-main">${body}</main>
   <footer class="tut-foot"><a href="/">Blook Berry</a> · <a href="/tutorials">Tutorials</a> · <a href="/privacy.html">Privacy</a></footer>
-  <script src="/v/${VERSION}/js/tutorials-page.js" defer></script>
 </body>
 </html>`;
 }
 
-const thumbUrl = (t) => (t.thumb ? `/api/tutorials/${t.id}/thumb?v=${t.at}` : t.video?.kind === 'youtube' ? `https://i.ytimg.com/vi/${t.video.yt}/hqdefault.jpg` : null);
-const absolute = (u) => (u ? (u.startsWith('http') ? u : `${SITE_URL}${u}`) : `${SITE_URL}/og.png`);
-
 function playerMarkup(t) {
-  if (t.video?.kind === 'youtube') {
-    return `<div class="tut-player"><iframe src="https://www.youtube-nocookie.com/embed/${html(t.video.yt)}" title="${html(t.name)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
+  if (t.yt) {
+    return `<div class="tut-player"><iframe src="https://www.youtube-nocookie.com/embed/${html(t.yt)}" title="${html(t.name)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
   }
-  if (t.video?.kind === 'file') {
-    return `<div class="tut-player"><video controls preload="metadata" playsinline ${t.thumb ? ` poster="${thumbUrl(t)}"` : ''} src="/api/tutorials/${t.id}/video?v=${t.video.v || 0}"></video></div>`;
+  if (t.video) {
+    return `<div class="tut-player"><video controls preload="metadata" playsinline${t.thumbnail ? ` poster="${html(mediaUrl(t.thumbnail))}"` : ''} src="${html(mediaUrl(t.video))}"></video></div>`;
   }
   return '<div class="tut-player tut-novideo"><p>The video for this one is on its way.</p></div>';
 }
 
 async function serveTutorials(res, path) {
-  const list = await inArtQueue('tutorials', tutorialList);
-  const one = path.match(/^\/tutorials\/(t-[0-9a-f]{12})\/?$/)?.[1];
-  if (one) {
-    const t = list.find((x) => x.id === one);
-    if (!t) return send(res, 404, tutorialShell({ title: 'Not found · Blook Berry', description: 'That tutorial could not be found.', url: '/tutorials', image: `${SITE_URL}/og.png`, body: '<h1>That tutorial could not be found.</h1><p><a href="/tutorials">See all tutorials</a></p>' }), TYPES['.html']);
+  const list = tutorialList();
+  const slug = path.match(/^\/tutorials\/([a-z0-9-]{1,80})\/?$/)?.[1];
+  if (slug) {
+    const t = list.find((x) => x.slug === slug);
+    if (!t) return send(res, 404, tutorialShell({ title: 'Not found · Blook Berry', description: 'That tutorial could not be found.', url: '/tutorials', image: `${SITE_URL}/og.png`, body: '<h1 class="tut-missing">That tutorial could not be found.</h1><p class="tut-back"><a href="/tutorials">See all tutorials</a></p>' }), TYPES['.html']);
     const body = `<p class="tut-back"><a href="/tutorials">← All tutorials</a></p>
-      <article class="tut-one" data-tutorial="${t.id}">
+      <article class="tut-one">
         ${playerMarkup(t)}
         <h1>${html(t.name)}</h1>
         <div class="tut-desc">${html(t.description).replace(/\n/g, '<br>')}</div>
       </article>`;
     return send(res, 200, tutorialShell({
       title: `${t.name} · Blook Berry tutorials`, description: firstLine(t.description) || `${t.name}: a Blook Berry tutorial.`,
-      url: `/tutorials/${t.id}`, image: absolute(thumbUrl(t)), body,
+      url: `/tutorials/${t.slug}`, image: absolute(thumbUrl(t)), body,
     }), TYPES['.html']);
   }
   const body = `<section class="tut-hero"><h1>Tutorials</h1><p>Learn to make Blooket-style art: draw a Blook, add shading, animate it and build packs.</p></section>
-    <div class="tut-grid">${list.length ? list.map((t) => `<a class="tut-card" href="/tutorials/${t.id}" data-tutorial="${t.id}">
-        <span class="tut-thumb">${thumbUrl(t) ? `<img src="${thumbUrl(t)}" alt="" loading="lazy">` : '<img src="/logo.svg" alt="" class="tut-noimg">'}${t.video ? '<i class="tut-play"></i>' : ''}</span>
+    <div class="tut-grid">${list.length ? list.map((t) => `<a class="tut-card" href="/tutorials/${t.slug}">
+        <span class="tut-thumb">${thumbUrl(t) ? `<img src="${html(thumbUrl(t))}" alt="" loading="lazy">` : '<img src="/logo.svg" alt="" class="tut-noimg">'}${t.video || t.yt ? '<i class="tut-play"></i>' : ''}</span>
         <b>${html(t.name)}</b><small>${html(firstLine(t.description, 110))}</small>
       </a>`).join('') : '<p class="tut-empty">New tutorials are coming soon.</p>'}</div>`;
   return send(res, 200, tutorialShell({
@@ -830,9 +685,13 @@ async function serveTutorials(res, path) {
   }), TYPES['.html']);
 }
 
+// For the landing page: the newest few.
+function tutorialSummaries() {
+  return tutorialList().map((t) => ({ slug: t.slug, name: t.name, thumb: thumbUrl(t) }));
+}
+
 async function serveSitemap(res) {
-  const list = await inArtQueue('tutorials', tutorialList);
-  const urls = ['/', '/tutorials', '/privacy.html', ...list.map((t) => `/tutorials/${t.id}`)];
+  const urls = ['/', '/tutorials', '/privacy.html', ...tutorialList().map((t) => `/tutorials/${t.slug}`)];
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `  <url><loc>${SITE_URL}${u}</loc></url>`).join('\n')}\n</urlset>\n`;
   return send(res, 200, xml, 'application/xml; charset=utf-8');
 }
@@ -841,7 +700,7 @@ const server = createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost');
   try {
     if (pathname.startsWith('/api/')) await api(req, res, pathname);
-    else await serveStatic(res, pathname);
+    else await serveStatic(req, res, pathname);
   } catch (err) {
     if (!res.headersSent) send(res, err.status || 400, { error: err.message || 'Something went wrong.' });
   }

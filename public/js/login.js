@@ -1,16 +1,15 @@
 // The welcome screen: log in, make an account, or play as a guest.
 import { logIn, signUp, playAsGuest } from './session.js';
-import { fetchBlooks } from './pieces.js';
 import { esc } from './render.js';
 import { $, $$, icon } from './ui.js';
 
 const FLOATING_BLOOKS = 18;
 const between = (lo, hi) => lo + Math.random() * (hi - lo);
 
-// Real blooks drift up the screen, each at its own size and speed.
+// Blook Berry art drifts up the screen, each at its own size and speed.
 async function floatBlooks(layer) {
-  const blooks = (await fetchBlooks()).filter((b) => !/animation|shape/.test(b.file));
-  const picked = [...blooks].sort(() => Math.random() - 0.5).slice(0, FLOATING_BLOOKS);
+  const art = [...SHOWCASE_ART].sort(() => Math.random() - 0.5);
+  const picked = Array.from({ length: FLOATING_BLOOKS }, (_, i) => art[i % art.length][0]);
   const lanes = picked.map((_, i) => i).sort(() => Math.random() - 0.5);
   layer.innerHTML = picked.map((b, i) => {
     const seconds = between(20, 38);
@@ -23,7 +22,7 @@ async function floatBlooks(layer) {
       `--spin:${Math.round(between(6, 22))}deg`,
       `--rest:${Math.round(between(4, 86))}%`,
     ].join(';');
-    return `<img class="floater" src="/blooks/${esc(encodeURIComponent(b.file))}" alt="" style="${style}">`;
+    return `<img class="floater" src="/showcase/${esc(b)}" alt="" style="${style}">`;
   }).join('');
 }
 
@@ -33,8 +32,13 @@ const FEATURES = [
   ['play', 'Animate', 'Make your Blook bounce, blink and wave, then export it to play anywhere.'],
   ['pack', 'Test your own packs', 'Turn your Blooks into a pack and open it with the real odds and confetti.'],
 ];
+// Art made in Blook Berry. The first six float in the top corner.
+const SHOWCASE_ART = [
+  ['pumpkin-dragon.svg', 'Pumpkin Dragon'], ['christmas-tree-dragon.svg', 'Christmas Tree Dragon'], ['battle-scarred-mike.svg', 'Battle-Scarred Mike'],
+  ['gold-bread-3.svg', 'Gold Bread'], ['silver-play-button.svg', 'Silver Play Button'], ['frozen-ted.svg', 'Frozen Ted'],
+  ['green-screen.svg', 'Green Screen'], ['heisenberg-sketch.png', 'Heisenberg Sketch'], ['methylamine.png', 'Methylamine'],
+];
 const SHOWCASE = 6;
-const GALLERY = 12;
 
 // What a new visitor sees first: what the site does, real art, and a way in.
 export async function renderLanding(root, onDone) {
@@ -62,8 +66,8 @@ export async function renderLanding(root, onDone) {
     </section>
     <section class="land-features">${FEATURES.map(([ic, title, text]) => `<div class="land-feature"><span>${icon(ic)}</span><h2>${title}</h2><p>${text}</p></div>`).join('')}</section>
     <section class="land-gallery-wrap">
-      <h2>Blooks you can start from</h2>
-      <p>Over 200 Blooks to drag in, recolour, take apart and remix.</p>
+      <h2>Made with Blook Berry</h2>
+      <p>Every one of these was drawn right here.</p>
       <div class="land-gallery"></div>
     </section>
     <section class="land-tuts" hidden>
@@ -79,19 +83,16 @@ export async function renderLanding(root, onDone) {
   </div>`;
   $$('[data-start]', root).forEach((b) => { b.onclick = () => { playAsGuest(); location.hash = '#/'; onDone(); }; });
 
-  const blooks = (await fetchBlooks()).filter((b) => !/animation|shape/.test(b.file)).sort(() => Math.random() - 0.5);
-  const pic = (b) => `<img src="/blooks/${esc(encodeURIComponent(b.file))}" alt="${esc(b.name)}" loading="lazy">`;
-  const show = $('.land-show', root);
-  if (show) show.innerHTML = blooks.slice(0, SHOWCASE).map((b, i) => `<span class="land-tile t${i}">${pic(b)}</span>`).join('');
-  const gallery = $('.land-gallery', root);
-  if (gallery) gallery.innerHTML = blooks.slice(SHOWCASE, SHOWCASE + GALLERY).map((b) => `<figure>${pic(b)}<figcaption>${esc(b.name)}</figcaption></figure>`).join('');
+  const pic = ([file, name]) => `<img src="/showcase/${esc(file)}" alt="${esc(name)}" loading="lazy">`;
+  $('.land-show', root).innerHTML = SHOWCASE_ART.slice(0, SHOWCASE).map((art, i) => `<span class="land-tile t${i}">${pic(art)}</span>`).join('');
+  $('.land-gallery', root).innerHTML = SHOWCASE_ART.map((art) => `<figure>${pic(art)}<figcaption>${esc(art[1])}</figcaption></figure>`).join('');
 
   try {
     const { tutorials } = await (await fetch('/api/tutorials')).json();
     const box = $('.land-tuts', root);
     if (box && tutorials?.length) {
-      $('.land-tut-grid', box).innerHTML = tutorials.slice(0, 3).map((t) => `<a class="land-tut" href="/tutorials/${t.id}">
-        <span>${t.hasThumb ? `<img src="/api/tutorials/${t.id}/thumb?v=${t.at}" alt="" loading="lazy">` : t.video?.kind === 'youtube' ? `<img src="https://i.ytimg.com/vi/${esc(t.video.yt)}/hqdefault.jpg" alt="" loading="lazy">` : '<img src="/logo.svg" alt="" class="noimg">'}</span><b>${esc(t.name)}</b></a>`).join('');
+      $('.land-tut-grid', box).innerHTML = tutorials.slice(0, 3).map((t) => `<a class="land-tut" href="/tutorials/${esc(t.slug)}">
+        <span>${t.thumb ? `<img src="${esc(t.thumb)}" alt="" loading="lazy">` : '<img src="/logo.svg" alt="" class="noimg">'}</span><b>${esc(t.name)}</b></a>`).join('');
       box.hidden = false;
     }
   } catch { /* No tutorials to show. */ }

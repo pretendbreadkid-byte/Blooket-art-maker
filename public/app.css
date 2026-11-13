@@ -907,8 +907,8 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .land-ctas .btn.ghost { background: #fff; color: var(--ink); }
 .land-small { margin-top: 12px; font-weight: 700; opacity: .9; }
 .land-show { position: relative; height: 380px; }
-.land-tile { position: absolute; display: grid; place-items: center; width: 150px; height: 150px; padding: 16px; background: #fff; border-radius: 22px; box-shadow: 0 7px 0 rgba(0, 0, 0, .2); animation: bob 5s ease-in-out infinite; }
-.land-tile img { width: 100%; height: 100%; object-fit: contain; }
+.land-tile { position: absolute; display: grid; place-items: center; width: 160px; height: 160px; animation: bob 5s ease-in-out infinite; }
+.land-tile img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 8px 0 rgba(0, 0, 0, .18)); }
 .land-tile.t0 { left: 4%; top: 4%; --r: -8deg; }
 .land-tile.t1 { left: 38%; top: 0; --r: 6deg; animation-delay: -1s; width: 170px; height: 170px; }
 .land-tile.t2 { right: 0; top: 18%; --r: -4deg; animation-delay: -2s; }
@@ -926,10 +926,11 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .land-gallery-wrap, .land-tuts, .land-end { width: min(1140px, 100%); margin: 0 auto; padding: 24px 24px 40px; text-align: center; }
 .land-gallery-wrap h2, .land-tuts h2, .land-end h2 { font: clamp(28px, 4vw, 42px) 'Titan One', system-ui, sans-serif; text-shadow: 4px 5px 0 rgba(0, 0, 0, .18); }
 .land-gallery-wrap > p { margin: 8px 0 20px; font-weight: 800; font-size: 17px; }
-.land-gallery { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
-.land-gallery figure { margin: 0; padding: 12px 10px 8px; background: rgba(255, 255, 255, .95); border-radius: 16px; box-shadow: 0 5px 0 rgba(0, 0, 0, .15); color: var(--ink); }
-.land-gallery img { width: 100%; aspect-ratio: 1; object-fit: contain; }
-.land-gallery figcaption { font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.land-gallery { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px 28px; }
+.land-gallery figure { margin: 0; width: 170px; }
+.land-gallery img { width: 100%; aspect-ratio: 1; object-fit: contain; filter: drop-shadow(0 6px 0 rgba(0, 0, 0, .16)); transition: transform .15s; }
+.land-gallery figure:hover img { transform: translateY(-4px) rotate(-3deg); }
+.land-gallery figcaption { margin-top: 6px; font-weight: 800; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 0 rgba(0, 0, 0, .18); }
 .land-tut-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 20px 0; text-align: left; }
 .land-tut { display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 14px; background: #fff; color: var(--ink); border-radius: 16px; box-shadow: 0 5px 0 rgba(0, 0, 0, .15); }
 .land-tut span { aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #f5d3e4; }
@@ -944,7 +945,7 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
   .land-hero { grid-template-columns: 1fr; padding-top: 32px; }
   .land-show { height: 300px; transform: scale(.85); transform-origin: top center; }
   .land-features { grid-template-columns: repeat(2, 1fr); }
-  .land-gallery { grid-template-columns: repeat(4, 1fr); }
+  .land-gallery figure { width: 140px; }
   .land-tut-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
@@ -953,8 +954,9 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
   .land-top nav { gap: 12px; }
   .land-hero, .land-features, .land-gallery-wrap, .land-tuts, .land-end { padding-left: 16px; padding-right: 16px; }
   .land-features { grid-template-columns: 1fr; }
-  .land-gallery { grid-template-columns: repeat(3, 1fr); }
+  .land-gallery { gap: 14px; }
+  .land-gallery figure { width: calc(33% - 10px); }
   .land-show { height: auto; transform: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 6px; }
-  .land-tile { position: static; width: auto !important; height: auto !important; min-width: 0; aspect-ratio: 1; padding: 10px; border-radius: 16px; }
+  .land-tile { position: static; width: auto !important; height: auto !important; min-width: 0; aspect-ratio: 1; }
   .land-tile img { min-width: 0; max-width: 100%; }
 }

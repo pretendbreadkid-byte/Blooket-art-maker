@@ -26,7 +26,6 @@ h1, h2 { font-family: 'Titan One', system-ui, sans-serif; font-weight: 400; marg
 .tut-hero { color: #fff; margin-bottom: 24px; }
 .tut-hero h1 { font-size: clamp(36px, 6vw, 56px); text-shadow: 4px 5px 0 rgba(0, 0, 0, .2); }
 .tut-hero p { font-weight: 800; font-size: 18px; margin: 6px 0 0; text-shadow: 0 2px 0 rgba(0, 0, 0, .15); }
-.tut-bar { display: flex; gap: 10px; margin-bottom: 20px; }
 
 .tut-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px; }
 .tut-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 10px 14px; background: #fff; border-radius: 16px; text-decoration: none; box-shadow: 0 5px 0 rgba(0, 0, 0, .18); transition: transform .12s; }
@@ -51,27 +50,7 @@ h1, h2 { font-family: 'Titan One', system-ui, sans-serif; font-weight: 400; marg
 
 .tut-foot { text-align: center; padding: 18px; color: #fff; font-weight: 700; }
 
-/* Controls for the tutorial account */
-.tut-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 10px; padding: 9px 16px; font: 800 15px Nunito, system-ui, sans-serif; cursor: pointer; background: #fff; color: var(--ink); box-shadow: 0 3px 0 rgba(0, 0, 0, .18); }
-.tut-btn.primary { background: var(--teal); color: #fff; box-shadow: 0 3px 0 var(--teal-dark); }
-.tut-btn.danger { background: var(--danger); color: #fff; box-shadow: 0 3px 0 #9e1d33; }
-.tut-btn:disabled { opacity: .5; cursor: default; }
-.tut-owner { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.tut-card-tools { display: flex; gap: 6px; padding: 6px 4px 0; }
-.tut-card-tools button { font-size: 13px; padding: 5px 10px; }
-.tut-modal { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: rgba(43, 13, 30, .55); }
-.tut-form { width: min(560px, 100%); max-height: 92vh; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 20px; background: #fff; border-radius: 16px; }
-.tut-form h2 { font-size: 26px; }
-.tut-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 800; font-size: 14px; }
-.tut-form input[type=text], .tut-form input[type=url], .tut-form textarea { font: 15px Nunito, system-ui, sans-serif; padding: 9px 11px; border: 1.5px solid var(--line); border-radius: 10px; }
-.tut-form textarea { min-height: 110px; resize: vertical; }
-.tut-form small { color: var(--muted); font-weight: 600; }
-.tut-form .tut-or { text-align: center; color: var(--muted); font-weight: 800; }
-.tut-form .tut-thumb-pre { width: 200px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: #f5d3e4; }
-.tut-form .tut-err { color: var(--danger); font-weight: 800; }
-.tut-progress { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; }
-.tut-progress i { display: block; height: 100%; width: 0; background: var(--teal); transition: width .2s; }
-.tut-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.tut-missing { color: #fff; }
 
 @media (max-width: 560px) {
   .tut-top { padding: 10px 16px; }
