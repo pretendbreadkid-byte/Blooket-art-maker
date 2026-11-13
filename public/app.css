@@ -741,15 +741,6 @@ body[data-tool=lasso] #wk { cursor: crosshair; }
 .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 30px 28px; }
 .market-note { margin-bottom: 18px; color: #fff; font-weight: 800; text-shadow: 0 2px 0 rgba(0, 0, 0, .15); }
 .market-card { position: relative; }
-.community-bar { display: flex; align-items: flex-start; gap: 16px; justify-content: space-between; flex-wrap: wrap; }
-.community-bar select { height: 38px; border: 1.5px solid var(--line); border-radius: 10px; padding: 0 10px; background: #fff; font-weight: 700; }
-.community-pack { display: flex; flex-direction: column; gap: 8px; }
-.votes { display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, .92); border-radius: 10px; padding: 4px 8px; font-weight: 800; }
-.votes small { margin-left: auto; color: var(--muted); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vote { width: 28px; height: 28px; border-radius: 8px; color: var(--muted); font-size: 13px; }
-.vote:not(:disabled):hover { background: var(--panel-2); }
-.vote.up.on { color: #fff; background: #2e9e6a; }
-.vote.down.on { color: #fff; background: var(--danger); }
 .market-open { display: flex; flex-direction: column; width: 100%; overflow: hidden; border: 4px solid color-mix(in srgb, var(--pack) 60%, #fff); border-radius: 14px; background: #3d8ce8; box-shadow: 0 6px 0 rgba(0, 0, 0, .2); transition: transform .12s; }
 .market-open:hover { transform: translateY(-4px) scale(1.02); }
 .market-open:active { transform: scale(.98); }
@@ -807,16 +798,6 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .icon-pick .ico { width: 22px; height: 22px; }
 .pack-pick .market-art { border-radius: 12px; }
 
-/* Reviewing Community packs */
-.review-head { margin: 14px 0 8px; color: #fff; font-size: 15px; }
-.review-list { display: flex; flex-direction: column; gap: 8px; list-style: none; padding: 0; margin-bottom: 20px; }
-.review { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px; padding: 10px; background: var(--panel); border-radius: 12px; }
-.review:not(:has([data-approve])) { grid-template-columns: 64px minmax(0, 1fr) auto auto; }
-.review-art .market-art { width: 64px; border-radius: 8px; }
-.review-text { display: flex; flex-direction: column; min-width: 0; }
-.review-text small { color: var(--muted); }
-.review-text em { align-self: flex-start; margin-top: 4px; padding: 1px 8px; border-radius: 6px; background: #ffe6a6; color: #8a5a00; font-style: normal; font-size: 12px; font-weight: 800; }
-.review-text em.ok { background: #d5f5d0; color: #23661a; }
 
 @media (max-width: 760px) {
   .buy { grid-template-columns: 1fr; }

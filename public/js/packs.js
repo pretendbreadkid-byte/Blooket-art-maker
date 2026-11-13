@@ -21,7 +21,6 @@ const WAVE_MS = 700;
 const COVER_SIZE = 360;
 const ICON_SIZE = 256;
 const MAX_BUY = 1000;
-const PULLS_KEY = 'blook-community-pulls';
 
 export const packVisual = (art) => `<span class="pack-visual"><img src="/pack/foil.png" alt="">${art ? `<img class="pack-art" src="${esc(art)}" alt="">` : '<i class="pack-art pack-blank">Pack art</i>'}</span>`;
 
@@ -86,11 +85,8 @@ function chooseAsset(title, template, max) {
 
 /* ---------- The pack editor ---------- */
 
-// Community packs aren't yours to change, so only what you pulled from them is
-// kept, in this browser.
 export async function savePack(doc) {
   if (doc.preview) return;
-  if (doc.community) { saveCommunityPulls(doc.id, doc.pack.pulled); return; }
   await saveDoc(doc, doc.pack.art);
 }
 
@@ -165,48 +161,6 @@ export async function shopPack(doc) {
   if (amount) openPack(doc, amount, () => shopPack(doc));
 }
 
-/* ---------- Community ---------- */
-
-function communityPulls() {
-  try { return JSON.parse(localStorage.getItem(PULLS_KEY)) || {}; } catch { return {}; }
-}
-
-function saveCommunityPulls(id, pulled) {
-  const all = communityPulls();
-  all[id] = pulled;
-  try { localStorage.setItem(PULLS_KEY, JSON.stringify(all)); } catch { /* Pulls just won't be remembered. */ }
-}
-
-export const fetchCommunity = async () => (await call('GET', '/api/community')).packs;
-export const fetchMySent = async () => (await call('GET', '/api/community/mine')).packs;
-export const voteOn = (id, vote) => call('POST', `/api/community/${id}/vote`, { vote });
-
-// A community pack, shaped like one of your own so the opener can use it.
-export async function communityDoc(id) {
-  const { name, author, pack } = await call('GET', `/api/community/${id}`);
-  return { id, name, author, community: true, pack: { ...pack, pulled: communityPulls()[id] || {} } };
-}
-
-// Community packs you have pulled something from, for My Blooks.
-export async function pulledCommunityDocs() {
-  const ids = Object.entries(communityPulls()).filter(([, pulled]) => Object.keys(pulled || {}).length).map(([id]) => id);
-  return (await Promise.all(ids.map((id) => communityDoc(id).catch(() => null)))).filter(Boolean);
-}
-
-async function sendToCommunity(doc) {
-  if (session.guest || !session.user) { toast('Make an account to share packs with the community.', 'warn'); return; }
-  const { price, color, art, back, icon: iconArt, blooks } = doc.pack;
-  try {
-    await call('POST', '/api/community', {
-      source: doc.id, name: doc.name, cover: await toPicture(art, COVER_SIZE),
-      pack: { price, color, art, back, icon: iconArt, blooks },
-    });
-    toast('Shared! It is in Community now with your upvote.', 'ok');
-  } catch (error) {
-    toast(error.message, 'warn');
-  }
-}
-
 export function newPackProject() {
   const doc = newDoc({ name: 'My pack' });
   doc.pack = newPack();
@@ -257,7 +211,6 @@ export function editPack(doc, onChange) {
         <p class="size-err" role="alert" hidden></p>
         <div class="dlg-actions">
           <button type="button" class="btn ghost danger" id="packdelete">${icon('trash')}<span>Delete</span></button>
-          ${session.guest ? '' : `<button type="button" class="btn ghost" id="packsend" title="Everyone can open and vote on it in Community">${icon('send')}<span>Send to Community</span></button>`}
           <button type="button" class="btn ghost" id="packopen">${icon('play')}<span>Test open</span></button>
           <button type="button" class="btn primary" id="packdone">Save</button>
         </div>`;
@@ -292,18 +245,6 @@ export function editPack(doc, onChange) {
         if (asset) pack.icon = asset.href;
         draw();
       };
-      $('#packsend', box)?.addEventListener('click', async () => {
-        readForm();
-        const why = whyNotOpen(pack);
-        if (why) {
-          const err = $('.size-err', box);
-          err.textContent = why;
-          err.hidden = false;
-          return;
-        }
-        await keep();
-        await sendToCommunity(doc);
-      });
       $('#packback', box).onclick = async () => {
         readForm();
         const asset = await chooseAsset('Choose the Blook background', 'background', BLOOK_SIZE);
@@ -387,7 +328,7 @@ export function blookCard(blook, doc) {
 /* ---------- My Blooks ---------- */
 
 // Everything that can come out of your packs. Ones you haven't pulled stay hidden.
-// docs: your packs, and community packs you have pulled from.
+// docs: your packs.
 export async function drawCollection(host, packDocs) {
   const docs = packDocs.filter((d) => d?.pack.blooks.length);
   const order = Object.keys(RARITIES);

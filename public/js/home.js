@@ -8,7 +8,7 @@ import { session, logOut } from './session.js';
 import { syncArt, flushUploads, resetSync } from './sync.js';
 import { TEMPLATES, templatePreview } from './templates.js';
 import {
-  drawCollection, editPack, newPackProject, savePack, marketCard, shopPack, fetchCommunity, fetchMySent, voteOn, communityDoc, pulledCommunityDocs,
+  drawCollection, editPack, newPackProject, savePack, marketCard, shopPack,
 } from './packs.js';
 import { whyNotOpen } from './pack-rules.js';
 import { $, $$, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
@@ -38,18 +38,12 @@ const GROUPS = [
   { id: 'other', name: 'Other art', icon: 'image', made: 'Art' },
 ];
 const groupOf = (p) => (TEMPLATES[p.template] ? p.template : 'other');
-const TEST_TITLES = { packs: 'Your packs', community: 'Community packs', blooks: 'My Blooks' };
-const TEST_TABS = [['packs', 'Your packs'], ['community', 'Community'], ['blooks', 'My Blooks']];
+const TEST_TITLES = { packs: 'Your packs', blooks: 'My Blooks' };
+const TEST_TABS = [['packs', 'Your packs'], ['blooks', 'My Blooks']];
 
 let currentFolder = 'all';
 let search = '';
 let sortBy = 'recent';
-let communitySort = 'top';
-const COMMUNITY_SORTS = [['top', 'Most upvotes'], ['new', 'Newest'], ['old', 'Oldest'], ['cheap', 'Cheapest'], ['pricey', 'Priciest'], ['name', 'A to Z']];
-const byCommunity = {
-  top: (a, b) => b.score - a.score || b.at - a.at, new: (a, b) => b.at - a.at, old: (a, b) => a.at - b.at,
-  cheap: (a, b) => a.price - b.price, pricey: (a, b) => b.price - a.price, name: (a, b) => a.name.localeCompare(b.name),
-};
 const SORTS = { recent: (a, b) => b.updatedAt - a.updatedAt, old: (a, b) => a.updatedAt - b.updatedAt, name: (a, b) => a.name.localeCompare(b.name) };
 let testTab = 'packs';
 let host = null;
@@ -191,17 +185,16 @@ function testView() {
   return `<div id="market" class="${testTab === 'blooks' ? 'my-blooks' : 'market'}"><p class="market-note">Loading...</p></div>`;
 }
 
-// Your packs, Community packs, or every Blook you have pulled.
+// Your packs, or every Blook you have pulled.
 async function fillTest(host, packs, redraw) {
   const tab = testTab;
   const live = () => host.isConnected && testTab === tab;
   const mine = (await Promise.all(packs.map((p) => getDoc(p.id)))).filter(Boolean);
   if (tab === 'blooks') {
-    const community = await pulledCommunityDocs().catch(() => []);
-    if (live()) drawCollection(host, [...mine, ...community]);
+    if (live()) drawCollection(host, mine);
     return;
   }
-  if (tab === 'packs') {
+  {
     host.innerHTML = `<div class="market-grid">
       <button class="market-new" id="newpack">${icon('plus')}<b>New pack</b></button>
       ${mine.map((doc) => marketCard({ ...doc.pack, id: doc.id, name: doc.name, editable: true })).join('')}
@@ -218,52 +211,6 @@ async function fillTest(host, packs, redraw) {
       $('.market-open', c).onclick = () => (whyNotOpen(doc.pack) ? editPack(doc, redraw) : shopPack(doc));
     });
     return;
-  }
-  try {
-    const shared = await fetchCommunity();
-    if (!live()) return;
-    const note = session.user
-      ? 'Upvote the packs you like. A pack that drops to 0 votes is taken out. Share your own from one of your packs with Send to Community.'
-      : 'Make an account to vote and share your own packs here.';
-    const voteBox = (p) => `<div class="votes" data-vote-for="${esc(p.id)}">
-        <button class="vote up ${p.myVote === 1 ? 'on' : ''}" data-v="1" ${p.mine || !session.user ? 'disabled' : ''} title="${p.mine ? 'Your pack' : 'Upvote'}" aria-label="Upvote">▲</button>
-        <b>${p.score}</b>
-        <button class="vote down ${p.myVote === -1 ? 'on' : ''}" data-v="-1" ${p.mine || !session.user ? 'disabled' : ''} title="${p.mine ? 'Your pack' : 'Downvote'}" aria-label="Downvote">▼</button>
-        <small>by ${esc(p.author)}</small>
-      </div>`;
-    const draw = () => {
-      const list = [...shared].sort(byCommunity[communitySort]);
-      host.innerHTML = `<div class="community-bar"><p class="market-note">${note}</p>
-        <select id="communitysort" aria-label="Sort community packs">${COMMUNITY_SORTS.map(([v, l]) => `<option value="${v}" ${communitySort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-        ${list.length
-          ? `<div class="market-grid">${list.map((p) => `<div class="community-pack">${marketCard({ ...p, art: p.cover })}${voteBox(p)}</div>`).join('')}</div>`
-          : '<p class="market-note">No community packs yet. Be the first!</p>'}`;
-      $('#communitysort', host).onchange = (e) => { communitySort = e.target.value; draw(); };
-      $$('.market-card', host).forEach((c) => {
-        $('.market-open', c).onclick = async () => {
-          try { shopPack(await communityDoc(c.dataset.id)); } catch (error) { toast(error.message, 'warn'); }
-        };
-      });
-      $$('.votes .vote', host).forEach((b) => {
-        b.onclick = async () => {
-          const id = b.closest('[data-vote-for]').dataset.voteFor;
-          const p = shared.find((x) => x.id === id);
-          // Pressing your vote again takes it back.
-          const vote = p.myVote === +b.dataset.v ? 0 : +b.dataset.v;
-          try {
-            const result = await voteOn(id, vote);
-            if (result.removed) {
-              shared.splice(shared.indexOf(p), 1);
-              toast(`"${p.name}" dropped to 0 votes and was taken out of Community.`, 'ok');
-            } else Object.assign(p, result.pack);
-            if (live()) draw();
-          } catch (error) { toast(error.message, 'warn'); }
-        };
-      });
-    };
-    draw();
-  } catch (error) {
-    if (live()) host.innerHTML = `<p class="market-note">Community could not load. ${esc(error.message)}</p>`;
   }
 }
 

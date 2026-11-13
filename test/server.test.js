@@ -103,55 +103,6 @@ test('only numbers survive in uploaded geometry', async () => {
   assert.equal((await api('POST', '/api/shapes', { name: 'empty' })).status, 400);
 });
 
-test('shared packs go straight into Community, and drop out at 0 votes', async () => {
-  const pic = `data:image/png;base64,${Buffer.from('fake').toString('base64')}`;
-  const as = (auth) => (method, path, body) => fetch(BASE + path, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const anyone = as(null);
-  const join = async (name) => as((await (await anyone('POST', '/api/auth/register', { username: name, password: 'hunter22' })).json()).token);
-  const maker = await join('packmaker');
-  const fan = await join('packfan');
-  const hater = await join('packhater');
-  const sent = {
-    source: 'p-1', name: 'Fall Pack', cover: pic,
-    pack: { price: 25, color: '#e5731a', art: pic, icon: pic, blooks: [{ id: 'b1', name: 'Leaf', picture: pic, rarity: 'Rare', odds: 100, extra: 'x' }] },
-  };
-  assert.equal((await anyone('POST', '/api/community', sent)).status, 401, 'guests cannot send');
-  assert.equal((await maker('POST', '/api/community', { ...sent, pack: { ...sent.pack, blooks: [] } })).status, 400);
-  assert.equal((await maker('POST', '/api/community', { ...sent, pack: { ...sent.pack, art: 'javascript:alert(1)' } })).status, 400);
-  const created = await maker('POST', '/api/community', sent);
-  assert.equal(created.status, 200);
-  const { pack } = await created.json();
-  assert.equal(pack.score, 1, 'starts with the maker upvote');
-
-  const listed = (await (await anyone('GET', '/api/community')).json()).packs;
-  assert.equal(listed.length, 1, 'shown right away');
-  assert.equal(listed[0].author, 'packmaker');
-  const full = await (await anyone('GET', `/api/community/${pack.id}`)).json();
-  assert.equal(full.pack.blooks[0].name, 'Leaf');
-  assert.equal(full.pack.blooks[0].extra, undefined, 'only known fields are kept');
-
-  const vote = (who, v) => who('POST', `/api/community/${pack.id}/vote`, { vote: v });
-  assert.equal((await vote(anyone, 1)).status, 401, 'guests cannot vote');
-  assert.equal((await vote(maker, 1)).status, 400, 'no voting on your own pack');
-  assert.equal((await (await vote(fan, 1)).json()).pack.score, 2);
-  assert.equal((await (await vote(fan, 1)).json()).pack.score, 2, 'one vote each');
-  assert.equal((await (await fan('GET', '/api/community')).json()).packs[0].myVote, 1);
-  assert.equal((await (await vote(hater, -1)).json()).pack.score, 1);
-
-  // Sharing again keeps its votes.
-  await maker('POST', '/api/community', { ...sent, name: 'Fall Pack 2' });
-  assert.equal((await (await anyone('GET', '/api/community')).json()).packs[0].score, 1);
-
-  // The fan takes their vote back: it drops to 0 and is taken out.
-  assert.equal((await (await vote(fan, 0)).json()).removed, true);
-  assert.deepEqual((await (await anyone('GET', '/api/community')).json()).packs, []);
-  assert.equal((await anyone('GET', `/api/community/${pack.id}`)).status, 404);
-});
-
 test('the admin password ignores stray spaces and quote marks', async () => {
   for (const attempt of [` ${PASSWORD} `, `"${PASSWORD}"`, `${PASSWORD}
 `]) {
