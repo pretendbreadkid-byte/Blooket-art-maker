@@ -41,6 +41,7 @@ Then open <http://localhost:5180>.
 | Swap colours | | Change one colour everywhere in the picked art, including SVG and other pictures. |
 | Blur | | Soften any picked art, from 0 to 60 px. In an animation it can blur in and out. |
 | Shadow | | A solid, see-through drop shadow under picked art, with darkness, distance and direction. Softness blurs it if you want. A whole Blook casts one shadow together. |
+| More fonts | | In any font menu, More fonts… downloads free fonts from Google Fonts (pick one, or type any Google font name) or imports your own .ttf, .otf, .woff or .woff2 file. The project keeps a copy, so the font works on any device and is built into exports. |
 | Group | Ctrl+G, Ctrl+Shift+G | Pick two or more things and group them, so clicking any of them picks them all. Ctrl+Shift+G ungroups. |
 | Layers | | Turn on when making a project, or in the Canvas panel. Lists everything, top first, with groups as folders. Hide, lock, rename (double-click) and drag to reorder. |
 | Colours from pictures | | In any colour picker: From a picture lets you click a picture to take an exact colour, or use its main colours. From the screen (Chrome and Edge) picks from anywhere. |

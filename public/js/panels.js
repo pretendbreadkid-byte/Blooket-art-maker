@@ -14,6 +14,7 @@ import {
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { drawLayers } from './layers.js';
+import { fontDialog } from './fonts.js';
 import { canRemoveBackground, removeBackground } from './bg-remove.js';
 import { TEMPLATES, overlayLook } from './templates.js';
 import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
@@ -163,16 +164,31 @@ function selectedNodeKind(item) {
   return n && (n.ix || n.iy || n.ox || n.oy) ? 'rounded' : 'pointed';
 }
 
+// The built-in fonts, then the ones this project added.
+function fontChoices(current) {
+  const added = (S.doc?.fonts || []).map((f) => [f.family, f.family]).filter(([f]) => !FONTS.some(([g]) => g === f));
+  const list = [...FONTS, ...added];
+  if (current && !list.some(([f]) => f === current)) list.push([current, current]);
+  return list;
+}
+
 function fontControls(target, apply) {
   const box = html(`<div class="font-row">
-    <select aria-label="Font">${FONTS.map(([f, label]) => `<option value="${f}" ${f === target.fontFamily ? 'selected' : ''}>${label}</option>`).join('')}</select>
+    <select aria-label="Font">${fontChoices(target.fontFamily).map(([f, label]) => `<option value="${esc(f)}" ${f === target.fontFamily ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+      <option value="__more">More fonts…</option></select>
     <button class="tog ${target.bold ? 'on' : ''}" title="Bold"><b>B</b></button>
     <button class="tog ${target.italic ? 'on' : ''}" title="Italic"><i>I</i></button>
     <button class="tog tog-shadow ${target.shadow ? 'on' : ''}" title="Chunky shadow, like the Blooket logo"><b>S</b></button>
   </div>`);
   const [bold, italic, shadow] = $$('.tog', box);
   // Picking the Blooket font brings its shadow with it, like the real logo.
-  $('select', box).onchange = (e) => {
+  $('select', box).onchange = async (e) => {
+    if (e.target.value === '__more') {
+      e.target.value = target.fontFamily;
+      const family = await fontDialog(S.doc);
+      if (family) { apply({ fontFamily: family }, true); commit(); hooks.panels(); }
+      return;
+    }
     const blooket = e.target.value === BLOOKET_FONT;
     if (blooket) shadow.classList.add('on');
     apply({ fontFamily: e.target.value, ...(blooket ? { shadow: true } : {}) });

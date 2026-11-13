@@ -50,12 +50,19 @@ const fillOf = (o, gradientId) => (o.gradient ? `url(#${gradientId})` : esc(o.fi
 // Fonts stored in the file, because a saved or exported SVG cannot reach the
 // app's own font files.
 const embeddedFonts = new Map();
-export const embedFont = (family, base64) => embeddedFonts.set(family, base64);
+const FONT_TYPES = { woff2: ['font/woff2', 'woff2'], woff: ['font/woff', 'woff'], ttf: ['font/ttf', 'truetype'], otf: ['font/otf', 'opentype'] };
+export const embedFont = (family, data, format = 'woff2') => embeddedFonts.set(family, { data, format });
 
+// A project's own fonts (doc.fonts) come first, so an export works even when
+// the project is not open.
 function fontStyle(doc) {
   const used = new Set(doc.layers.flatMap((l) => l.objects).filter((o) => o.type === 'text').map((o) => o.fontFamily));
-  const faces = [...embeddedFonts].filter(([family]) => used.has(family))
-    .map(([family, base64]) => `@font-face{font-family:"${family}";src:url(data:font/woff2;base64,${base64}) format("woff2")}`);
+  const faces = [...used].map((family) => {
+    const font = doc.fonts?.find((f) => f.family === family) || embeddedFonts.get(family);
+    const type = font && FONT_TYPES[font.format];
+    if (!type || !/^[A-Za-z0-9+/=]+$/.test(font.data)) return '';
+    return `@font-face{font-family:"${family.replace(/["\\<>]/g, '')}";src:url(data:${type[0]};base64,${font.data}) format("${type[1]}")}`;
+  }).filter(Boolean);
   return faces.length ? `<style>${faces.join('')}</style>` : '';
 }
 

@@ -865,3 +865,19 @@ test('the background remover takes away a gradient background and keeps the subj
   assert.equal(out[(15 * W + 15) * 4 + 3], 255, 'the inside of the subject is solid');
   assert.ok(out[(10 * W + 15) * 4 + 3] < 255 && out[(10 * W + 15) * 4 + 3] > 0, 'its edge is softened');
 });
+
+test('fonts a project added are built into its exports, in their own format', () => {
+  const doc = newDoc({ name: 't' });
+  doc.layers[0].objects.push(newText({ text: 'Hi', fontFamily: 'My Font' }), newText({ text: 'Yo', fontFamily: 'Lilita One' }));
+  doc.fonts = [
+    { family: 'My Font', data: 'AAEC', format: 'ttf', source: 'file' },
+    { family: 'Lilita One', data: 'd09GMg==', format: 'woff2', source: 'google' },
+    { family: 'Unused', data: 'AAAA', format: 'otf', source: 'file' },
+  ];
+  const svg = exportSVG(doc);
+  assert.ok(svg.includes('@font-face{font-family:"My Font";src:url(data:font/ttf;base64,AAEC) format("truetype")}'), svg);
+  assert.ok(svg.includes('format("woff2")'));
+  assert.ok(!svg.includes('Unused'), 'only fonts in use are carried');
+  doc.fonts[0].data = '") </style><script>';
+  assert.ok(!exportSVG(doc).includes('<script>'), 'a broken font is left out, not written in');
+});

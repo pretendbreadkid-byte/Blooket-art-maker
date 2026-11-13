@@ -22,6 +22,7 @@ import { imageToShape } from './trace.js';
 import { session } from './session.js';
 import { syncArt, flushUploads, syncStatus } from './sync.js';
 import { pathD, pathBounds } from './model.js';
+import { loadDocFonts } from './fonts.js';
 import { $, $$, icon, menu, toast, dialog, readDataUrl, pictureSources } from './ui.js';
 
 const TEMPLATE = `
@@ -294,6 +295,8 @@ export async function openEditor(root, id) {
   if (!doc) { location.hash = '#/'; toast('That project could not be found.', 'warn'); return; }
   const meta = await getMeta(id);
   openDoc(doc, meta?.thumb || null);
+  // The project's own fonts, before its text is drawn.
+  await loadDocFonts(doc);
   root.innerHTML = TEMPLATE;
   document.title = `${doc.name} · Blook Berry`;
   S.tool = 'select';
