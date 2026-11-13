@@ -5,7 +5,7 @@ import { S, commit, refresh, select, activeLayer, findObj } from './state.js';
 import { objectsOn } from './model.js';
 import { esc } from './render.js';
 import { canGroup, canUngroup, groupSelection, ungroupSelection } from './tools.js';
-import { $, $$, html, icon } from './ui.js';
+import { $, $$, html, icon, toast } from './ui.js';
 
 const openGroups = new Set();
 const TYPE_ICONS = { path: 'shapes', text: 'text', image: 'image' };
@@ -116,11 +116,18 @@ export function drawLayers() {
       <span class="layer-tools">
         <button class="ib" id="lgroup" title="Group (Ctrl+G)" aria-label="Group" ${canGroup() ? '' : 'disabled'}>${icon('group')}</button>
         <button class="ib" id="lungroup" title="Ungroup (Ctrl+Shift+G)" aria-label="Ungroup" ${canUngroup() ? '' : 'disabled'}>${icon('ungroup')}</button>
+        <button class="ib" id="lclose" title="Close the Layers panel (turn it back on in the Canvas panel)" aria-label="Close the Layers panel">${icon('x')}</button>
       </span></div>
     ${items.length ? `<ul class="layer-list">${items.map((it) => (it.o ? row(it.o, false) : groupRow(it.group, it.members))).join('')}</ul>`
       : '<p class="muted small">Things you add show up here.</p>'}`;
   $('#lgroup', host).onclick = groupSelection;
   $('#lungroup', host).onclick = ungroupSelection;
+  $('#lclose', host).onclick = () => {
+    S.doc.layersPanel = false;
+    commit();
+    refresh();
+    toast('Layers panel closed. Turn it back on in the Canvas panel.');
+  };
 
   $$('.layer-row', host).forEach((el) => {
     const ids = idsOf(el);
