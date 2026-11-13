@@ -39,6 +39,7 @@ Then open <http://localhost:5180>.
 | Uploads | | Upload your own pictures. They stay on your account, ready for any project. |
 | Textures | | Dots, stripes, checks, grid, waves, sparkles, shine, bricks, planks, scales, zigzag, diamonds, hearts, Blooks or your own picture, on some pieces, a whole Blook or the background. Add as many as you like, layered in order, each with its own settings. In an animation they can slide, and the shine sweeps across by itself. |
 | Swap colours | | Change one colour everywhere in the picked art, including SVG and other pictures. |
+| Pixelate | | Any picked art, and the background, can turn into square blocks, from 2 to 60 px. The blocks line up across the whole canvas. |
 | Blur and opacity | | Any picked art can blur (0 to 60 px) and fade. Fill and outline each have their own opacity too. The background has its own opacity and blur, each texture has a Blur, the underbelly has a Blur, and Auto shadow has Softness. In an animation blur and opacity can change over time. |
 | Shadow | | A solid, see-through drop shadow under picked art, with darkness, distance and direction. Softness blurs it if you want. A whole Blook casts one shadow together. |
 | More fonts | | In any font menu, More fonts… downloads free fonts from Google Fonts (pick one, or type any Google font name) or imports your own .ttf, .otf, .woff or .woff2 file. The project keeps a copy, so the font works on any device and is built into exports. |

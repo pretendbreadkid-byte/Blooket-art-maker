@@ -242,10 +242,26 @@ function underbellyFilter(o, id) {
 
 // Blur is measured on the canvas, so it sits outside the piece's own scale.
 // values: an animated blur, one stdDeviation per frame.
-function blurred(markup, id, amount, values = '') {
-  if (!(amount > 0) && !values) return markup;
+// pixel: block size for Pixelate, in canvas pixels. 0 for none.
+function blurred(markup, id, amount, values = '', pixel = 0) {
+  const blocks = pixel >= 2;
+  if (!(amount > 0) && !values && !blocks) return markup;
   const half = MASK_SIZE / 2;
-  return `<g filter="url(#${id})"><filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}"><feGaussianBlur stdDeviation="${round(amount || 0, 2)}">${values}</feGaussianBlur></filter>${markup}</g>`;
+  const blur = amount > 0 || values ? `<feGaussianBlur stdDeviation="${round(amount || 0, 2)}" result="soft">${values}</feGaussianBlur>` : '';
+  return `<g filter="url(#${id})"><filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}">${blur}${blocks ? pixelSteps(pixel, blur ? 'soft' : 'SourceGraphic') : ''}</filter>${markup}</g>`;
+}
+
+// Pixelate: one small sample from each block, on a grid that starts at the
+// canvas corner (so pieces line up), then each sample grown to fill its block.
+export function pixelSteps(size, input) {
+  const s = round(Math.max(2, size), 2);
+  const dot = round(Math.max(1, s / 4), 2);
+  const r = round((s - dot) / 2, 2);
+  return `<feFlood x="${r}" y="${r}" width="${dot}" height="${dot}" result="dot"/>`
+    + `<feOffset in="dot" x="0" y="0" width="${s}" height="${s}" result="cell"/>`
+    + '<feTile in="cell" result="grid"/>'
+    + `<feComposite in="${input}" in2="grid" operator="in"/>`
+    + `<feMorphology operator="dilate" radius="${r}"/>`;
 }
 
 // A welded shape's pieces, each in its own colours, cut to the joined outline. The
@@ -276,7 +292,7 @@ function objectMarkup(raw, frame, opt) {
   const belly = underbellyFilter(o, `${maskId}-belly`);
   const parts = weldedParts(o, maskId, frame, opt, '', textures.ids);
   const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + belly + parts.defs;
-  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? [] : textures.ids)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur);
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? [] : textures.ids)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur, '', o.pixel || 0);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -317,7 +333,7 @@ function animatedObject(raw, doc, opt) {
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
     + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + belly + parts.defs
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, parts.art ? [] : textures.ids, shape)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs);
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, parts.art ? [] : textures.ids, shape)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs, raw.pixel || 0);
 }
 
 /* ---------- Shadows ---------- */
@@ -439,7 +455,7 @@ export function layersMarkup(doc, frame, opt = {}) {
 }
 
 export function backgroundMarkup(doc, prefix = 'frame', frame = 0, opt = {}) {
-  const blur = Math.max(0, doc.bgBlur || 0), fade = doc.bgOpacity ?? 1;
+  const blur = Math.max(0, doc.bgBlur || 0), fade = doc.bgOpacity ?? 1, pixel = doc.bgPixel >= 2 ? doc.bgPixel : 0;
   const pad = round(blur * 3);
   const area = pad ? `x="${-pad}" y="${-pad}" width="${doc.width + pad * 2}" height="${doc.height + pad * 2}"` : `width="${doc.width}" height="${doc.height}"`;
   const texture = bgTexturesOf(doc).map((tex, i) => `${patternMarkup(tex, `${prefix}-bgtex${i ? i : ''}`, null, frame, { ...opt, doc })}<rect ${area} fill="url(#${prefix}-bgtex${i ? i : ''})"/>`).join('');
@@ -452,10 +468,12 @@ export function backgroundMarkup(doc, prefix = 'frame', frame = 0, opt = {}) {
   } else {
     art = `<rect ${area} fill="${esc(doc.background)}"/>${texture}`;
   }
-  if (!art || (fade >= 1 && !blur)) return art;
+  if (!art || (fade >= 1 && !blur && !pixel)) return art;
   const half = MASK_SIZE / 2;
-  const filter = blur ? `<filter id="${prefix}-bgblur" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}"><feGaussianBlur stdDeviation="${round(blur, 2)}"/></filter>` : '';
-  return `${filter}<g${fade < 1 ? ` opacity="${round(Math.max(0, fade), 3)}"` : ''}${blur ? ` filter="url(#${prefix}-bgblur)"` : ''}>${art}</g>`;
+  const effects = blur || pixel;
+  const steps = (blur ? `<feGaussianBlur stdDeviation="${round(blur, 2)}"${pixel ? ' result="soft"' : ''}/>` : '') + (pixel ? pixelSteps(pixel, blur ? 'soft' : 'SourceGraphic') : '');
+  const filter = effects ? `<filter id="${prefix}-bgblur" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}">${steps}</filter>` : '';
+  return `${filter}<g${fade < 1 ? ` opacity="${round(Math.max(0, fade), 3)}"` : ''}${effects ? ` filter="url(#${prefix}-bgblur)"` : ''}>${art}</g>`;
 }
 
 // Rounded canvases are cut to shape with a clip around all the art.

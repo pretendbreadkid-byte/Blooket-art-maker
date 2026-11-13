@@ -933,3 +933,18 @@ test('a blurred texture blurs across its tile edges, and underbellies can be sof
   assert.equal((svg.match(/<rect width="40" height="16" fill="#ffffff"\/>/g) || []).length, 9, 'drawn with its neighbours, so no seams');
   assert.ok(svg.includes('<feGaussianBlur in="band" stdDeviation="3" result="band"/>') && svg.includes('<feComposite in2="SourceAlpha" operator="in" result="belly"/>'), 'a soft underbelly that stays inside');
 });
+
+test('pixelate turns art and the background into blocks on one grid', () => {
+  const doc = newDoc({ name: 't', width: 200, height: 100 });
+  doc.background = '#2ca5e8';
+  const box = newPath({ subpaths: square(), fill: '#ff0000', pixel: 12 });
+  doc.layers[0].objects.push(box);
+  let svg = exportSVG(doc);
+  assert.ok(svg.includes('<feOffset in="dot" x="0" y="0" width="12" height="12" result="cell"/>'), 'blocks start at the canvas corner');
+  assert.ok(svg.includes('<feMorphology operator="dilate" radius="4.5"/>'));
+  doc.bgPixel = 8;
+  box.pixel = 0;
+  svg = exportSVG(doc);
+  assert.ok(svg.includes('filter="url(#frame-bgblur)"') && svg.includes('width="8" height="8" result="cell"'), 'the background too');
+  assert.equal((svg.match(/feMorphology/g) || []).length, 1, 'only the background');
+});

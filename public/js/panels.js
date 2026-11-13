@@ -260,6 +260,7 @@ function documentPanel(box) {
   box.append(
     slider({ label: 'Background opacity', value: Math.round((d.bgOpacity ?? 1) * 100), min: 0, max: 100, unit: '%', onInput: (v) => { d.bgOpacity = v / 100; hooks.stage(); }, onChange: commit }),
     slider({ label: 'Background blur', value: d.bgBlur || 0, min: 0, max: 60, unit: 'px', onInput: (v) => { d.bgBlur = v; hooks.stage(); }, onChange: commit }),
+    slider({ label: 'Background pixelate', value: d.bgPixel || 0, min: 0, max: 60, unit: 'px', onInput: (v) => { d.bgPixel = v < 2 ? 0 : v; hooks.stage(); }, onChange: commit }),
   );
   box.append(textureList(() => bgTexturesOf(d), (list) => { d.bgTextures = list; delete d.bgTexture; hooks.stage(); }, 'Background texture', d.bgGradient?.from || d.background));
   box.append(slider({
@@ -452,7 +453,11 @@ function selectedPanel() {
     box.append(grouping);
   }
   if (canTakeApart()) box.append(button('Take apart', 'apart', takeApart, 'wide'));
-  box.append(opacitySlider(items), blurSlider(items), dropShadowControls(items), arrangeRow());
+  box.append(opacitySlider(items), blurSlider(items), slider({
+    label: 'Pixelate', value: Math.max(0, ...items.map((o) => o.pixel || 0)), min: 0, max: 60, unit: 'px',
+    onInput: (v) => { items.forEach((o) => { o.pixel = v < 2 ? 0 : v; }); liveRefresh(); },
+    onChange: commit,
+  }), dropShadowControls(items), arrangeRow());
   box.append(underbellyControls(items));
 
   if (single) {
