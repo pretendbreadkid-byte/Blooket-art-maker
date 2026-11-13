@@ -43,7 +43,7 @@ const USERS_FILE = join(DATA, 'users.json');
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json',
-  '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
+  '.png': 'image/png', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
 };
 
 mkdirSync(DATA, { recursive: true });

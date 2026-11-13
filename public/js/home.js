@@ -108,6 +108,7 @@ export async function renderHome(root, onLeave = leave) {
         <button class="ib" id="logout" title="${session.guest ? 'Back to the welcome screen' : 'Log out'}" aria-label="Log out">${icon('logout')}</button>
       </div>
       <a class="admin-link" href="#/admin">${icon('shield')}<span>Admin: shapes and Community</span></a>
+      <a class="admin-link" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
     </aside>
     <main class="home-main">
       ${session.guest ? '<p class="guest-note">You are playing as a guest. Your art disappears when you close this page, so export anything you want to keep.</p>' : ''}
