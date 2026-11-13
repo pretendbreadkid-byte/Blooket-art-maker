@@ -179,6 +179,7 @@ function saveCommunityPulls(id, pulled) {
 
 export const fetchCommunity = async () => (await call('GET', '/api/community')).packs;
 export const fetchMySent = async () => (await call('GET', '/api/community/mine')).packs;
+export const voteOn = (id, vote) => call('POST', `/api/community/${id}/vote`, { vote });
 
 // A community pack, shaped like one of your own so the opener can use it.
 export async function communityDoc(id) {
@@ -200,7 +201,7 @@ async function sendToCommunity(doc) {
       source: doc.id, name: doc.name, cover: await toPicture(art, COVER_SIZE),
       pack: { price, color, art, back, icon: iconArt, blooks },
     });
-    toast('Sent! An admin will check it, then it shows up in Community.', 'ok');
+    toast('Shared! It is in Community now with your upvote.', 'ok');
   } catch (error) {
     toast(error.message, 'warn');
   }
@@ -256,7 +257,7 @@ export function editPack(doc, onChange) {
         <p class="size-err" role="alert" hidden></p>
         <div class="dlg-actions">
           <button type="button" class="btn ghost danger" id="packdelete">${icon('trash')}<span>Delete</span></button>
-          ${session.guest ? '' : `<button type="button" class="btn ghost" id="packsend" title="Admins check it, then everyone can open it in Community">${icon('send')}<span>Send to Community</span></button>`}
+          ${session.guest ? '' : `<button type="button" class="btn ghost" id="packsend" title="Everyone can open and vote on it in Community">${icon('send')}<span>Send to Community</span></button>`}
           <button type="button" class="btn ghost" id="packopen">${icon('play')}<span>Test open</span></button>
           <button type="button" class="btn primary" id="packdone">Save</button>
         </div>`;

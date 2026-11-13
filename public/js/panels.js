@@ -635,7 +635,7 @@ function selectedPanel() {
 const TEXTURE_PICTURE_SIZE = 256;
 const textureThumb = (kind) => (kind === 'none'
   ? '<svg viewBox="0 0 30 30"><path d="M6 24L24 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>'
-  : `<svg viewBox="0 0 30 30"><defs>${patternMarkup({ ...newTexture(kind), color: '#43204f', size: kind === 'blooks' ? 30 : 10, opacity: 1 }, `thumb-${kind}`, null, 0)}</defs>${kind === 'picture'
+  : `<svg viewBox="0 0 30 30"><defs>${patternMarkup({ ...newTexture(kind), color: '#4b1e37', size: kind === 'blooks' ? 30 : 10, opacity: 1 }, `thumb-${kind}`, null, 0)}</defs>${kind === 'picture'
     ? '<path d="M5 22l6-7 5 5 3-3 6 5M20 10a2 2 0 1 0 .1 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
     : `<rect width="30" height="30" fill="url(#thumb-${kind})"/>`}</svg>`);
 
