@@ -50,16 +50,6 @@ Then open <http://localhost:5180>.
 | Underbelly | | A see-through band along the bottom of picked shapes, pictures or text, following their outline, with size, opacity and colour. |
 | Auto shadow | | In the Canvas panel. A solid, see-through band below each piece, wherever it overlaps the one under it, with a strength and size. |
 
-## Blookberry AI (beta)
-
-The **Blookberry AI** button at the top of the editor turns a few words into a Blook and shows three versions to pick from. It is free, needs no account, and runs in the browser: nothing is sent anywhere.
-
-- Naming a real Blook ("blue chick", "pumpkin with a crown") starts from that Blook, recoloured and dressed up as asked.
-- Anything else is built from Blook parts in the same style: colours (blue, pink, gold...), things (dragon, robot, pumpkin, cat, ghost, cupcake...), moods (sleepy, grumpy, cute, cool...) and extras (crown, witch hat, party hat, halo, spotted, striped...).
-- **More like this** makes new versions; **Add to canvas** adds the chosen one as pieces that stay together.
-
-The words it understands live in `public/js/blook-gen.js`; add more there.
-
 ## Templates and packs
 
 New projects can start as a Blook, a Banner, a Blook background, an Icon (Blook size with sharp corners, for the corner of a pack card) or Pack art, in Blooket's sizes. Blooks and Banners can add an underbelly shadow, and Pack art can add two strips of shine. These stay above the art. The Canvas panel turns them on or off, sizes them, and makes them darker or lighter.

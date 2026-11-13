@@ -804,28 +804,6 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
   .review, .review:not(:has([data-approve])) { grid-template-columns: 56px minmax(0, 1fr) auto; }
 }
 
-/* Blookberry AI */
-.ai-btn { gap: 7px; }
-.ai-btn img { width: 22px; height: 22px; border-radius: 6px; }
-.beta { display: inline-block; padding: 1px 6px; border-radius: 6px; background: #d81e4a; color: #fff; font: 800 10px/1.5 Nunito, sans-serif; font-style: normal; letter-spacing: .04em; }
-.dlg.ai-dlg { width: min(680px, 100%); }
-.ai-dlg .dlg-actions { flex-wrap: wrap; }
-.ai-head { display: flex; align-items: center; gap: 10px; }
-.ai-head h2 { margin: 0; }
-.ai-mark img { display: block; width: 38px; height: 38px; border-radius: 10px; }
-.ai-dlg textarea { width: 100%; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; font: inherit; resize: vertical; }
-.ai-dlg textarea:focus { border-color: var(--brand); outline: 0; }
-.ai-ideas { display: flex; flex-wrap: wrap; gap: 6px; }
-.ai-ideas .chip { font-size: 12.5px; }
-.ai-prompt { margin: 0; font-weight: 800; }
-.ai-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.ai-pick { display: grid; place-items: center; padding: 10px; border: 3px solid transparent; border-radius: 14px; background: repeating-conic-gradient(#ece9f3 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
-.ai-pick:hover { border-color: var(--brand-soft); }
-.ai-pick.on { border-color: var(--brand); }
-.ai-pick img { width: 100%; aspect-ratio: 300 / 345; object-fit: contain; }
-@media (max-width: 760px) {
-  .ai-btn span { display: none; }
-}
 
 /* The Layers panel */
 .panel.layers { flex: 0 1 auto; max-height: 45%; min-height: 0; overflow-y: auto; gap: 6px; border-top: 1px solid var(--line); border-bottom: 0; }

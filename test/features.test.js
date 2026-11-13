@@ -731,43 +731,6 @@ test('swapping colours reaches the pieces inside a welded shape', async () => {
   assert.equal(welded.parts[0].fill, '#123456');
 });
 
-test('Blookberry AI reads what a Blook should be from plain words', async () => {
-  const { readPrompt } = await import('../public/js/blook-gen.js');
-  const pumpkin = readPrompt('A pumpkin wearing a witch hat');
-  assert.equal(pumpkin.kind, 'pumpkin', 'an outfit word does not take over');
-  assert.equal(pumpkin.color, 'orange');
-  assert.equal(pumpkin.hat, 'witch', 'a plain "hat" does not replace the witch hat');
-  const dragon = readPrompt('a grumpy purple dragon');
-  assert.deepEqual([dragon.color, dragon.horns, dragon.eyes, dragon.mouth], ['purple', 'horns', 'angry', 'frown']);
-  assert.equal(readPrompt('cute pink bunnies').ears, 'bunny', 'plurals work');
-  assert.deepEqual(readPrompt('a toaster'), { colorWord: null }, 'unknown words still make something');
-});
-
-test('Blookberry AI draws a Blook in the house style, the same way each time for a seed', async () => {
-  const { readPrompt, drawBlook, seeded } = await import('../public/js/blook-gen.js');
-  const traits = readPrompt('a blue robot with a crown');
-  const a = drawBlook(traits, seeded(4)), b = drawBlook(traits, seeded(4)), c = drawBlook(traits, seeded(5));
-  assert.ok(a.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 345">') && a.endsWith('</svg>'));
-  assert.equal(a, b, 'a seed always gives the same Blook');
-  assert.notEqual(a, c, 'a new seed gives a new one');
-  assert.ok(a.includes('fill="#5ce1e6"'), 'robot eyes');
-  assert.ok(a.includes('#ffc83d'), 'the crown');
-  assert.ok(!a.includes('M150 62V18'), 'no antenna through the crown');
-  assert.ok(!/<script|on\w+=|href=/i.test(a), 'nothing but drawing');
-});
-
-test('Blookberry AI recolours real Blooks and finds them by name', async () => {
-  const { recolorSvg, matchBlooks, addTopper, COLORS } = await import('../public/js/blook-gen.js');
-  const blue = recolorSvg('<path fill="#fabc2e"/><path fill="#ffffff"/><path fill="#2b2b2b"/>', COLORS.blue);
-  assert.ok(!blue.includes('#fabc2e'), 'the yellow is gone');
-  assert.ok(blue.includes('#ffffff') && blue.includes('#2b2b2b'), 'whites and darks stay');
-  assert.deepEqual(matchBlooks('a blue chick', ['chick', 'chicken', 'cow']), ['chick', 'chicken'], 'best match first');
-  assert.deepEqual(matchBlooks('a purple dragon', ['purple', 'dragon']), ['dragon'], 'colour words are not names');
-  const hatted = addTopper('<svg viewBox="0 0 300 345"><path/></svg>', { hat: 'crown' }, { x: 20, y: 40, width: 260, height: 300 });
-  assert.match(hatted, /viewBox="0 -?\d+(\.\d)? 300 \d+(\.\d)?"/);
-  assert.ok(hatted.includes('#ffc83d') && hatted.endsWith('</svg>'));
-});
-
 test('text outlines go round the outside of the letters', () => {
   const doc = newDoc({ name: 't' });
   doc.layers[0].objects.push(newText({ text: 'Hi', fill: '#ffffff', stroke: '#000000', strokeWidth: 6 }));
