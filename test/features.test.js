@@ -903,8 +903,13 @@ test('pixelate turns art and the background into blocks on one grid', () => {
   const box = newPath({ subpaths: square(), fill: '#ff0000', pixel: 12 });
   doc.layers[0].objects.push(box);
   let svg = exportSVG(doc);
-  assert.ok(svg.includes('<feOffset in="dot" x="0" y="0" width="12" height="12" result="cell"/>'), 'blocks start at the canvas corner');
-  assert.ok(svg.includes('<feMorphology operator="dilate" radius="4.5"/>'));
+  const [, cx, cy] = svg.match(/<feOffset in="dot" x="(-?[\d.]+)" y="(-?[\d.]+)" width="12" height="12" result="cell"\/>/).map(Number);
+  assert.ok(cx % 12 === 0 && cy % 12 === 0, `blocks sit on the canvas's grid: ${cx}, ${cy}`);
+  assert.ok(svg.includes('<feGaussianBlur in="SourceGraphic" stdDeviation="3.6"/>'), 'each block takes its area\'s average colour');
+  assert.ok(svg.includes('<feMorphology operator="dilate" radius="5.5"/>'));
+  assert.ok(svg.includes('<feFuncA type="discrete" tableValues="0 1"/>'), 'crisp edges');
+  const [, w] = svg.match(/<filter id="erase-[^"]+-blur" filterUnits="userSpaceOnUse" x="-?\d+" y="-?\d+" width="(\d+)"/).map(Number);
+  assert.ok(w < 200, `worked out only around the piece, not everywhere: ${w}`);
   doc.bgPixel = 8;
   box.pixel = 0;
   svg = exportSVG(doc);

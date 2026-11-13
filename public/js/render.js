@@ -243,24 +243,44 @@ function underbellyFilter(o, id) {
 // Blur is measured on the canvas, so it sits outside the piece's own scale.
 // values: an animated blur, one stdDeviation per frame.
 // pixel: block size for Pixelate, in canvas pixels. 0 for none.
-function blurred(markup, id, amount, values = '', pixel = 0) {
-  const blocks = pixel >= 2;
-  if (!(amount > 0) && !values && !blocks) return markup;
-  const half = MASK_SIZE / 2;
-  const blur = amount > 0 || values ? `<feGaussianBlur stdDeviation="${round(amount || 0, 2)}" result="soft">${values}</feGaussianBlur>` : '';
-  return `<g filter="url(#${id})"><filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}">${blur}${blocks ? pixelSteps(pixel, blur ? 'soft' : 'SourceGraphic') : ''}</filter>${markup}</g>`;
+// Where an effect works, in canvas pixels: the piece's own area with room for the
+// blur to spread, or everywhere when the piece moves about in an animation.
+function effectArea(box, spread) {
+  if (!box) return { x: -MASK_SIZE / 2, y: -MASK_SIZE / 2, width: MASK_SIZE, height: MASK_SIZE };
+  const m = spread + 4;
+  return { x: Math.floor(box.x0 - m), y: Math.floor(box.y0 - m), width: Math.ceil(box.x1 - box.x0 + m * 2), height: Math.ceil(box.y1 - box.y0 + m * 2) };
 }
 
-// Pixelate: one small sample from each block, on a grid that starts at the
-// canvas corner (so pieces line up), then each sample grown to fill its block.
-export function pixelSteps(size, input) {
+// Blur and Pixelate, measured on the canvas, so they sit outside the piece's own
+// scale. values: an animated blur, one stdDeviation per frame. pixel: block size.
+// box: the piece's area on the canvas, so the effect is worked out only there.
+function blurred(markup, id, amount, values = '', pixel = 0, box = null) {
+  const blocks = pixel >= 2;
+  if (!(amount > 0) && !values && !blocks) return markup;
+  const area = effectArea(values ? null : box, (amount || 0) * 3 + (blocks ? pixel : 0));
+  const blur = amount > 0 || values ? `<feGaussianBlur stdDeviation="${round(amount || 0, 2)}" result="soft">${values}</feGaussianBlur>` : '';
+  return `<g filter="url(#${id})"><filter id="${id}" filterUnits="userSpaceOnUse" x="${area.x}" y="${area.y}" width="${area.width}" height="${area.height}" color-interpolation-filters="sRGB">`
+    + `${blur}${blocks ? pixelSteps(pixel, blur ? 'soft' : 'SourceGraphic', area) : ''}</filter>${markup}</g>`;
+}
+
+// Pixelate. The art is softened so each spot holds its area's average colour,
+// and each spot is made solid or empty (so edge blocks are never half see-through).
+// Then one tiny sample is taken from the middle of every block and grown to fill
+// it, so each block is one flat colour. The sample is made fully solid before it
+// grows, so it never fades away when zoomed out. The blocks sit on a grid that
+// starts at the canvas corner, so pixelated pieces line up.
+export function pixelSteps(size, input, area = { x: -MASK_SIZE / 2, y: -MASK_SIZE / 2 }) {
   const s = round(Math.max(2, size), 2);
-  const dot = round(Math.max(1, s / 4), 2);
-  const r = round((s - dot) / 2, 2);
-  return `<feFlood x="${r}" y="${r}" width="${dot}" height="${dot}" result="dot"/>`
-    + `<feOffset in="dot" x="0" y="0" width="${s}" height="${s}" result="cell"/>`
+  const r = round((s - 1) / 2, 2);
+  // The first whole block inside the area, still on the canvas's grid.
+  const cx = round(Math.ceil(area.x / s) * s, 2), cy = round(Math.ceil(area.y / s) * s, 2);
+  return `<feGaussianBlur in="${input}" stdDeviation="${round(s * 0.3, 2)}"/>`
+    + '<feComponentTransfer result="avg"><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer>'
+    + `<feFlood x="${round(cx + r)}" y="${round(cy + r)}" width="1" height="1" result="dot"/>`
+    + `<feOffset in="dot" x="${cx}" y="${cy}" width="${s}" height="${s}" result="cell"/>`
     + '<feTile in="cell" result="grid"/>'
-    + `<feComposite in="${input}" in2="grid" operator="in"/>`
+    + '<feComposite in="avg" in2="grid" operator="in"/>'
+    + '<feComponentTransfer><feFuncA type="linear" slope="64"/></feComponentTransfer>'
     + `<feMorphology operator="dilate" radius="${r}"/>`;
 }
 
@@ -292,7 +312,7 @@ function objectMarkup(raw, frame, opt) {
   const belly = underbellyFilter(o, `${maskId}-belly`);
   const parts = weldedParts(o, maskId, frame, opt, '', textures.ids);
   const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + belly + parts.defs;
-  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? [] : textures.ids)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur, '', o.pixel || 0);
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? [] : textures.ids)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur, '', o.pixel || 0, (o.blur > 0 || o.pixel >= 2) ? worldBounds(raw, frame) : null);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -456,7 +476,8 @@ export function layersMarkup(doc, frame, opt = {}) {
 
 export function backgroundMarkup(doc, prefix = 'frame', frame = 0, opt = {}) {
   const blur = Math.max(0, doc.bgBlur || 0), fade = doc.bgOpacity ?? 1, pixel = doc.bgPixel >= 2 ? doc.bgPixel : 0;
-  const pad = round(blur * 3);
+  // Blurred or pixelated, the background reaches past the edges so they stay solid.
+  const pad = round(blur * 3 + pixel);
   const area = pad ? `x="${-pad}" y="${-pad}" width="${doc.width + pad * 2}" height="${doc.height + pad * 2}"` : `width="${doc.width}" height="${doc.height}"`;
   const texture = bgTexturesOf(doc).map((tex, i) => `${patternMarkup(tex, `${prefix}-bgtex${i ? i : ''}`, null, frame, { ...opt, doc })}<rect ${area} fill="url(#${prefix}-bgtex${i ? i : ''})"/>`).join('');
   let art;
@@ -469,10 +490,9 @@ export function backgroundMarkup(doc, prefix = 'frame', frame = 0, opt = {}) {
     art = `<rect ${area} fill="${esc(doc.background)}"/>${texture}`;
   }
   if (!art || (fade >= 1 && !blur && !pixel)) return art;
-  const half = MASK_SIZE / 2;
   const effects = blur || pixel;
-  const steps = (blur ? `<feGaussianBlur stdDeviation="${round(blur, 2)}"${pixel ? ' result="soft"' : ''}/>` : '') + (pixel ? pixelSteps(pixel, blur ? 'soft' : 'SourceGraphic') : '');
-  const filter = effects ? `<filter id="${prefix}-bgblur" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}">${steps}</filter>` : '';
+  const steps = (blur ? `<feGaussianBlur stdDeviation="${round(blur, 2)}"${pixel ? ' result="soft"' : ''}/>` : '') + (pixel ? pixelSteps(pixel, blur ? 'soft' : 'SourceGraphic', { x: -pad - 4, y: -pad - 4 }) : '');
+  const filter = effects ? `<filter id="${prefix}-bgblur" filterUnits="userSpaceOnUse" x="${-pad - 4}" y="${-pad - 4}" width="${doc.width + pad * 2 + 8}" height="${doc.height + pad * 2 + 8}" color-interpolation-filters="sRGB">${steps}</filter>` : '';
   return `${filter}<g${fade < 1 ? ` opacity="${round(Math.max(0, fade), 3)}"` : ''}${effects ? ` filter="url(#${prefix}-bgblur)"` : ''}>${art}</g>`;
 }
 
