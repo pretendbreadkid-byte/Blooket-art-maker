@@ -231,3 +231,19 @@ test('dilate grows a region by one pixel', () => {
   mask[12] = 1;
   assert.equal(dilate(mask, 5, 5).reduce((a, b) => a + b, 0), 5);
 });
+
+test('rounded corners stay round when a shape is stretched one way', () => {
+  const square = parseD('M-50 -50H50V50H-50Z');
+  square[0].nodes.forEach((n) => { n.r = 20; });
+  // Not stretched: plain circles of radius 20.
+  assert.match(pathD(square), /A20 20 /);
+  // Twice as wide: drawn as 10 by 20 in its own units, which the stretch turns
+  // back into a circle of 20 on screen.
+  const wide = pathD(square, { stretch: { x: 2, y: 1 } });
+  assert.match(wide, /A10 20 /);
+  assert.doesNotMatch(wide, /A20 20 /);
+  // Made bigger evenly: the corners grow with it, as before.
+  assert.match(pathD(square, { stretch: { x: 2, y: 2 } }), /A20 20 /);
+  // Flipped: still a closed outline with arcs.
+  assert.match(pathD(square, { stretch: { x: -2, y: 1 } }), /A10 20 0 0 [01] /);
+});

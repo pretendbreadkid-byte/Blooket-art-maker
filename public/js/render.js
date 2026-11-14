@@ -173,7 +173,7 @@ function texturePatterns(o, base, frame, opt) {
 function body(o, inner = '', gradientId = '', textureIds = [], textureInner = '') {
   const ids = textureIds || [];
   if (o.type === 'path') {
-    const d = pathD(o.subpaths);
+    const d = pathD(o.subpaths, { stretch: { x: o.scaleX, y: o.scaleY } });
     return `<path d="${d}" fill="${fillOf(o, gradientId)}" fill-rule="${o.fillRule}" ${strokeAttrs(o)}${opacityAttrs(o)}${lookAttrs(o)}>${inner}</path>`
       + ids.map((id) => `<path d="${d}" fill-rule="${o.fillRule}" ${texturePaint(o, id)}>${textureInner}</path>`).join('');
   }
@@ -289,7 +289,7 @@ export function pixelSteps(size, input, area = { x: -MASK_SIZE / 2, y: -MASK_SIZ
 // still has colour. Its texture and line go on top of the pieces.
 function weldedParts(o, id, frame, opt, shape = '', textureIds = []) {
   if (o.type !== 'path' || !o.parts?.length) return { defs: '', art: '' };
-  const d = pathD(o.subpaths, { uniform: !!shape });
+  const d = pathD(o.subpaths, { uniform: !!shape, stretch: { x: o.scaleX, y: o.scaleY } });
   const parts = o.parts.map((p, i) => objectMarkup(p, frame, { ...opt, editor: false, prefix: `${id}-p${i}`, part: i })).join('');
   const textured = textureIds.map((t) => `<path d="${d}" fill-rule="${esc(o.fillRule || 'nonzero')}" ${texturePaint(o, t)}>${shape}</path>`).join('');
   const line = strokeAttrs(o) === 'stroke="none"' ? '' : `<path d="${d}" fill="none" ${strokeAttrs(o)}>${shape}</path>`;
@@ -329,7 +329,7 @@ function animatedObject(raw, doc, opt) {
   };
   const motion = (type, fn) => `<animateTransform attributeName="transform" type="${type}" additive="sum" values="${samples.map(fn).join(';')}" dur="${dur}" repeatCount="indefinite"/>`;
 
-  const shape = raw.type === 'path' ? animate('d', (s) => pathD(s.subpaths, { uniform: true })) : '';
+  const shape = raw.type === 'path' ? animate('d', (s) => pathD(s.subpaths, { uniform: true, stretch: { x: s.scaleX, y: s.scaleY } })) : '';
   const inner = animate('fill', (s) => s.fill) + animate('stroke', (s) => s.stroke)
     + animate('fill-opacity', (s) => round(s.fillOpacity ?? 1, 3)) + animate('stroke-opacity', (s) => round(s.strokeOpacity ?? 1, 3))
     + animate('stroke-width', (s) => round(s.strokeWidth)) + shape;

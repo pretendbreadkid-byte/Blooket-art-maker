@@ -89,32 +89,54 @@ function cornerGeometry(sp, i) {
   };
 }
 
+// The outline as it looks once stretched by (sx, sy), with corner sizes in
+// stretched units: the smaller stretch, so a shape pulled wider keeps its corners.
+function stretched(sp, sx, sy) {
+  const k = Math.min(Math.abs(sx), Math.abs(sy));
+  return {
+    ...sp,
+    nodes: sp.nodes.map((n) => ({
+      ...n, x: n.x * sx, y: n.y * sy,
+      ix: (n.ix || 0) * sx, iy: (n.iy || 0) * sy, ox: (n.ox || 0) * sx, oy: (n.oy || 0) * sy,
+      r: n.r ? n.r * k : 0,
+    })),
+  };
+}
+
 // uniform writes every frame of an animation with the same commands, which
 // animated SVG needs before it will warp smoothly between them.
-function subpathD(sp, uniform) {
+// sx, sy: the shape's own stretch. Corners are worked out after it, so they stay
+// round instead of turning into ovals, then everything is mapped back.
+function subpathD(raw, uniform, sx = 1, sy = 1) {
+  const scaled = sx !== 1 || sy !== 1;
+  const sp = scaled ? stretched(raw, sx, sy) : raw;
   const { nodes, closed } = sp;
   const N = nodes.length;
   if (!N) return '';
   const geo = nodes.map((_, i) => cornerGeometry(sp, i));
-  const f = (v) => round(v);
-  let d = `M${f(geo[0].out.x)} ${f(geo[0].out.y)}`;
+  const fx = (v) => round(v / sx), fy = (v) => round(v / sy);
+  // A pair of numbers: x, then y.
+  const pt = (x, y) => `${fx(x)} ${fy(y)}`;
+  const flip = sx * sy < 0;
+  let d = `M${pt(geo[0].out.x, geo[0].out.y)}`;
   const last = closed ? N : N - 1;
   for (let k = 0; k < last; k++) {
     const a = nodes[k], j = (k + 1) % N, b = nodes[j], g = geo[j];
     const from = geo[k].out;
     if (hasOut(a) || hasIn(b)) {
-      d += `C${f(a.x + (a.ox || 0))} ${f(a.y + (a.oy || 0))} ${f(b.x + (b.ix || 0))} ${f(b.y + (b.iy || 0))} ${f(g.inn.x)} ${f(g.inn.y)}`;
+      d += `C${pt(a.x + (a.ox || 0), a.y + (a.oy || 0))} ${pt(b.x + (b.ix || 0), b.y + (b.iy || 0))} ${pt(g.inn.x, g.inn.y)}`;
     } else if (uniform) {
-      const c = (p, q, t) => f(p + (q - p) * t);
-      d += `C${c(from.x, g.inn.x, 1 / 3)} ${c(from.y, g.inn.y, 1 / 3)} ${c(from.x, g.inn.x, 2 / 3)} ${c(from.y, g.inn.y, 2 / 3)} ${f(g.inn.x)} ${f(g.inn.y)}`;
+      const c = (p, q, t) => p + (q - p) * t;
+      d += `C${pt(c(from.x, g.inn.x, 1 / 3), c(from.y, g.inn.y, 1 / 3))} ${pt(c(from.x, g.inn.x, 2 / 3), c(from.y, g.inn.y, 2 / 3))} ${pt(g.inn.x, g.inn.y)}`;
     } else {
-      d += `L${f(g.inn.x)} ${f(g.inn.y)}`;
+      d += `L${pt(g.inn.x, g.inn.y)}`;
     }
     if (uniform) {
-      const c = (p, q) => f(p + (q - p) * ARC_HANDLE);
-      d += `C${c(g.inn.x, b.x)} ${c(g.inn.y, b.y)} ${c(g.out.x, b.x)} ${c(g.out.y, b.y)} ${f(g.out.x)} ${f(g.out.y)}`;
+      const c = (p, q) => p + (q - p) * ARC_HANDLE;
+      d += `C${pt(c(g.inn.x, b.x), c(g.inn.y, b.y))} ${pt(c(g.out.x, b.x), c(g.out.y, b.y))} ${pt(g.out.x, g.out.y)}`;
     } else if (g.r) {
-      d += `A${f(g.r)} ${f(g.r)} 0 0 ${g.sweep} ${f(g.out.x)} ${f(g.out.y)}`;
+      const sweep = flip ? 1 - g.sweep : g.sweep;
+      d += `A${round(g.r / Math.abs(sx))} ${round(g.r / Math.abs(sy))} 0 0 ${sweep} ${pt(g.out.x, g.out.y)}`;
     }
   }
   return closed ? d + 'Z' : d;
@@ -122,7 +144,12 @@ function subpathD(sp, uniform) {
 
 const ARC_HANDLE = 0.5523;
 
-export const pathD = (subpaths, { uniform = false } = {}) => subpaths.map((sp) => subpathD(sp, uniform)).join('');
+// stretch: the shape's scaleX and scaleY, so rounded corners stay round when it is stretched.
+export const pathD = (subpaths, { uniform = false, stretch = null } = {}) => {
+  const sx = stretch && Number.isFinite(stretch.x) && stretch.x !== 0 ? stretch.x : 1;
+  const sy = stretch && Number.isFinite(stretch.y) && stretch.y !== 0 ? stretch.y : 1;
+  return subpaths.map((sp) => subpathD(sp, uniform, sx, sy)).join('');
+};
 
 export function pointInPolygon(x, y, poly) {
   let inside = false;
