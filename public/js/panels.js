@@ -2,7 +2,7 @@
 import {
   S, hooks, liveRefresh, commit, selected, posed, edit, canUndo, canRedo, paintPatch, setToolFill,
 } from './state.js';
-import { clone, pathBounds, localToWorld } from './model.js';
+import { clone, pathBounds, localToWorld, cropOf, isCropped, setCropSide } from './model.js';
 import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup, texturesOf, bgTexturesOf } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
 import { esc, newDropShadow, newAutoShadow, newUnderbelly, WARPS } from './render.js';
@@ -588,14 +588,18 @@ function selectedPanel() {
   const hasShadow = items.some((o) => o.dropShadow || o.underbelly);
   box.append(fold('shadows', 'Shadows', [dropShadowControls(items), underbellyControls(items)], hasShadow));
 
-  if (paintable.length) {
-    const look = posed(paintable[0]);
+  // Pictures take textures too: they go on just the parts of the picture you can see.
+  const texturable = items;
+  if (texturable.length) {
+    const look = posed(texturable[0]);
     const count = texturesOf(look).length;
-    box.append(fold('texture', count ? `Texture (${count})` : 'Texture', [textureList(() => texturesOf(posed(paintable[0])), (list) => {
-      paintable.forEach((o) => { o.textures = clone(list); delete o.texture; });
+    box.append(fold('texture', count ? `Texture (${count})` : 'Texture', [textureList(() => texturesOf(posed(texturable[0])), (list) => {
+      texturable.forEach((o) => { o.textures = clone(list); delete o.texture; });
       liveRefresh();
-    }, paintable.length > 1 ? 'Texture for all of these' : 'Texture', look.fill !== 'none' ? (look.gradient?.from || look.fill) : look.stroke)], count > 0));
+    }, texturable.length > 1 ? 'Texture for all of these' : 'Texture', look.fill !== 'none' ? (look.gradient?.from || look.fill) : look.stroke)], count > 0));
   }
+
+  if (single?.type === 'image') box.append(fold('crop', 'Crop', cropControls(single)));
 
   if (single && hasCorners(posed(single))) {
     box.append(roundingSlider(single));
@@ -628,6 +632,35 @@ function selectedPanel() {
     button('Delete', 'trash', deleteSelection, 'danger'),
   );
   box.append(order);
+}
+
+/* ---------- Cropping pictures ---------- */
+
+// One slider per side. Cropping a side trims it in place: the rest of the picture stays put.
+function cropControls(pic) {
+  const sides = [['l', 'Left'], ['r', 'Right'], ['t', 'Top'], ['b', 'Bottom']];
+  const cropSide = (side, share) => {
+    const move = setCropSide(pic, side, share);
+    if (move.x || move.y) edit(pic, localToWorld(posed(pic), move.x, move.y));
+  };
+  const box = html('<div class="crop"></div>');
+  for (const [side, label] of sides) {
+    const row = slider({
+      label: `Crop ${label.toLowerCase()}`, value: Math.round(cropOf(pic)[side] * 100), min: 0, max: 90, unit: '%', reset: 0,
+      onInput: (v) => { cropSide(side, v / 100); liveRefresh(); },
+      onChange: () => { commit(); hooks.panels(); },
+    });
+    box.append(row);
+  }
+  if (isCropped(pic)) {
+    box.append(button('Show the whole picture', 'undo', () => {
+      for (const [side] of sides) cropSide(side, 0);
+      commit();
+      liveRefresh();
+      hooks.panels();
+    }, 'wide'));
+  }
+  return [box];
 }
 
 /* ---------- Textures ---------- */

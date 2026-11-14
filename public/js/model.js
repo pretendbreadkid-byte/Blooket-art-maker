@@ -54,6 +54,41 @@ export const newText = (props) => baseObject('text', {
 });
 export const newImage = (props) => baseObject('image', { name: 'Image', href: '', w: 100, h: 100, ...props });
 
+// How much of a picture is cut off each side, as a share of the whole picture:
+// l, t, r, b. w and h are the size of what's left.
+export const CROP_MOST = 0.9;
+export function cropOf(o) {
+  const c = o?.crop || {};
+  const f = (v) => Math.min(CROP_MOST, Math.max(0, Number.isFinite(+v) ? +v : 0));
+  return { l: f(c.l), t: f(c.t), r: f(c.r), b: f(c.b) };
+}
+export const isCropped = (o) => { const c = cropOf(o); return !!(c.l || c.t || c.r || c.b); };
+
+// The whole picture, before cropping, in the picture's own units.
+export function uncroppedBox(o) {
+  const c = cropOf(o);
+  const W = o.w / Math.max(0.05, 1 - c.l - c.r), H = o.h / Math.max(0.05, 1 - c.t - c.b);
+  return { x: -o.w / 2 - c.l * W, y: -o.h / 2 - c.t * H, width: W, height: H };
+}
+
+// Crops one side to v, keeping the rest of the picture where it is on the canvas.
+// Returns the move the picture's middle needs, in its own units.
+export function setCropSide(o, side, v) {
+  const c = cropOf(o);
+  const full = uncroppedBox(o);
+  const other = { l: 'r', r: 'l', t: 'b', b: 't' }[side];
+  const next = Math.max(0, Math.min(v, CROP_MOST - c[other]));
+  const d = next - c[side];
+  c[side] = next;
+  o.w = full.width * (1 - c.l - c.r);
+  o.h = full.height * (1 - c.t - c.b);
+  if (c.l || c.t || c.r || c.b) o.crop = c; else delete o.crop;
+  return {
+    x: side === 'l' ? (d * full.width) / 2 : side === 'r' ? (-d * full.width) / 2 : 0,
+    y: side === 't' ? (d * full.height) / 2 : side === 'b' ? (-d * full.height) / 2 : 0,
+  };
+}
+
 /* ---------- Path geometry ---------- */
 
 const hasOut = (n) => !!(n.ox || n.oy);

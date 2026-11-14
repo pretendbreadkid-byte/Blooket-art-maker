@@ -916,3 +916,33 @@ test('pixelate turns art and the background into blocks on one grid', () => {
   assert.ok(svg.includes('filter="url(#frame-bgblur)"') && svg.includes('width="8" height="8" result="cell"'), 'the background too');
   assert.equal((svg.match(/feMorphology/g) || []).length, 1, 'only the background');
 });
+
+test('cropping a picture trims that side and keeps the rest in place', async () => {
+  const { newImage, setCropSide, uncroppedBox, cropOf } = await import('../public/js/model.js');
+  const pic = newImage({ href: 'data:image/png;base64,AA', w: 200, h: 100 });
+  const move = setCropSide(pic, 'l', 0.25);
+  assert.equal(pic.w, 150);
+  assert.equal(pic.h, 100);
+  assert.deepEqual(move, { x: 25, y: 0 });
+  assert.deepEqual(uncroppedBox(pic), { x: -125, y: -50, width: 200, height: 100 });
+  // A side can't be cropped past the other side.
+  setCropSide(pic, 'r', 0.9);
+  assert.ok(cropOf(pic).l + cropOf(pic).r <= 0.9 + 1e-9);
+  setCropSide(pic, 'r', 0);
+  setCropSide(pic, 'l', 0);
+  assert.equal(pic.w, 200);
+  assert.equal(pic.crop, undefined);
+});
+
+test('a cropped, textured picture is cut to its crop with the texture on its solid parts', async () => {
+  const { newImage, setCropSide } = await import('../public/js/model.js');
+  const doc = newDoc({ name: 't', width: 200, height: 200 });
+  const pic = newImage({ href: 'data:image/png;base64,AA', w: 200, h: 100, textures: [{ kind: 'dots', color: '#ffffff', size: 20, opacity: 0.5 }] });
+  setCropSide(pic, 't', 0.5);
+  doc.layers[0].objects.push(pic);
+  const svg = exportSVG(doc, {});
+  assert.match(svg, /<clipPath id="[^"]+-crop"><rect x="-100" y="-25" width="200" height="50"\/>/);
+  assert.match(svg, /<image href="data:image\/png;base64,AA" x="-100" y="-75" width="200" height="100"/);
+  assert.match(svg, /mask-type="alpha"/);
+  assert.match(svg, /<rect [^>]*fill="url\(#[^)]+-tex0\)" mask="url\(#[^)]+-pic\)"/);
+});

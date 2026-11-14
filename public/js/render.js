@@ -1,6 +1,6 @@
 // Turns a document into SVG markup. The editor, thumbnails, the bucket tool and
 // export all use this file, so what you see is what you get.
-import { pathD, pathBounds, localToWorld, sample, round, rad, isPages, objectsOn } from './model.js';
+import { pathD, pathBounds, localToWorld, sample, round, rad, isPages, objectsOn, cropOf, isCropped, uncroppedBox } from './model.js';
 import { overlayMarkup } from './templates.js';
 import { patternMarkup, texturesOf, bgTexturesOf } from './textures.js';
 
@@ -162,7 +162,7 @@ function texturePaint(o, textureId) {
 
 // The patterns for a thing's textures, and their ids, one per texture.
 function texturePatterns(o, base, frame, opt) {
-  const list = o.type === 'image' ? [] : texturesOf(o);
+  const list = texturesOf(o);
   return {
     defs: list.map((tex, i) => patternMarkup(tex, `${base}${i}`, o, frame, opt)).join(''),
     ids: list.map((_, i) => `${base}${i}`),
@@ -189,7 +189,22 @@ function body(o, inner = '', gradientId = '', textureIds = [], textureInner = ''
     return `${defs}${shadow}<text ${text} fill="${fillOf(o, gradientId)}" ${line}${opacityAttrs(o)}>${inner}${content}</text>`
       + ids.map((id) => `<text ${text} ${texturePaint(o, id)}>${content}</text>`).join('');
   }
-  return `<image href="${esc(o.href)}" x="${round(-o.w / 2)}" y="${round(-o.h / 2)}" width="${round(o.w)}" height="${round(o.h)}" preserveAspectRatio="none"/>`;
+  return pictureBody(o, gradientId.replace(/-paint$/, ''), ids);
+}
+
+// A picture, cut to its crop, with its textures on just the parts you can see.
+function pictureBody(o, base, ids) {
+  const full = uncroppedBox(o);
+  const place = `x="${round(full.x)}" y="${round(full.y)}" width="${round(full.width)}" height="${round(full.height)}"`;
+  const c = cropOf(o), cropped = isCropped(o);
+  const pic = (mark) => `<image href="${esc(o.href)}" ${place} preserveAspectRatio="none"${mark && cropped ? ` data-crop="${round(c.l, 4)} ${round(c.t, 4)} ${round(c.r, 4)} ${round(c.b, 4)}"` : ''}/>`;
+  const textured = ids.length
+    ? `<mask id="${base}-pic" maskUnits="userSpaceOnUse" ${place} mask-type="alpha" style="mask-type:alpha">${pic(false)}</mask>`
+      + ids.map((id) => `<rect ${place} fill="url(#${id})" mask="url(#${base}-pic)"/>`).join('')
+    : '';
+  if (!cropped) return pic(true) + textured;
+  return `<clipPath id="${base}-crop"><rect x="${round(-o.w / 2)}" y="${round(-o.h / 2)}" width="${round(o.w)}" height="${round(o.h)}"/></clipPath>`
+    + `<g clip-path="url(#${base}-crop)">${pic(true)}${textured}</g>`;
 }
 
 function eraseMask(o, id) {

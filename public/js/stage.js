@@ -71,6 +71,9 @@ export const liveLayer = () => $('#live', art);
 export const objectEl = (id) => art.querySelector(`[data-id="${id}"]`);
 
 export function localBox(id) {
+  // A picture's box is what's left after cropping; the browser's would include the cut-off parts.
+  const pic = findObj(id);
+  if (pic?.type === 'image') { const o = posed(pic); return { x: -o.w / 2, y: -o.h / 2, width: o.w, height: o.h }; }
   const el = objectEl(id)?.querySelector('.b');
   return el ? el.getBBox() : null;
 }
@@ -80,6 +83,11 @@ export function localBox(id) {
 // a turned shape is the box around its unturned box, which is too big once it leans.
 function shapeBox(raw) {
   const o = posed(raw);
+  if (o.type === 'image') {
+    const pts = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => localToWorld(o, (sx * o.w) / 2, (sy * o.h) / 2));
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  }
   if (o.type !== 'path' || !o.subpaths?.length) return null;
   const b = pathBounds(mapSubpaths(o.subpaths, (x, y) => localToWorld(o, x, y)));
   const line = o.stroke && o.stroke !== 'none' ? (o.strokeWidth / 2) * Math.max(Math.abs(o.scaleX), Math.abs(o.scaleY)) : 0;

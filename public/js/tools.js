@@ -9,7 +9,7 @@ import {
 import {
   newPath, newText, newImage, clone, pathD, fitSubpaths, strokeToSubpath, addVertex, removeVertices, smoothNode, sharpenNode,
   pointInPolygon, localToWorld, pathBounds, mapSubpaths, chainSubpaths, objectsOn, isPages, regroup, uid, nearestOnOutline, flipped,
-  worldToLocal, worldVectorToLocal, rad, simplify, smoothStroke,
+  worldToLocal, worldVectorToLocal, rad, simplify, smoothStroke, uncroppedBox, isCropped,
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
 import { loopToSubpath } from './trace.js';
@@ -661,19 +661,26 @@ export const canTakeApart = () => selected().some((o) => o.group || o.type === '
 async function pictureToObjects(image) {
   const s = posed(image);
   const parsed = await piecesFromPicture(image.href);
-  const objects = piecesToObjects(parsed, image.name, s.x, s.y, Math.max(parsed.box.width, parsed.box.height));
-  const stretchX = (s.w * s.scaleX) / parsed.box.width, stretchY = (s.h * s.scaleY) / parsed.box.height;
+  // A cropped picture is taken apart whole, then the pieces cropped off are left out.
+  const full = uncroppedBox(s);
+  const mid = localToWorld(s, full.x + full.width / 2, full.y + full.height / 2);
+  const objects = piecesToObjects(parsed, image.name, mid.x, mid.y, Math.max(parsed.box.width, parsed.box.height));
+  const stretchX = (full.width * s.scaleX) / parsed.box.width, stretchY = (full.height * s.scaleY) / parsed.box.height;
   const a = rad(s.rotation), c = Math.cos(a), r = Math.sin(a);
   for (const o of objects) {
-    const dx = (o.x - s.x) * stretchX, dy = (o.y - s.y) * stretchY;
+    const dx = (o.x - mid.x) * stretchX, dy = (o.y - mid.y) * stretchY;
     Object.assign(o, {
-      x: s.x + dx * c - dy * r, y: s.y + dx * r + dy * c,
+      x: mid.x + dx * c - dy * r, y: mid.y + dx * r + dy * c,
       rotation: o.rotation + s.rotation, scaleX: o.scaleX * stretchX, scaleY: o.scaleY * stretchY, opacity: o.opacity * s.opacity,
     });
     delete o.group;
     if (image.page) o.page = image.page;
   }
-  return objects;
+  if (!isCropped(s)) return objects;
+  return objects.filter((o) => {
+    const p = worldToLocal(s, o.x, o.y);
+    return Math.abs(p.x) <= s.w / 2 && Math.abs(p.y) <= s.h / 2;
+  });
 }
 
 export async function takeApart() {

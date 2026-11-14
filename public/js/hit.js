@@ -42,6 +42,9 @@ function solidAt(picture, clientX, clientY) {
   const w = +picture.getAttribute('width'), h = +picture.getAttribute('height');
   const u = (p.x - x) / w, v = (p.y - y) / h;
   if (u < 0 || v < 0 || u >= 1 || v >= 1) return false;
+  // A cropped picture: the cut-off parts can't be clicked.
+  const [l, t, r, b] = (picture.getAttribute('data-crop') || '0 0 0 0').split(' ').map(Number);
+  if (u < l || v < t || u > 1 - r || v > 1 - b) return false;
   return map.alpha[Math.floor(v * map.h) * map.w + Math.floor(u * map.w)] >= SOLID;
 }
 
