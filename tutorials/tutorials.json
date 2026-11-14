@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "slug": "blook-berry-tour",
+    "name": "Blook Berry tour",
+    "description": "A full tour of Blook Berry: where everything is, how to start your first Blook, and the tools that give it the real Blooket look.",
+    "youtube": "https://youtu.be/q7IaBFYXFvY",
+    "thumbnail": "blook-berry-tour.jpg",
+    "date": "2026-11-14"
+  }
+]

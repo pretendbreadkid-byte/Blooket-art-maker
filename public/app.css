@@ -898,7 +898,8 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .land-gallery figcaption { font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .land-tuts { padding-top: 8px; }
 .land-tuts-head p { margin: 8px 0 0; font-weight: 800; font-size: 18px; text-shadow: 0 2px 0 rgba(0, 0, 0, .15); }
-.land-tut-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin: 24px 0; text-align: left; }
+.land-tut-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; margin: 24px 0; text-align: left; }
+.land-tut { width: calc((100% - 44px) / 3); min-width: 260px; }
 .land-tut-pic { position: relative; display: block; }
 .land-tut-play { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; background: rgba(0, 0, 0, .55); transition: transform .12s; }
 .land-tut-play::after { content: ''; position: absolute; left: 23px; top: 18px; border: 12px solid transparent; border-left: 19px solid #fff; border-right: 0; }
@@ -909,7 +910,7 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .land-tut-soon span .ico { width: 30px; height: 30px; }
 .land-tut-soon b { font-size: 20px; }
 .land-tut-soon small { color: var(--muted); font-weight: 700; font-size: 15px; }
-.land-tuts-all { display: inline-flex; width: auto; padding-left: 26px; padding-right: 26px; }
+.land-tuts .land-tuts-all { display: inline-flex; width: auto; padding-left: 26px; padding-right: 26px; }
 .land-nav-tuts { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 10px; background: rgba(255, 255, 255, .18); }
 .land-nav-tuts:hover { background: rgba(255, 255, 255, .28); }
 .land-tut { display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 14px; background: #fff; color: var(--ink); border-radius: 16px; box-shadow: 0 5px 0 rgba(0, 0, 0, .15); }
@@ -924,7 +925,7 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
   .land-show { height: 300px; transform: scale(.85); transform-origin: top center; }
   .land-features { grid-template-columns: repeat(2, 1fr); }
   .land-gallery { grid-template-columns: repeat(4, 1fr); }
-  .land-tut-grid { grid-template-columns: 1fr; }
+  .land-tut { width: 100%; min-width: 0; }
 }
 @media (max-width: 560px) {
   .land-top { padding: 10px 16px; gap: 10px; }
