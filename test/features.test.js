@@ -1010,3 +1010,19 @@ test('a donut keeps its real hole', () => {
   const { pieces } = pixelsToPieces(rgba, size, size);
   assert.equal(pieces[0].subpaths.length, 2);
 });
+
+test('a slanted rectangle traces as four corners and four straight sides', async () => {
+  const { traceLoops } = await import('../public/js/bucket.js');
+  const size = 600, a = (15 * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  const mask = new Uint8Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x + 0.5 - 300, dy = y + 0.5 - 300;
+      mask[y * size + x] = Math.abs(dx * c + dy * s) < 200 && Math.abs(-dx * s + dy * c) < 80 ? 1 : 0;
+    }
+  }
+  const [loop] = traceLoops(mask, size, size, { raw: true });
+  const sp = loopToCurves(loop, 1.2);
+  assert.equal(sp.nodes.length, 4);
+  assert.ok(sp.nodes.every((n) => !n.ox && !n.ix), 'straight sides, sharp corners');
+});

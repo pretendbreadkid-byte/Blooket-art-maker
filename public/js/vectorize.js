@@ -379,14 +379,23 @@ function turnAt(loop, i, k) {
   return Math.abs(Math.atan2(Math.sin(t2 - t1), Math.cos(t2 - t1)));
 }
 
-const CORNER_TURN = (68 * Math.PI) / 180;
+const CORNER_TURN = (45 * Math.PI) / 180;
 const WIDE = 5, NEAR = 3;
 
 // Real corners turn sharply over a short stretch. Round bits turn just as much,
 // but spread out, and pixel steps turn back and forth but go nowhere.
-function findCorners(loop) {
-  const n = loop.length;
+// Turns are measured on a lightly smoothed copy, so pixel steps don't add noise.
+function findCorners(raw) {
+  const n = raw.length;
   if (n < 12) return [];
+  let loop = raw;
+  for (let pass = 0; pass < 2; pass++) {
+    const from = loop;
+    loop = from.map((p, i) => {
+      const a = from[(i - 1 + n) % n], b = from[(i + 1) % n];
+      return { x: (a.x + 2 * p.x + b.x) / 4, y: (a.y + 2 * p.y + b.y) / 4 };
+    });
+  }
   const wide = loop.map((_, i) => turnAt(loop, i, WIDE));
   const corners = [];
   for (let i = 0; i < n; i++) {
@@ -414,11 +423,12 @@ function smoothRun(points, passes) {
 
 // Which way the outline leaves a corner, measured a little way along it, so the
 // corner's own pixel steps don't tilt it.
-const TANGENT_SKIP = 2, TANGENT_REACH = 6;
+const TANGENT_SKIP = 2, TANGENT_REACH = 6, TANGENT_FAR = 30;
 function startTangent(pts) {
   const n = pts.length;
   if (n < TANGENT_SKIP + 3) return norm(sub(pts[n - 1], pts[0]));
-  const reach = Math.max(2, Math.min(TANGENT_REACH, Math.floor((n - 1) / 3)));
+  // Long stretches look further along, past the pixel steps of a slanted edge.
+  const reach = Math.max(2, Math.min(Math.max(TANGENT_REACH, Math.floor(n / 6)), TANGENT_FAR, Math.floor((n - 1) / 3)));
   const from = Math.min(TANGENT_SKIP, Math.floor(n / 4));
   return norm(sub(pts[Math.min(n - 1, from + reach)], pts[from]));
 }
@@ -426,10 +436,11 @@ const endTangent = (pts) => startTangent([...pts].reverse());
 
 // Where a corner really is: where the two sides running into it would meet. Pixel
 // edges bevel corners, so the traced point is often a pixel or so short of it.
-const CORNER_REACH = 8, CORNER_SKIP = 2, CORNER_MOVE = 2.5;
+const CORNER_REACH = 14, CORNER_SKIP = 2, CORNER_MOVE = 2.5;
 function trueCorner(loop, c) {
   const n = loop.length, at = (k) => loop[((c + k) % n + n) % n];
-  const a1 = at(-CORNER_REACH), a2 = at(-CORNER_SKIP), b1 = at(CORNER_SKIP), b2 = at(CORNER_REACH);
+  const reach = Math.min(CORNER_REACH, Math.floor(n / 4));
+  const a1 = at(-reach), a2 = at(-CORNER_SKIP), b1 = at(CORNER_SKIP), b2 = at(reach);
   const d1 = sub(a2, a1), d2 = sub(b2, b1);
   const det = d1.x * d2.y - d1.y * d2.x;
   if (Math.abs(det) < 1e-6) return loop[c];
@@ -439,6 +450,27 @@ function trueCorner(loop, c) {
 }
 
 // A traced pixel outline as smooth curves: one subpath, with sharp corners.
+// Whether points run along one straight line. The ends are left out of the test:
+// a corner's exact spot is the least sure part, especially at a sharp tip.
+const STRAIGHT_ENDS = 0.1;
+function isStraight(pts, tolerance) {
+  const n = pts.length;
+  const mid = pts.slice(Math.floor(n * STRAIGHT_ENDS), Math.ceil(n * (1 - STRAIGHT_ENDS)));
+  if (mid.length < 3) return n <= 3;
+  // The line through the middle points that fits them best.
+  let mx = 0, my = 0;
+  for (const p of mid) { mx += p.x; my += p.y; }
+  mx /= mid.length; my /= mid.length;
+  let xx = 0, xy = 0, yy = 0;
+  for (const p of mid) { const dx = p.x - mx, dy = p.y - my; xx += dx * dx; xy += dx * dy; yy += dy * dy; }
+  const angle = Math.atan2(2 * xy, xx - yy) / 2;
+  const nx = -Math.sin(angle), ny = Math.cos(angle);
+  if (!mid.every((p) => Math.abs((p.x - mx) * nx + (p.y - my) * ny) <= tolerance)) return false;
+  // And the ends must head the same way, or it's a curve that happens to be flat in the middle.
+  const a = pts[0], z = pts[n - 1];
+  return Math.abs((a.x - mx) * nx + (a.y - my) * ny) <= tolerance * 4 && Math.abs((z.x - mx) * nx + (z.y - my) * ny) <= tolerance * 4;
+}
+
 // enlarged: how much the picture was blown up to trace it. Its edges are softer
 // steps, so they get smoothed more.
 export function loopToCurves(loop, error = FIT_ERROR, enlarged = 1) {
@@ -475,7 +507,10 @@ export function loopToCurves(loop, error = FIT_ERROR, enlarged = 1) {
       run[0] = placed[k];
       run[run.length - 1] = placed[(k + 1) % corners.length];
       const pts = smoothRun(run, passes);
-      fitCurves(pts, startTangent(run), endTangent(run), e2, curves);
+      // A straight side, even a slanted one made of pixel steps, is one straight line.
+      const a = pts[0], z = pts[pts.length - 1];
+      if (isStraight(pts, Math.max(error, 1))) curves.push([a, a, z, z]);
+      else fitCurves(pts, startTangent(run), endTangent(run), e2, curves);
     });
   }
   const r = (v) => Math.round(v * 100) / 100;

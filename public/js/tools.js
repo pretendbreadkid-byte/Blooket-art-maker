@@ -12,7 +12,7 @@ import {
   worldToLocal, worldVectorToLocal, rad, simplify, smoothStroke, uncroppedBox, isCropped,
 } from './model.js';
 import { floodRegion, dilate, traceLoops } from './bucket.js';
-import { loopToSubpath } from './trace.js';
+import { loopToCurves } from './vectorize.js';
 import { solidHit } from './hit.js';
 import { exportSVG, rasterize, esc } from './render.js';
 import { loopSelection } from './timeline.js';
@@ -972,6 +972,7 @@ export function ungroupSelection() {
 
 const WELD_PX = 2400;
 const WELD_SOLID = 110;
+const WELD_FIT = 1.2; // How far, in traced pixels, the welded outline may stray from the pieces.
 
 export const canWeld = () => S.sel.size > 1;
 
@@ -1016,14 +1017,16 @@ export async function weldSelection() {
     const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
     const mask = new Uint8Array(w * h);
     for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] > WELD_SOLID ? 1 : 0;
-    loops = traceLoops(mask, w, h, { tolerance: 1.2, minArea: 6 });
+    loops = traceLoops(mask, w, h, { minArea: 6, raw: true });
   } catch {
     toast('Those could not be welded. Try again.', 'warn');
     return;
   }
   if (!loops.length) { toast('There is nothing solid to weld there.', 'warn'); return; }
 
-  const subpaths = loops.map((loop) => loopToSubpath(loop.map((q) => ({ x: area.x + q.x / scale, y: area.y + q.y / scale }))));
+  // Fitted as clean curves and straight sides with real corners (not pixel steps),
+  // so the welded shape's corners can be rounded like any other shape's.
+  const subpaths = mapSubpaths(loops.map((loop) => loopToCurves(loop, WELD_FIT)), (x, y) => ({ x: area.x + x / scale, y: area.y + y / scale }));
   const b = pathBounds(subpaths);
   const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
   subpaths.forEach((sp) => sp.nodes.forEach((n) => { n.x -= cx; n.y -= cy; }));
