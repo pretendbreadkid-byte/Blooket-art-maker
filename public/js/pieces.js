@@ -3,7 +3,7 @@
 // The file's markup is only read, never added to the page.
 import { parseD, mapSubpaths, pathBounds, newPath, newImage, newText, uid } from './model.js';
 import { elementD, GEOMETRY } from './shapes.js';
-import { imageToPieces } from './trace.js';
+import { imageToPieces } from './vectorize.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';

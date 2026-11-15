@@ -6,7 +6,8 @@ import {
   nearestOnOutline, flipped, newText, localToWorld, flattenLayers, newLayer,
 } from '../public/js/model.js';
 import { exportSVG, embedFont } from '../public/js/render.js';
-import { subjectMask, cleanMask, maskToShape, loopToSubpath, pixelsToPieces } from '../public/js/trace.js';
+import { subjectMask, cleanMask, maskToShape, loopToSubpath } from '../public/js/trace.js';
+import { pixelsToPieces, loopToCurves } from '../public/js/vectorize.js';
 import { jpegToPdf } from '../public/js/export.js';
 
 const square = () => parseD('M0 0H100V100H0Z');
@@ -945,4 +946,67 @@ test('a cropped, textured picture is cut to its crop with the texture on its sol
   assert.match(svg, /<image href="data:image\/png;base64,AA" x="-100" y="-75" width="200" height="100"/);
   assert.match(svg, /mask-type="alpha"/);
   assert.match(svg, /<rect [^>]*fill="url\(#[^)]+-tex0\)" mask="url\(#[^)]+-pic\)"/);
+});
+
+// Paints a picture from a function of (x, y) giving [r, g, b, a].
+const picture = (size, paint) => {
+  const rgba = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) rgba.set(paint(x + 0.5, y + 0.5), (y * size + x) * 4);
+  return rgba;
+};
+
+test('a traced circle comes out as a few smooth curves, not a staircase', () => {
+  const size = 120;
+  const rgba = picture(size, (x, y) => (Math.hypot(x - 60, y - 60) < 45 ? [40, 160, 220, 255] : [0, 0, 0, 0]));
+  const { pieces } = pixelsToPieces(rgba, size, size);
+  assert.equal(pieces.length, 1);
+  const nodes = pieces[0].subpaths[0].nodes;
+  assert.ok(nodes.length <= 12, `${nodes.length} points`);
+  assert.ok(nodes.every((n) => n.ox || n.oy), 'every point is smooth');
+  for (const n of nodes) assert.ok(Math.abs(Math.hypot(n.x - 60, n.y - 60) - 45) < 1.5);
+});
+
+test('a traced square keeps four sharp corners and straight sides', () => {
+  const size = 100;
+  const rgba = picture(size, (x, y) => (x > 20 && x < 80 && y > 20 && y < 80 ? [220, 60, 60, 255] : [0, 0, 0, 0]));
+  const { pieces } = pixelsToPieces(rgba, size, size);
+  const nodes = pieces[0].subpaths[0].nodes;
+  assert.equal(nodes.length, 4);
+  assert.ok(nodes.every((n) => !n.ox && !n.ix));
+});
+
+test('soft blend lines between two colours don\'t become pieces of their own', () => {
+  const size = 100;
+  const rgba = picture(size, (x, y) => {
+    if (x < 10 || x > 90 || y < 10 || y > 90) return [0, 0, 0, 0];
+    if (x < 49) return [230, 40, 40, 255];
+    if (x < 51) return [130, 40, 135, 255]; // the blend
+    return [30, 40, 230, 255];
+  });
+  const { pieces } = pixelsToPieces(rgba, size, size);
+  assert.equal(pieces.length, 2);
+  assert.deepEqual(pieces.map((p) => p.fill.color).sort(), ['#1e28e6', '#e62828']);
+});
+
+test('a piece with an eye on it is one solid shape under the eye', () => {
+  const size = 120;
+  const rgba = picture(size, (x, y) => {
+    if (Math.hypot(x - 60, y - 60) < 12) return [20, 20, 20, 255];
+    return Math.hypot(x - 60, y - 60) < 50 ? [250, 200, 40, 255] : [0, 0, 0, 0];
+  });
+  const { pieces } = pixelsToPieces(rgba, size, size);
+  assert.equal(pieces.length, 2);
+  // The body underneath has no hole: just its outside edge.
+  assert.equal(pieces[0].subpaths.length, 1);
+  assert.equal(pieces[0].fill.color, '#fac828');
+});
+
+test('a donut keeps its real hole', () => {
+  const size = 120;
+  const rgba = picture(size, (x, y) => {
+    const r = Math.hypot(x - 60, y - 60);
+    return r < 50 && r > 20 ? [200, 120, 60, 255] : [0, 0, 0, 0];
+  });
+  const { pieces } = pixelsToPieces(rgba, size, size);
+  assert.equal(pieces[0].subpaths.length, 2);
 });

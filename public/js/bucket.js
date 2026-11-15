@@ -54,7 +54,8 @@ function loopArea(loop) {
 
 // Walks the edges between filled and empty pixels. Gives one loop per outline,
 // including the outlines of any holes.
-export function traceLoops(mask, width, height, { tolerance = 1.1, minArea = 6 } = {}) {
+// raw: every pixel corner along the edge, without simplifying.
+export function traceLoops(mask, width, height, { tolerance = 1.1, minArea = 6, raw = false } = {}) {
   const key = (x, y) => y * (width + 1) + x;
   const edges = new Map();
   const add = (x0, y0, x1, y1) => {
@@ -83,6 +84,7 @@ export function traceLoops(mask, width, height, { tolerance = 1.1, minArea = 6 }
         [x, y] = edges.get(key(x, y)).pop();
       }
       if (loopArea(loop) < minArea) continue;
+      if (raw) { loops.push(loop); continue; }
       // Split the closed loop in two so the simplifier has fixed end points.
       const mid = loop.length >> 1;
       const half1 = simplify(loop.slice(0, mid + 1), tolerance);

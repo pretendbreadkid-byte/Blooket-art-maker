@@ -1,5 +1,5 @@
 // Turns a picture into a vector shape that follows its real outline.
-import { traceLoops, dilate } from './bucket.js';
+import { traceLoops } from './bucket.js';
 import { fitSubpaths, pathBounds } from './model.js';
 
 const MAX_TRACE_PX = 700;
@@ -116,14 +116,11 @@ export async function imageToShape(src) {
   return maskToShape(cleanMask(subjectMask(data, width, height), width, height), width, height);
 }
 
-/* ---------- Splitting a picture into colour pieces ---------- */
+/* ---------- A picture's main colours ---------- */
 
-const MAX_PIECE_TRACE_PX = 480;
 const PALETTE_SIZE = 14;
 const PALETTE_ROUNDS = 8;
 const SAME_COLOUR = 30;
-const MIN_PIECE_SHARE = 0.0004;
-const MAX_PIECES = 160;
 
 const closest = (palette, r, g, b) => {
   let best = 0, bestDist = Infinity;
@@ -161,78 +158,4 @@ export function findPalette(rgba, mask, size = PALETTE_SIZE) {
     palette = sums.filter((s) => s[3]).map((s) => [s[0] / s[3], s[1] / s[3], s[2] / s[3]]);
   }
   return palette;
-}
-
-// labels: the palette colour of each pixel, or -1 for no art. Returns connected
-// blobs of one colour.
-function findRegions(labels, width, height) {
-  const seen = new Uint8Array(labels.length);
-  const regions = [];
-  for (let start = 0; start < labels.length; start++) {
-    if (seen[start] || labels[start] < 0) continue;
-    const label = labels[start], pixels = [], stack = [start];
-    seen[start] = 1;
-    while (stack.length) {
-      const i = stack.pop();
-      pixels.push(i);
-      const x = i % width;
-      for (const j of [x > 0 ? i - 1 : -1, x < width - 1 ? i + 1 : -1, i - width, i + width]) {
-        if (j >= 0 && j < labels.length && !seen[j] && labels[j] === label) { seen[j] = 1; stack.push(j); }
-      }
-    }
-    regions.push({ label, pixels });
-  }
-  return regions.sort((a, b) => b.pixels.length - a.pixels.length);
-}
-
-// Specks, like the soft edges between two colours, join the colour beside them.
-function absorbSpecks(labels, width, regions, minSize) {
-  for (const region of [...regions].reverse()) {
-    if (region.pixels.length >= minSize) continue;
-    const votes = new Map();
-    for (const i of region.pixels) {
-      const x = i % width;
-      for (const j of [x > 0 ? i - 1 : -1, x < width - 1 ? i + 1 : -1, i - width, i + width]) {
-        const label = labels[j];
-        if (j >= 0 && label !== undefined && label >= 0 && label !== region.label) votes.set(label, (votes.get(label) || 0) + 1);
-      }
-    }
-    if (!votes.size) continue;
-    const winner = [...votes].sort((a, b) => b[1] - a[1])[0][0];
-    for (const i of region.pixels) labels[i] = winner;
-  }
-}
-
-const hex = (c) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
-
-export function pixelsToPieces(rgba, width, height) {
-  const mask = cleanMask(subjectMask(rgba, width, height), width, height);
-  const palette = findPalette(rgba, mask);
-  if (!palette.length) throw new Error('Could not find any pieces in this picture.');
-  const labels = new Int16Array(width * height).fill(-1);
-  for (let i = 0; i < labels.length; i++) {
-    if (mask[i]) labels[i] = closest(palette, rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
-  }
-  const minSize = Math.max(12, width * height * MIN_PIECE_SHARE);
-  for (let pass = 0; pass < 3; pass++) absorbSpecks(labels, width, findRegions(labels, width, height), minSize);
-  const regions = findRegions(labels, width, height).slice(0, MAX_PIECES);
-  const pieces = [];
-  for (const { label, pixels } of regions) {
-    const blob = new Uint8Array(width * height);
-    for (const i of pixels) blob[i] = 1;
-    // Each piece reaches slightly under its neighbours, so no gaps show between them.
-    const loops = traceLoops(dilate(blob, width, height), width, height, { tolerance: 0.9, minArea: 4 });
-    if (!loops.length) continue;
-    pieces.push({
-      kind: 'path', subpaths: loops.map(loopToSubpath), fillRule: 'evenodd',
-      fill: { color: hex(palette[label]) }, stroke: { color: 'none' }, strokeWidth: 0, opacity: 1, look: {}, clips: [],
-    });
-  }
-  if (!pieces.length) throw new Error('Could not find any pieces in this picture.');
-  return { box: { x: 0, y: 0, width, height }, pieces };
-}
-
-export async function imageToPieces(src) {
-  const { data, width, height } = await readPixels(src, MAX_PIECE_TRACE_PX);
-  return pixelsToPieces(data, width, height);
 }
