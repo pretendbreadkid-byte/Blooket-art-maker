@@ -3,6 +3,7 @@
 import { pathD, pathBounds, localToWorld, sample, round, rad, isPages, objectsOn, cropOf, isCropped, uncroppedBox } from './model.js';
 import { overlayMarkup } from './templates.js';
 import { patternMarkup, texturesOf, bgTexturesOf } from './textures.js';
+import { fxSteps, hasFx } from './effects.js';
 
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -266,17 +267,22 @@ function effectArea(box, spread) {
   return { x: Math.floor(box.x0 - m), y: Math.floor(box.y0 - m), width: Math.ceil(box.x1 - box.x0 + m * 2), height: Math.ceil(box.y1 - box.y0 + m * 2) };
 }
 
-// Blur and Pixelate, measured on the canvas, so they sit outside the piece's own
-// scale. values: an animated blur, one stdDeviation per frame. pixel: block size.
-// box: the piece's area on the canvas, so the effect is worked out only there.
-function blurred(markup, id, amount, values = '', pixel = 0, box = null) {
+// Effects, Blur and Pixelate, measured on the canvas, so they sit outside the
+// piece's own scale. values: an animated blur, one stdDeviation per frame.
+// pixel: block size. box: the piece's area on the canvas, so the effect is
+// worked out only there. fx: colour and light effects (effects.js), done first.
+function blurred(markup, id, amount, values = '', pixel = 0, box = null, fx = null) {
   const blocks = pixel >= 2;
-  if (!(amount > 0) && !values && !blocks) return markup;
-  const area = effectArea(values ? null : box, (amount || 0) * 3 + (blocks ? pixel : 0));
-  const blur = amount > 0 || values ? `<feGaussianBlur stdDeviation="${round(amount || 0, 2)}" result="soft">${values}</feGaussianBlur>` : '';
+  const extra = fxSteps(fx);
+  if (!(amount > 0) && !values && !blocks && !extra.steps) return markup;
+  const area = effectArea(values ? null : box, (amount || 0) * 3 + (blocks ? pixel : 0) + extra.spread);
+  const blur = amount > 0 || values ? `<feGaussianBlur in="${extra.out}" stdDeviation="${round(amount || 0, 2)}" result="soft">${values}</feGaussianBlur>` : '';
   return `<g filter="url(#${id})"><filter id="${id}" filterUnits="userSpaceOnUse" x="${area.x}" y="${area.y}" width="${area.width}" height="${area.height}" color-interpolation-filters="sRGB">`
-    + `${blur}${blocks ? pixelSteps(pixel, blur ? 'soft' : 'SourceGraphic', area) : ''}</filter>${markup}</g>`;
+    + `${extra.steps}${blur}${blocks ? pixelSteps(pixel, blur ? 'soft' : extra.out, area) : ''}</filter>${markup}</g>`;
 }
+
+// Anything that needs a filter round the piece.
+const needsFilter = (o, raw) => o.blur > 0 || raw.pixel >= 2 || hasFx(raw.fx);
 
 // Pixelate. The art is softened so each spot holds its area's average colour,
 // and each spot is made solid or empty (so edge blocks are never half see-through).
@@ -327,7 +333,7 @@ function objectMarkup(raw, frame, opt) {
   const belly = underbellyFilter(o, `${maskId}-belly`);
   const parts = weldedParts(o, maskId, frame, opt, '', textures.ids);
   const defs = (masked ? eraseMask(raw, maskId) : '') + (o.gradient ? gradientMarkup(o.gradient, gradientId) : '') + texture + clip.defs + belly + parts.defs;
-  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? [] : textures.ids)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur, '', o.pixel || 0, (o.blur > 0 || o.pixel >= 2) ? worldBounds(raw, frame) : null);
+  return blurred(`<g${tag} transform="${transformOf(o)}" opacity="${round(o.opacity, 3)}">${defs}<g class="b"${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body(o, '', gradientId, parts.art ? [] : textures.ids)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, o.blur, '', raw.pixel || 0, needsFilter(o, raw) ? worldBounds(raw, frame) : null, raw.fx);
 }
 
 // One object in an animated export, sampled once per frame.
@@ -368,7 +374,7 @@ function animatedObject(raw, doc, opt) {
     + animate('opacity', (s) => round(s.opacity, 3))
     + (masked ? eraseMask(raw, maskId) : '')
     + (painted ? gradientMarkup(painted, gradientId, gradientTag) : '') + texture + clip.defs + belly + parts.defs
-    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, parts.art ? [] : textures.ids, shape)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs, raw.pixel || 0);
+    + `<g${masked ? ` mask="url(#${maskId})"` : ''}${belly ? ` filter="url(#${maskId}-belly)"` : ''}>${clip.open}${body({ ...first, gradient: painted }, raw.type === 'image' ? '' : inner, gradientId, parts.art ? [] : textures.ids, shape)}${parts.art}${clip.close}</g></g>`, `${maskId}-blur`, first.blur, blurs, raw.pixel || 0, null, raw.fx);
 }
 
 /* ---------- Shadows ---------- */

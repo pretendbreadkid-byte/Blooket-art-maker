@@ -13,6 +13,7 @@ export function html(markup) {
 }
 
 const ICONS = {
+  contrast: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 3v18M12 7h4M12 11h6M12 15h5",
   alignl: 'M4 3v18M8 6h12v4H8zM8 14h7v4H8z',
   alignch: 'M12 3v18M6 6h12v4H6zM8 14h8v4H8z',
   alignr: 'M20 3v18M4 6h12v4H4zM9 14h7v4H9z',

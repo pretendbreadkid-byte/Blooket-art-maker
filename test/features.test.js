@@ -1026,3 +1026,21 @@ test('a slanted rectangle traces as four corners and four straight sides', async
   assert.equal(sp.nodes.length, 4);
   assert.ok(sp.nodes.every((n) => !n.ox && !n.ix), 'straight sides, sharp corners');
 });
+
+test('effects turn into filter steps in the export', async () => {
+  const { fxSteps, hasFx } = await import('../public/js/effects.js');
+  assert.equal(hasFx(undefined), false);
+  assert.equal(hasFx({ adjust: { bright: 0, contrast: 0, sat: 0, hue: 0 }, posterize: 1 }), false, 'settings that do nothing are off');
+  const doc = newDoc({ name: 'fx', width: 200, height: 200 });
+  const obj = newPath({ subpaths: square(), fill: '#3366cc' });
+  doc.layers[0].objects.push(obj);
+  assert.ok(!exportSVG(doc, {}).includes('<filter'), 'no filter without effects');
+  obj.fx = { overlay: { color: '#ff0000', strength: 0.5, mode: 'cover' }, glow: { color: '#ffee00', size: 10, strength: 1 }, sticker: { color: '#ffffff', size: 6 } };
+  obj.blur = 2;
+  const svg = exportSVG(doc, {});
+  assert.ok(svg.includes('type="matrix"') && svg.includes('operator="arithmetic"'), 'overlay is a colour matrix mixed back by strength');
+  assert.ok(svg.includes('flood-color="#ffee00"') && svg.includes('flood-color="#ffffff"'), 'glow and sticker outline');
+  const { out, steps } = fxSteps(obj.fx);
+  assert.ok(svg.includes(`<feGaussianBlur in="${out}"`), 'blur works on the effects, not the plain art');
+  assert.ok(steps.indexOf('#ffffff') < steps.indexOf('#ffee00'), 'the outline comes before the glow, so the glow goes round it');
+});

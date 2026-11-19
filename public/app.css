@@ -683,6 +683,30 @@ body[data-tool=lasso] #wk { cursor: crosshair; }
 .fold > summary::before { content: ''; width: 7px; height: 7px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
 .fold[open] > summary::before { transform: rotate(45deg); }
 .fold-body { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
+/* The Edit / Effects tabs in the Selected panel, and the Effects list. */
+.ptabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: var(--brand-soft); }
+.ptabs button { height: 32px; border-radius: 9px; font-weight: 800; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.ptabs button:hover { background: rgba(255, 255, 255, .5); }
+.ptabs button.on { background: var(--brand); color: #fff; }
+.ptabs em { font-style: normal; font-size: 11px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--brand); color: #fff; display: inline-grid; place-items: center; }
+.ptabs button.on em { background: #fff; color: var(--brand); }
+.fx-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.fx-filter .chip { height: 28px; padding: 0 9px; font-size: 12px; }
+.fx-card { border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.fx-card.on { border-color: var(--brand); }
+.fx-card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; font-size: 13px; }
+.fx-card > summary::-webkit-details-marker { display: none; }
+.fx-card > summary b { flex: 1; font-weight: 800; }
+.fx-card > summary em { font-style: normal; font-size: 11px; color: var(--muted); }
+.fx-card > summary::after { content: ''; width: 7px; height: 7px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform .15s; margin: 0 2px; }
+.fx-card[open] > summary::after { transform: rotate(45deg); }
+.fx-dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.fx-card.on .fx-dot { background: var(--brand); border-color: var(--brand); }
+.fx-card .fold-body > p { margin: 0; }
+.fx-toggle { display: flex; flex-direction: column; gap: 10px; }
+.fx-modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.fx-modes .chip { height: 30px; padding: 0 4px; font-size: 12px; }
+.fx-empty { margin: 4px 0; }
 .keys-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; max-height: 60vh; overflow: auto; }
 .keys-list kbd { font: 700 12px/1 ui-monospace, monospace; background: var(--brand-soft, #eee); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; white-space: nowrap; justify-self: start; align-self: start; }
 .shadow-box .muted { margin: -4px 0 0; }
