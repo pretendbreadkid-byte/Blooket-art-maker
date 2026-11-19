@@ -1,7 +1,7 @@
 // Everything that happens when you press, drag and release on the canvas.
 import {
   S, hooks, refresh, liveRefresh, commit, activeLayer, layerOf, findObj, selected, select, posed, edit, fillPatch,
-  addObject, visibleObjects, pickableObjects, groupOf,
+  addObject, visibleObjects, pickableObjects, groupOf, allObjects,
 } from './state.js';
 import {
   toDoc, objectEl, liveLayer, worldBox, selectionFrame, placeFrame, zoomAt, drawOverlay,
@@ -1256,9 +1256,16 @@ export function deleteSelection() {
   commit();
 }
 
+// What is picked, back to front as it is stacked, not in the order it was
+// clicked. Copies made in this order keep the same pieces in front.
+function pickedInStack() {
+  const order = new Map(allObjects().map((o, i) => [o.id, i]));
+  return selected().sort((a, b) => order.get(a.id) - order.get(b.id));
+}
+
 export function duplicateSelection() {
   const ids = [];
-  const copies = selected().map((o) => {
+  const copies = pickedInStack().map((o) => {
     const copy = { ...clone(o), id: `${o.id}c${Math.random().toString(36).slice(2, 7)}` };
     copy.x += 24; copy.y += 24;
     for (const k of copy.keys) { k.pose.x += 24; k.pose.y += 24; }
@@ -1271,18 +1278,20 @@ export function duplicateSelection() {
   commit();
 }
 
+// Each copy remembers its layer, so pasting puts it back on the same one.
 export function copySelection() {
-  S.clipboard = selected().map(clone);
+  S.clipboard = pickedInStack().map((o) => ({ ...clone(o), clipLayer: layerOf(o.id)?.id }));
 }
 
 export function pasteClipboard() {
   if (!S.clipboard?.length) return;
   const ids = [];
   const copies = S.clipboard.map((o) => {
-    const copy = { ...clone(o), id: `${o.id}c${Math.random().toString(36).slice(2, 7)}` };
+    const { clipLayer, ...rest } = clone(o);
+    const copy = { ...rest, id: `${o.id}c${Math.random().toString(36).slice(2, 7)}` };
     copy.x += 24; copy.y += 24;
     for (const k of copy.keys) { k.pose.x += 24; k.pose.y += 24; }
-    addObject(activeLayer(), copy);
+    addObject(S.doc.layers.find((l) => l.id === clipLayer) || activeLayer(), copy);
     ids.push(copy.id);
     return copy;
   });

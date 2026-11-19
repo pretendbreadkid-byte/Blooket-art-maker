@@ -84,6 +84,7 @@ export async function renderHome(root, onLeave = leave) {
     <aside class="home-side">
       <a class="brand" href="#/" title="Welcome page"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
+      <a class="folder" href="#/templates">${icon('shapes')}<span>Templates</span></a>
       <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
       <ul class="folders">
         <li><button class="folder ${currentFolder === 'all' ? 'on' : ''}" data-f="all">${icon('shapes')}<span>All projects</span><em>${projects.length}</em></button></li>

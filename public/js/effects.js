@@ -11,12 +11,15 @@ export const FX_START = {
   overlay: { color: '#e8453c', strength: 0.5, mode: 'cover' },
   adjust: { bright: 0, contrast: 0, sat: 0, hue: 0 },
   duotone: { dark: '#2b1d5c', light: '#ffd23f', strength: 1 },
+  grey: 1,
+  hue: 120,
   sepia: 0.7,
   invert: 1,
   posterize: 4,
   sticker: { color: '#ffffff', size: 8 },
   glow: { color: '#ffe066', size: 14, strength: 0.8 },
   grain: { amount: 0.3, size: 2 },
+  split: { size: 4, angle: 0 },
 };
 
 export const OVERLAY_MODES = { cover: 'Cover', tint: 'Tint', multiply: 'Darken', screen: 'Lighten' };
@@ -43,6 +46,7 @@ export function fxOn(fx, key) {
   if (key === 'overlay' || key === 'duotone' || key === 'glow') return (v.strength ?? 1) > 0;
   if (key === 'sticker') return v.size > 0;
   if (key === 'grain') return v.amount > 0;
+  if (key === 'split') return v.size > 0;
   return true;
 }
 
@@ -78,6 +82,8 @@ export function fxSteps(fx) {
     if (sat) step(`<feColorMatrix in="%IN%" type="saturate" values="${n(Math.max(0, 1 + sat / 100))}" result="%OUT%"/>`);
     if (hue) step(`<feColorMatrix in="%IN%" type="hueRotate" values="${n(hue)}" result="%OUT%"/>`);
   }
+  if (fxOn(fx, 'hue')) step(`<feColorMatrix in="%IN%" type="hueRotate" values="${n(fx.hue)}" result="%OUT%"/>`);
+  if (fxOn(fx, 'grey')) step(`<feColorMatrix in="%IN%" type="saturate" values="${n(1 - Math.min(1, fx.grey))}" result="%OUT%"/>`);
   if (fxOn(fx, 'sepia')) {
     const a = Math.min(1, fx.sepia);
     const s = [[0.393, 0.769, 0.189], [0.349, 0.686, 0.168], [0.272, 0.534, 0.131]];
@@ -130,6 +136,20 @@ export function fxSteps(fx) {
       + `<feComposite in="${cut}" in2="${from}" operator="arithmetic" k1="0" k2="${n(a)}" k3="1" k4="${n(-a / 2)}"/>`
       + `<feComposite in2="${from}" operator="in" result="${name}"/>`;
     at = name;
+  }
+  if (fxOn(fx, 'split')) {
+    // Red one way, blue the other, like a glitchy screen. The three parts add
+    // back up to the art wherever they overlap.
+    const { size = 4, angle = 0 } = fx.split;
+    const s = Math.min(60, size), dx = n(Math.cos((angle * Math.PI) / 180) * s), dy = n(Math.sin((angle * Math.PI) / 180) * s);
+    const from = at, r = next(), g = next(), b = next(), rg = next(), name = next();
+    const only = (row) => `<feColorMatrix in="${from}" type="matrix" values="${row} 0 0 0 1 0"`;
+    steps += `${only('1 0 0 0 0 0 0 0 0 0 0 0 0 0 0')}/><feOffset dx="${-dx}" dy="${-dy}" result="${r}"/>`
+      + `${only('0 0 0 0 0 0 1 0 0 0 0 0 0 0 0')} result="${g}"/>`
+      + `${only('0 0 0 0 0 0 0 0 0 0 0 0 1 0 0')}/><feOffset dx="${dx}" dy="${dy}" result="${b}"/>`
+      + `<feBlend in="${r}" in2="${g}" mode="screen" result="${rg}"/><feBlend in="${rg}" in2="${b}" mode="screen" result="${name}"/>`;
+    at = name;
+    spread += s;
   }
   if (fxOn(fx, 'sticker')) {
     // A solid edge all the way round, like a sticker. Grown, softened and made

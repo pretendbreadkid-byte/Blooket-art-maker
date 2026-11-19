@@ -18,6 +18,7 @@ import { fontDialog } from './fonts.js';
 import { canRemoveBackground, removeBackground } from './bg-remove.js';
 import { TEMPLATES, overlayLook } from './templates.js';
 import { FX_START, OVERLAY_MODES, fxOn } from './effects.js';
+import { SUBJECTS, subjectUrl, tileUrl, mineUrl, setMine } from './fx-preview.js';
 import { resizeCanvas } from './fit.js';
 import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
 
@@ -359,10 +360,10 @@ function autoShadowControls(d) {
 }
 
 // A drop shadow under the picked art. A whole Blook casts one shadow together.
-function dropShadowControls(items) {
+function dropShadowControls(items, toggle = true) {
   const first = items.find((o) => o.dropShadow);
-  const box = html(`<div class="shadow-box"><label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Shadow</span></label></div>`);
-  $('input', box).onchange = (e) => {
+  const box = html(`<div class="shadow-box">${toggle ? `<label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Shadow</span></label>` : ''}</div>`);
+  if (toggle) $('input', box).onchange = (e) => {
     const s = e.target.checked ? { ...newDropShadow(), ...first?.dropShadow } : null;
     items.forEach((o) => { o.dropShadow = s && { ...s }; });
     commit();
@@ -382,11 +383,11 @@ function dropShadowControls(items) {
 }
 
 // A see-through band along the bottom of whatever is picked, following its outline.
-function underbellyControls(items) {
+function underbellyControls(items, toggle = true) {
   const first = items.find((o) => o.underbelly);
-  const box = html(`<div class="shadow-box"><label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Underbelly</span></label>
-    <p class="muted small">A see-through band along the bottom, following the outline. Works on shapes, pictures and text.</p></div>`);
-  $('input', box).onchange = (e) => {
+  const box = html(`<div class="shadow-box">${toggle ? `<label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Underbelly</span></label>
+    <p class="muted small">A see-through band along the bottom, following the outline. Works on shapes, pictures and text.</p>` : ''}</div>`);
+  if (toggle) $('input', box).onchange = (e) => {
     const look = e.target.checked ? { ...newUnderbelly(), ...first?.underbelly } : null;
     items.forEach((o) => { o.underbelly = look && { ...look }; });
     commit();
@@ -572,6 +573,20 @@ function selectedPanel() {
       onChange: commit,
     }));
   }
+  const see = [opacitySlider(items)];
+  if (paintable.length) {
+    const first = posed(paintable[0]);
+    see.push(slider({
+      label: 'Fill opacity', value: Math.round((first.fillOpacity ?? 1) * 100), min: 0, max: 100, unit: '%',
+      onInput: (v) => { paintable.forEach((o) => edit(o, { fillOpacity: v / 100 })); liveRefresh(); },
+      onChange: commit,
+    }), slider({
+      label: 'Outline opacity', value: Math.round((first.strokeOpacity ?? 1) * 100), min: 0, max: 100, unit: '%',
+      onInput: (v) => { paintable.forEach((o) => edit(o, { strokeOpacity: v / 100 })); liveRefresh(); },
+      onChange: commit,
+    }));
+  }
+  box.append(fold('opacity', 'Opacity', see));
   box.append(colorSwaps(items));
 
   if (single?.type === 'image') box.append(fold('crop', 'Crop', cropControls(single)));
@@ -612,52 +627,51 @@ function selectedPanel() {
 /* ---------- The Effects tab ---------- */
 
 // The Selected panel has two tabs: Edit (size, colours, shape) and Effects.
-const PANEL_TAB_KEY = 'bb-panel-tab', FX_FILTER_KEY = 'bb-fx-filter';
+// Effects is a grid of tiles, each showing what it does to a preview picture.
+const PANEL_TAB_KEY = 'bb-panel-tab', FX_FILTER_KEY = 'bb-fx-filter', FX_SOURCE_KEY = 'bb-fx-source';
 const remembered = (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
 const remember = (key, v) => { try { localStorage.setItem(key, v); } catch { /* fine */ } };
 let panelTab = remembered(PANEL_TAB_KEY, 'edit');
 let fxFilter = remembered(FX_FILTER_KEY, 'all');
+let fxSource = remembered(FX_SOURCE_KEY, 'art');
+let fxPicked = null, fxScroll = false;
 
-const FX_GROUPS = { colour: 'Colour', blur: 'Blur & pixel', light: 'Light & shadow', texture: 'Texture', see: 'See-through' };
+const FX_GROUPS = { colour: 'Colour', blur: 'Blur & pixel', light: 'Light & shadow', texture: 'Texture' };
 
-// Writes one effect onto everything picked. null turns it off.
-function setFx(items, key, value) {
-  items.forEach((o) => {
-    const fx = { ...(o.fx || {}) };
-    if (value == null) delete fx[key];
-    else fx[key] = typeof value === 'object' ? { ...value } : value;
-    if (Object.keys(fx).length) o.fx = fx; else delete o.fx;
-  });
+// Writes one effect onto one thing. null turns it off.
+function putFx(o, key, value) {
+  const fx = { ...(o.fx || {}) };
+  if (value == null) delete fx[key];
+  else fx[key] = typeof value === 'object' ? { ...value } : value;
+  if (Object.keys(fx).length) o.fx = fx; else delete o.fx;
 }
+const setFx = (items, key, value) => items.forEach((o) => putFx(o, key, value));
 const firstFx = (items, key) => items.map((o) => o.fx?.[key]).find((v) => v != null);
-const anyFx = (key) => (items) => items.some((o) => fxOn(o.fx, key));
 
-// An effect with an On box; its settings show once it is on.
-function fxToggle(items, key, controls) {
-  const first = firstFx(items, key);
-  const box = html(`<div class="fx-toggle"><label class="check"><input type="checkbox" ${first != null ? 'checked' : ''}><span>On</span></label></div>`);
-  $('input', box).onchange = (e) => {
-    setFx(items, key, e.target.checked ? FX_START[key] : null);
-    commit();
-    hooks.panels();
+// An effect kept in o.fx. controls(look, set) builds its settings.
+function fxCard(key, group, title, controls, preview = FX_START[key]) {
+  return {
+    key, group, title,
+    used: (items) => items.some((o) => fxOn(o.fx, key)),
+    on: (o, look = FX_START[key]) => putFx(o, key, look),
+    preview: (o) => putFx(o, key, preview),
+    off: (o) => putFx(o, key, null),
+    controls: (items) => {
+      let look = firstFx(items, key);
+      look = typeof look === 'object' ? { ...FX_START[key], ...look } : look;
+      const set = (patch) => {
+        look = typeof look === 'object' ? { ...look, ...patch } : patch;
+        setFx(items, key, look);
+        liveRefresh();
+      };
+      return controls(look, set, items);
+    },
   };
-  if (first != null) {
-    let look = { ...FX_START[key], ...first };
-    const set = (patch) => { look = { ...look, ...patch }; setFx(items, key, look); liveRefresh(); };
-    box.append(...controls(look, set));
-  }
-  return box;
 }
 
-// An effect that is just one amount; at or below off, it is off.
-function fxAmount(items, key, { label, max, unit = '%', scale = 100, min = 0, off = 0 }) {
-  const v = firstFx(items, key) ?? 0;
-  return slider({
-    label, value: Math.round(v * scale), min, max, unit,
-    onInput: (x) => { setFx(items, key, x <= off ? null : x / scale); liveRefresh(); },
-    onChange: commit,
-  });
-}
+const amountSlider = (label, max = 100) => (look, set) => [slider({
+  label, value: Math.round(look * 100), min: 1, max, unit: '%', reset: 100, onInput: (v) => set(v / 100), onChange: commit,
+})];
 
 function colorPair(a, b) {
   const row = html('<div class="row"></div>');
@@ -666,110 +680,87 @@ function colorPair(a, b) {
 }
 
 const FX_CARDS = [
+  fxCard('overlay', 'colour', 'Overlay', (look, set) => {
+    const modes = html(`<div class="fx-modes">${Object.entries(OVERLAY_MODES).map(([k, label]) => `<button class="chip ${k === look.mode ? 'on' : ''}" data-mode="${k}">${label}</button>`).join('')}</div>`);
+    $$('button', modes).forEach((b) => {
+      b.onclick = () => { $$('button', modes).forEach((x) => x.classList.toggle('on', x === b)); set({ mode: b.dataset.mode }); commit(); };
+    });
+    return [
+      colorButton({ label: 'Overlay colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
+      modes,
+      slider({ label: 'Strength', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', reset: 50, onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+    ];
+  }, { ...FX_START.overlay, strength: 0.6 }),
+  fxCard('adjust', 'colour', 'Adjust', (look, set) => [
+    slider({ label: 'Brightness', value: look.bright, min: -100, max: 100, unit: '%', reset: 0, onInput: (v) => set({ bright: v }), onChange: commit }),
+    slider({ label: 'Contrast', value: look.contrast, min: -100, max: 100, unit: '%', reset: 0, onInput: (v) => set({ contrast: v }), onChange: commit }),
+    slider({ label: 'Saturation', value: look.sat, min: -100, max: 100, unit: '%', reset: 0, onInput: (v) => set({ sat: v }), onChange: commit }),
+    slider({ label: 'Hue shift', value: look.hue, min: 0, max: 359, unit: '°', reset: 0, onInput: (v) => set({ hue: v }), onChange: commit }),
+  ], { bright: 10, contrast: 30, sat: 60, hue: 0 }),
+  fxCard('hue', 'colour', 'Hue shift', (look, set) => [
+    slider({ label: 'Hue shift', value: look, min: 1, max: 359, unit: '°', reset: 120, onInput: (v) => set(v), onChange: commit }),
+  ], 140),
+  fxCard('grey', 'colour', 'Black & white', amountSlider('Amount')),
+  fxCard('sepia', 'colour', 'Old photo', amountSlider('Amount'), 1),
+  fxCard('duotone', 'colour', 'Duotone', (look, set) => [
+    colorPair(
+      { label: 'Dark', value: look.dark, onInput: (c) => set({ dark: c }), onDone: commit },
+      { label: 'Light', value: look.light, onInput: (c) => set({ light: c }), onDone: commit },
+    ),
+    slider({ label: 'Strength', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', reset: 100, onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+  ]),
+  fxCard('invert', 'colour', 'Invert', amountSlider('Amount')),
+  fxCard('posterize', 'colour', 'Posterize', (look, set) => [slider({
+    label: 'Colour steps', value: look, min: 2, max: 12, reset: 4, onInput: (v) => set(v), onChange: commit,
+  })], 3),
   {
-    key: 'overlay', group: 'colour', title: 'Colour overlay', about: 'Covers the art in one colour. Tint keeps the light and dark parts.',
-    used: anyFx('overlay'),
-    body: (items) => [fxToggle(items, 'overlay', (look, set) => {
-      const modes = html(`<div class="fx-modes">${Object.entries(OVERLAY_MODES).map(([k, label]) => `<button class="chip ${k === look.mode ? 'on' : ''}" data-mode="${k}">${label}</button>`).join('')}</div>`);
-      $$('button', modes).forEach((b) => {
-        b.onclick = () => { $$('button', modes).forEach((x) => x.classList.toggle('on', x === b)); set({ mode: b.dataset.mode }); commit(); };
-      });
-      return [
-        colorButton({ label: 'Overlay colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
-        modes,
-        slider({ label: 'Strength', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', reset: 50, onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
-      ];
-    })],
+    key: 'blur', group: 'blur', title: 'Blur',
+    used: (items) => items.some((o) => posed(o).blur > 0),
+    on: (o) => edit(o, { blur: 6 }), preview: (o) => { o.blur = 4; }, off: (o) => edit(o, { blur: 0 }),
+    controls: (items) => [blurSlider(items)],
   },
   {
-    key: 'adjust', group: 'colour', title: 'Adjust colours', about: 'Brighter, darker, bolder or duller, or shift every colour round the rainbow.',
-    used: anyFx('adjust'),
-    body: (items) => {
-      let look = { ...FX_START.adjust, ...firstFx(items, 'adjust') };
-      const set = (patch) => {
-        look = { ...look, ...patch };
-        setFx(items, 'adjust', fxOn({ adjust: look }, 'adjust') ? look : null);
-        liveRefresh();
-      };
-      const row = html('<div class="btn-grid"></div>');
-      row.append(
-        button('Black & white', 'contrast', () => { set({ sat: -100 }); commit(); hooks.panels(); }),
-        button('Reset', 'undo', () => { setFx(items, 'adjust', null); commit(); hooks.panels(); }),
-      );
-      return [
-        slider({ label: 'Brightness', value: look.bright, min: -100, max: 100, unit: '%', reset: 0, onInput: (v) => set({ bright: v }), onChange: commit }),
-        slider({ label: 'Contrast', value: look.contrast, min: -100, max: 100, unit: '%', reset: 0, onInput: (v) => set({ contrast: v }), onChange: commit }),
-        slider({ label: 'Saturation', value: look.sat, min: -100, max: 100, unit: '%', reset: 0, onInput: (v) => set({ sat: v }), onChange: commit }),
-        slider({ label: 'Hue shift', value: look.hue, min: 0, max: 359, unit: '°', reset: 0, onInput: (v) => set({ hue: v }), onChange: commit }),
-        row,
-      ];
-    },
-  },
-  {
-    key: 'duotone', group: 'colour', title: 'Duotone', about: 'Redraws the art in two colours: one for the dark parts and one for the light parts.',
-    used: anyFx('duotone'),
-    body: (items) => [fxToggle(items, 'duotone', (look, set) => [
-      colorPair(
-        { label: 'Dark', value: look.dark, onInput: (c) => set({ dark: c }), onDone: commit },
-        { label: 'Light', value: look.light, onInput: (c) => set({ light: c }), onDone: commit },
-      ),
-      slider({ label: 'Strength', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', reset: 100, onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
-    ])],
-  },
-  {
-    key: 'sepia', group: 'colour', title: 'Old photo', about: 'Warm brown tones, like an old photograph.',
-    used: anyFx('sepia'), body: (items) => [fxAmount(items, 'sepia', { label: 'Amount', max: 100 })],
-  },
-  {
-    key: 'invert', group: 'colour', title: 'Invert', about: 'Flips every colour to its opposite: black becomes white.',
-    used: anyFx('invert'), body: (items) => [fxAmount(items, 'invert', { label: 'Amount', max: 100 })],
-  },
-  {
-    key: 'posterize', group: 'colour', title: 'Posterize', about: 'Fewer, flatter colours, like a poster. Fewer steps look bolder.',
-    used: anyFx('posterize'), body: (items) => [fxAmount(items, 'posterize', { label: 'Colour steps', max: 12, unit: '', scale: 1, off: 1 })],
-  },
-  {
-    key: 'blur', group: 'blur', title: 'Blur', about: 'Softens the whole thing.',
-    used: (items) => items.some((o) => posed(o).blur > 0), body: (items) => [blurSlider(items)],
-  },
-  {
-    key: 'pixel', group: 'blur', title: 'Pixelate', about: 'Turns it into big square pixels.',
+    key: 'pixel', group: 'blur', title: 'Pixelate',
     used: (items) => items.some((o) => o.pixel >= 2),
-    body: (items) => [slider({
-      label: 'Pixel size', value: Math.max(0, ...items.map((o) => o.pixel || 0)), min: 0, max: 60, unit: 'px',
-      onInput: (v) => { items.forEach((o) => { o.pixel = v < 2 ? 0 : v; }); liveRefresh(); },
+    on: (o) => { o.pixel = 10; }, preview: (o) => { o.pixel = 9; }, off: (o) => { o.pixel = 0; },
+    controls: (items) => [slider({
+      label: 'Pixel size', value: Math.max(0, ...items.map((o) => o.pixel || 0)), min: 2, max: 60, unit: 'px', reset: 10,
+      onInput: (v) => { items.forEach((o) => { o.pixel = v; }); liveRefresh(); },
       onChange: commit,
     })],
   },
+  fxCard('split', 'blur', 'RGB split', (look, set) => [
+    slider({ label: 'Distance', value: look.size, min: 1, max: 40, unit: 'px', reset: 4, onInput: (v) => set({ size: v }), onChange: commit }),
+    slider({ label: 'Direction', value: look.angle, min: 0, max: 359, unit: '°', reset: 0, onInput: (v) => set({ angle: v }), onChange: commit }),
+  ], { size: 5, angle: 0 }),
+  fxCard('glow', 'light', 'Glow', (look, set) => [
+    colorButton({ label: 'Glow colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
+    slider({ label: 'Size', value: look.size, min: 1, max: 80, unit: 'px', reset: 14, onInput: (v) => set({ size: v }), onChange: commit }),
+    slider({ label: 'Strength', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', reset: 80, onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
+  ], { ...FX_START.glow, size: 12, strength: 1 }),
+  fxCard('sticker', 'light', 'Sticker', (look, set) => [
+    colorButton({ label: 'Edge colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
+    slider({ label: 'Size', value: look.size, min: 1, max: 60, unit: 'px', reset: 8, onInput: (v) => set({ size: v }), onChange: commit }),
+  ], { color: '#ffffff', size: 7 }),
   {
-    key: 'glow', group: 'light', title: 'Glow', about: 'A soft coloured light all round the outside.',
-    used: anyFx('glow'),
-    body: (items) => [fxToggle(items, 'glow', (look, set) => [
-      colorButton({ label: 'Glow colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
-      slider({ label: 'Size', value: look.size, min: 1, max: 80, unit: 'px', reset: 14, onInput: (v) => set({ size: v }), onChange: commit }),
-      slider({ label: 'Strength', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', reset: 80, onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
-    ])],
+    key: 'shadow', group: 'light', title: 'Shadow',
+    used: (items) => items.some((o) => o.dropShadow),
+    on: (o) => { o.dropShadow = newDropShadow(); }, preview: (o) => { o.dropShadow = { ...newDropShadow(), distance: 8, strength: 0.4 }; }, off: (o) => { o.dropShadow = null; },
+    controls: (items) => [dropShadowControls(items, false)],
   },
   {
-    key: 'sticker', group: 'light', title: 'Sticker outline', about: 'A solid edge all the way round, like a sticker. Works on pictures and text too.',
-    used: anyFx('sticker'),
-    body: (items) => [fxToggle(items, 'sticker', (look, set) => [
-      colorButton({ label: 'Edge colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
-      slider({ label: 'Size', value: look.size, min: 1, max: 60, unit: 'px', reset: 8, onInput: (v) => set({ size: v }), onChange: commit }),
-    ])],
+    key: 'underbelly', group: 'light', title: 'Underbelly',
+    used: (items) => items.some((o) => o.underbelly),
+    on: (o) => { o.underbelly = newUnderbelly(); }, preview: (o) => { o.underbelly = { ...newUnderbelly(), strength: 0.45 }; }, off: (o) => { o.underbelly = null; },
+    controls: (items) => [underbellyControls(items, false)],
   },
   {
-    key: 'shadow', group: 'light', title: 'Shadow', about: 'A flat see-through shadow. A whole Blook casts one shadow together.',
-    used: (items) => items.some((o) => o.dropShadow), body: (items) => [dropShadowControls(items)],
-  },
-  {
-    key: 'underbelly', group: 'light', title: 'Underbelly', about: '',
-    used: (items) => items.some((o) => o.underbelly), body: (items) => [underbellyControls(items)],
-  },
-  {
-    key: 'texture', group: 'texture', title: 'Texture', about: 'Patterns on top: dots, stripes, sparkles and more. On pictures they go on just the parts you can see.',
+    key: 'texture', group: 'texture', title: 'Texture',
     used: (items) => items.some((o) => texturesOf(posed(o)).length),
-    body: (items) => {
+    on: (o) => { o.textures = [newTexture('dots', S.doc.animated)]; delete o.texture; },
+    preview: (o) => { o.textures = [{ ...newTexture('dots'), size: 14, opacity: 0.6 }]; },
+    off: (o) => { o.textures = []; delete o.texture; },
+    controls: (items) => {
       const look = posed(items[0]);
       return [textureList(() => texturesOf(posed(items[0])), (list) => {
         items.forEach((o) => { o.textures = clone(list); delete o.texture; });
@@ -777,35 +768,10 @@ const FX_CARDS = [
       }, items.length > 1 ? 'Texture for all of these' : 'Texture', look.fill !== 'none' ? (look.gradient?.from || look.fill) : look.stroke)];
     },
   },
-  {
-    key: 'grain', group: 'texture', title: 'Grain', about: 'Tiny light and dark speckles, like film or paper.',
-    used: anyFx('grain'),
-    body: (items) => [fxToggle(items, 'grain', (look, set) => [
-      slider({ label: 'Amount', value: Math.round(look.amount * 100), min: 0, max: 100, unit: '%', reset: 30, onInput: (v) => set({ amount: v / 100 }), onChange: commit }),
-      slider({ label: 'Speck size', value: look.size, min: 1, max: 10, unit: 'px', reset: 2, onInput: (v) => set({ size: v }), onChange: commit }),
-    ])],
-  },
-  {
-    key: 'see', group: 'see', title: 'Opacity', about: 'How see-through it is, all over or just the fill or outline.',
-    used: (items) => items.some((o) => { const s = posed(o); return s.opacity < 1 || (o.type !== 'image' && ((s.fillOpacity ?? 1) < 1 || (s.strokeOpacity ?? 1) < 1)); }),
-    body: (items) => {
-      const paintable = items.filter((o) => o.type !== 'image');
-      const list = [opacitySlider(items)];
-      if (paintable.length) {
-        const first = posed(paintable[0]);
-        list.push(slider({
-          label: 'Fill opacity', value: Math.round((first.fillOpacity ?? 1) * 100), min: 0, max: 100, unit: '%',
-          onInput: (v) => { paintable.forEach((o) => edit(o, { fillOpacity: v / 100 })); liveRefresh(); },
-          onChange: commit,
-        }), slider({
-          label: 'Outline opacity', value: Math.round((first.strokeOpacity ?? 1) * 100), min: 0, max: 100, unit: '%',
-          onInput: (v) => { paintable.forEach((o) => edit(o, { strokeOpacity: v / 100 })); liveRefresh(); },
-          onChange: commit,
-        }));
-      }
-      return list;
-    },
-  },
+  fxCard('grain', 'texture', 'Grain', (look, set) => [
+    slider({ label: 'Amount', value: Math.round(look.amount * 100), min: 1, max: 100, unit: '%', reset: 30, onInput: (v) => set({ amount: v / 100 }), onChange: commit }),
+    slider({ label: 'Speck size', value: look.size, min: 1, max: 10, unit: 'px', reset: 2, onInput: (v) => set({ size: v }), onChange: commit }),
+  ], { amount: 0.7, size: 1.5 }),
 ];
 
 function panelTabs(items) {
@@ -818,40 +784,93 @@ function panelTabs(items) {
   return row;
 }
 
-// Every effect in one list. Filter by kind, or just see the ones turned on.
+// What the art looks like without its effects, so its preview only redraws when the art changes.
+const artKey = (items) => JSON.stringify(items.map((o) => o.id)) + JSON.stringify(items, (k, v) => (
+  k === 'href' ? String(v).length : ['fx', 'dropShadow', 'underbelly', 'textures', 'texture', 'blur', 'pixel'].includes(k) ? undefined : v));
+const tileCache = new Map();
+
+// Every effect as a tile. Tap one to put it on; tap it again for its settings.
 function effectsPanel(box, items) {
   const used = FX_CARDS.filter((c) => c.used(items));
   const filters = [['all', 'All'], ['used', `In use${used.length ? ` (${used.length})` : ''}`], ...Object.entries(FX_GROUPS)];
+  if (!filters.some(([k]) => k === fxFilter)) fxFilter = 'all';
   const chips = html(`<div class="fx-filter">${filters.map(([k, label]) => `<button class="chip ${fxFilter === k ? 'on' : ''}" data-f="${k}">${esc(label)}</button>`).join('')}</div>`);
   $$('button', chips).forEach((b) => {
     b.onclick = () => { fxFilter = b.dataset.f; remember(FX_FILTER_KEY, fxFilter); hooks.panels(); };
   });
-  box.append(chips);
+
+  // What the tiles show the effects on.
+  const source = html(`<div class="fx-source"><span>Preview on</span>${Object.entries(SUBJECTS).map(([k, label]) => `<button class="${fxSource === k ? 'on' : ''}" data-s="${k}">${esc(label)}</button>`).join('')}
+    <input type="file" accept="image/*" hidden></div>`);
+  const file = $('input', source);
+  file.onchange = async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    try { await setMine(await readDataUrl(f)); fxSource = 'mine'; remember(FX_SOURCE_KEY, fxSource); } catch { toast('That picture could not be used.', 'warn'); }
+    hooks.panels();
+  };
+  $$('[data-s]', source).forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.s === 'mine' && (!mineUrl() || fxSource === 'mine')) { file.click(); return; }
+      fxSource = b.dataset.s;
+      remember(FX_SOURCE_KEY, fxSource);
+      hooks.panels();
+    };
+  });
+  box.append(chips, source);
+
   const shown = FX_CARDS.filter((c) => fxFilter === 'all' || (fxFilter === 'used' ? used.includes(c) : c.group === fxFilter));
   if (!shown.length) {
-    box.append(html('<p class="muted small fx-empty">Nothing is turned on yet. Pick <b>All</b> to see every effect.</p>'));
+    box.append(html('<p class="muted small fx-empty">Nothing is on yet. Pick <b>All</b> and tap an effect.</p>'));
     return;
   }
+  if (fxPicked && !used.some((c) => c.key === fxPicked)) fxPicked = null;
+  const grid = html('<div class="fx-grid"></div>');
   for (const card of shown) {
     const on = used.includes(card);
-    const key = `fx-${card.key}`;
-    const el = html(`<details class="fx-card${on ? ' on' : ''}" data-fx="${card.key}" ${(folds[key] ?? on) ? 'open' : ''}>
-      <summary><span class="fx-dot" title="${on ? 'On' : 'Off'}"></span><b>${esc(card.title)}</b>${FX_GROUPS[fxFilter] ? '' : `<em>${esc(FX_GROUPS[card.group])}</em>`}</summary>
-      <div class="fold-body">${card.about ? `<p class="muted small">${esc(card.about)}</p>` : ''}</div></details>`);
-    // Settings are built when the card opens, so the long list stays quick.
-    const fill = () => {
-      if (el.dataset.built) return;
-      el.dataset.built = '1';
-      $('.fold-body', el).append(...card.body(items).filter(Boolean));
+    const tile = html(`<button class="fx-tile${on ? ' on' : ''}${fxPicked === card.key ? ' picked' : ''}" data-fx="${card.key}" title="${esc(card.title)}${on ? ' (on)' : ''}">
+      <span class="fx-thumb"><img alt=""></span><b>${esc(card.title)}</b></button>`);
+    tile.onclick = () => {
+      if (!on) { items.forEach((o) => card.on(o)); commit(); }
+      fxPicked = card.key;
+      fxScroll = true;
+      hooks.panels();
     };
-    if (el.open) fill();
-    el.ontoggle = () => {
-      if (el.open) fill();
-      folds[key] = el.open;
-      try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch { /* fine */ }
-    };
-    box.append(el);
+    grid.append(tile);
   }
+  box.append(grid);
+
+  // The tiles' pictures come in as they are made.
+  const key = fxSource === 'art' ? artKey(items) : '';
+  const art = fxSource === 'art' ? worldBox(items.map((o) => o.id)) : null;
+  subjectUrl(fxSource, items, art, key).then((subject) => {
+    for (const img of $$('.fx-tile img', grid)) {
+      const card = FX_CARDS.find((c) => c.key === img.closest('.fx-tile').dataset.fx);
+      const id = `${fxSource}|${fxSource === 'art' ? key.length + key.slice(0, 200) + key.slice(-200) : fxSource === 'mine' ? mineUrl()?.length : ''}|${card.key}`;
+      if (!tileCache.has(id)) {
+        if (tileCache.size > 400) tileCache.clear();
+        tileCache.set(id, tileUrl(subject, card.preview));
+      }
+      img.src = tileCache.get(id);
+    }
+  });
+
+  const picked = used.find((c) => c.key === fxPicked);
+  if (!picked) {
+    if (used.length) box.append(html('<p class="muted small fx-empty">Tap an effect that is on to change it.</p>'));
+    return;
+  }
+  const panel = html(`<div class="fx-settings"><div class="fx-settings-head"><b>${esc(picked.title)}</b></div></div>`);
+  $('.fx-settings-head', panel).append(button('Remove', 'trash', () => {
+    items.forEach((o) => picked.off(o));
+    fxPicked = null;
+    commit();
+    hooks.panels();
+  }, 'danger'));
+  panel.append(...picked.controls(items).filter(Boolean));
+  box.append(panel);
+  // After tapping a tile, bring its settings into view.
+  if (fxScroll) { fxScroll = false; requestAnimationFrame(() => panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' })); }
 }
 
 /* ---------- Cropping pictures ---------- */

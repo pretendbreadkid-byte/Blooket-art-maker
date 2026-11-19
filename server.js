@@ -153,6 +153,208 @@ function cleanShape(input) {
   };
 }
 
+/* ---------- Community templates ---------- */
+
+// Anyone can send in a Blook, pack or other art to be a template. It waits until
+// an admin accepts it, then everyone can start a project from it. They are kept
+// in the private GitHub data repo when GITHUB_TOKEN and DATA_REPO are set (so they
+// survive Render's restarts), or in the data folder otherwise.
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const DATA_REPO = process.env.DATA_REPO;
+const GITHUB_API = process.env.GITHUB_API || 'https://api.github.com';
+const IN_GITHUB = !!(GITHUB_TOKEN && DATA_REPO);
+const TEMPLATE_DIR = join(DATA, 'templates');
+const MAX_TEMPLATE = 6 * 1024 * 1024;
+const MAX_THUMB = 400 * 1024;
+const SUBMIT_WINDOW_MS = 60 * 60 * 1000;
+const MAX_SUBMITS = 6;
+const MAX_WAITING = 200;
+const KINDS = ['blook', 'banner', 'background', 'icon', 'pack', 'other'];
+
+const githubHeaders = { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'blook-berry' };
+const repoFile = (name) => `${GITHUB_API}/repos/${DATA_REPO}/contents/templates/${name}`;
+
+// One file in the store: read gives its text or null; write saves it.
+async function readStored(name) {
+  if (!IN_GITHUB) {
+    const file = join(TEMPLATE_DIR, name);
+    return existsSync(file) ? readFileSync(file, 'utf8') : null;
+  }
+  const res = await fetch(repoFile(name), { headers: { ...githubHeaders, Accept: 'application/vnd.github.raw+json' } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Could not read templates from GitHub (${res.status}).`);
+  return res.text();
+}
+
+const shas = new Map();
+async function writeStored(name, text, message) {
+  if (!IN_GITHUB) {
+    mkdirSync(TEMPLATE_DIR, { recursive: true });
+    const file = join(TEMPLATE_DIR, name), tmp = file + '.tmp';
+    writeFileSync(tmp, text);
+    renameSync(tmp, file);
+    return;
+  }
+  let sha = shas.get(name);
+  if (sha === undefined) {
+    const head = await fetch(repoFile(name), { headers: githubHeaders });
+    sha = head.ok ? (await head.json()).sha : null;
+  }
+  const res = await fetch(repoFile(name), {
+    method: 'PUT',
+    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, content: Buffer.from(text).toString('base64'), ...(sha ? { sha } : {}) }),
+  });
+  if (!res.ok) { shas.delete(name); throw new Error(`Could not save templates to GitHub (${res.status}).`); }
+  shas.set(name, (await res.json()).content.sha);
+}
+
+async function deleteStored(name) {
+  if (!IN_GITHUB) { await rm(join(TEMPLATE_DIR, name), { force: true }); return; }
+  const head = await fetch(repoFile(name), { headers: githubHeaders });
+  if (!head.ok) return;
+  await fetch(repoFile(name), {
+    method: 'DELETE',
+    headers: { ...githubHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Remove a template', sha: (await head.json()).sha }),
+  });
+  shas.delete(name);
+}
+
+// The list of every template: { id, name, by, kind, status, at, width, height }.
+let templateList = [];
+let templatesReady = (async () => {
+  try { templateList = JSON.parse((await readStored('index.json')) || '[]'); } catch (error) { console.log(`Templates: ${error.message}`); }
+})();
+const bodies = new Map();
+let listWrite = Promise.resolve();
+// One save at a time, and a failed save doesn't block the next one.
+const saveTemplateList = () => {
+  listWrite = listWrite.catch(() => {}).then(() => writeStored('index.json', JSON.stringify(templateList, null, 1), 'Update templates'));
+  return listWrite;
+};
+
+async function templateBody(id) {
+  if (!bodies.has(id)) {
+    const text = await readStored(`${id}.json`);
+    if (!text) return null;
+    bodies.set(id, JSON.parse(text));
+  }
+  return bodies.get(id);
+}
+
+const submits = new Map();
+function submitAllowed(req) {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
+  const now = Date.now();
+  let record = submits.get(ip);
+  if (!record || record.reset < now) { record = { count: 0, reset: now + SUBMIT_WINDOW_MS }; submits.set(ip, record); }
+  record.count += 1;
+  return record.count <= MAX_SUBMITS;
+}
+
+const bad = (message) => Object.assign(new Error(message), { status: 400 });
+
+// Projects are plain data. Pictures inside them must be pictures, and nothing in
+// them may run code or load from other sites.
+function checkDoc(doc) {
+  if (!doc || typeof doc !== 'object' || !Array.isArray(doc.layers)) throw bad('That is not a Blook Berry project.');
+  if (!(doc.width > 0 && doc.width <= 8192 && doc.height > 0 && doc.height <= 8192)) throw bad('That project is an odd size.');
+  const walk = (v, key) => {
+    if (typeof v === 'string') {
+      if (/<\s*script|javascript:|<\s*foreignObject|\son\w+\s*=/i.test(v)) throw bad('That project has something in it that is not allowed.');
+      if (/^\s*(https?:)?\/\//i.test(v)) throw bad('Pictures in templates must be inside the project.');
+      if (/^(href|picture|art|src)$/i.test(key) && v && !/^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/i.test(v) && !/^\/[\w/.-]+$/.test(v)) {
+        throw bad('Pictures in templates must be inside the project.');
+      }
+      return;
+    }
+    if (Array.isArray(v)) { v.forEach((x) => walk(x, key)); return; }
+    if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, k);
+  };
+  walk(doc, '');
+}
+
+const publicTemplate = (t) => ({ id: t.id, name: t.name, by: t.by, kind: t.kind, at: t.at, width: t.width, height: t.height });
+
+async function templatesApi(req, res, path) {
+  await templatesReady;
+  if (req.method === 'GET' && path === '/api/templates') {
+    return send(res, 200, { templates: templateList.filter((t) => t.status === 'accepted').map(publicTemplate) });
+  }
+  const thumb = path.match(/^\/api\/templates\/([\w-]+)\/thumb$/);
+  if (req.method === 'GET' && thumb) {
+    const t = templateList.find((x) => x.id === thumb[1]);
+    if (!t || (t.status !== 'accepted' && !isAdmin(req))) return send(res, 404, { error: 'Template not found.' });
+    const body = await templateBody(t.id);
+    const m = String(body?.thumb || '').match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/);
+    if (!m) return send(res, 404, { error: 'No picture.' });
+    return send(res, 200, Buffer.from(m[2], 'base64'), m[1], 'public, max-age=86400');
+  }
+  const one = path.match(/^\/api\/templates\/([\w-]+)$/);
+  if (req.method === 'GET' && one) {
+    const t = templateList.find((x) => x.id === one[1]);
+    if (!t || (t.status !== 'accepted' && !isAdmin(req))) return send(res, 404, { error: 'Template not found.' });
+    const body = await templateBody(t.id);
+    if (!body) return send(res, 404, { error: 'Template not found.' });
+    return send(res, 200, { template: publicTemplate(t), doc: body.doc });
+  }
+  if (req.method === 'POST' && path === '/api/templates') {
+    if (!submitAllowed(req)) return send(res, 429, { error: 'You have sent a lot just now. Try again in an hour.' });
+    if (templateList.filter((t) => t.status === 'waiting').length >= MAX_WAITING) return send(res, 503, { error: 'Lots of templates are waiting to be checked. Try again later.' });
+    const input = await readJson(req, MAX_TEMPLATE);
+    checkDoc(input.doc);
+    const thumbUrl = String(input.thumb || '');
+    if (thumbUrl && (!/^data:image\/(png|jpeg|webp);base64,[\w+/=]+$/.test(thumbUrl) || thumbUrl.length > MAX_THUMB)) throw bad('The preview picture is not right.');
+    const doc = { ...input.doc };
+    delete doc.id; delete doc.folderId;
+    const t = {
+      id: 't' + randomBytes(6).toString('hex'),
+      name: cleanText(input.name, 60, doc.name || 'Template'),
+      by: cleanText(input.by, 40, ''),
+      kind: KINDS.includes(input.kind) ? input.kind : 'other',
+      status: 'waiting',
+      at: Date.now(),
+      width: Math.round(doc.width), height: Math.round(doc.height),
+    };
+    await writeStored(`${t.id}.json`, JSON.stringify({ doc, thumb: thumbUrl }), `Template sent in: ${t.name}`);
+    bodies.set(t.id, { doc, thumb: thumbUrl });
+    templateList.push(t);
+    await saveTemplateList();
+    return send(res, 201, { ok: true });
+  }
+
+  if (!path.startsWith('/api/admin/templates')) return null;
+  if (!isAdmin(req)) return send(res, 401, { error: 'Please sign in as an admin.' });
+  if (req.method === 'GET' && path === '/api/admin/templates') {
+    return send(res, 200, { templates: templateList.map((t) => ({ ...publicTemplate(t), status: t.status })), saved: IN_GITHUB ? 'github' : TEMPORARY_DISK ? 'temporary' : 'disk' });
+  }
+  const act = path.match(/^\/api\/admin\/templates\/([\w-]+)(?:\/(accept|hide))?$/);
+  const index = act ? templateList.findIndex((t) => t.id === act[1]) : -1;
+  if (index < 0) return send(res, 404, { error: 'Template not found.' });
+  if (req.method === 'POST' && act[2]) {
+    templateList[index].status = act[2] === 'accept' ? 'accepted' : 'waiting';
+    await saveTemplateList();
+    return send(res, 200, { ok: true });
+  }
+  if (req.method === 'PATCH' && !act[2]) {
+    const patch = await readJson(req);
+    const t = templateList[index];
+    t.name = cleanText(patch.name, 60, t.name);
+    if (KINDS.includes(patch.kind)) t.kind = patch.kind;
+    await saveTemplateList();
+    return send(res, 200, { ok: true });
+  }
+  if (req.method === 'DELETE' && !act[2]) {
+    const [t] = templateList.splice(index, 1);
+    bodies.delete(t.id);
+    await saveTemplateList();
+    await deleteStored(`${t.id}.json`).catch(() => {});
+    return send(res, 200, { ok: true });
+  }
+  return send(res, 404, { error: 'Not found.' });
+}
+
 async function api(req, res, path) {
   if (req.method === 'GET' && path === '/api/shapes') {
     return send(res, 200, { shapes, temporary: TEMPORARY_DISK });
@@ -171,6 +373,11 @@ async function api(req, res, path) {
     const token = randomBytes(24).toString('hex');
     sessions.set(token, Date.now() + SESSION_MS);
     return send(res, 200, { token });
+  }
+
+  if (path.startsWith('/api/templates') || path.startsWith('/api/admin/templates')) {
+    const done = await templatesApi(req, res, path);
+    if (done !== null) return done;
   }
 
   if (!isAdmin(req)) return send(res, 401, { error: 'Please sign in as an admin.' });

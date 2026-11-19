@@ -124,6 +124,10 @@ Render's free disk is wiped on every restart, so accounts and art need somewhere
 2. Make a [fine-grained token](https://github.com/settings/personal-access-tokens/new) for only that repo, with **Contents: Read and write**.
 3. In Render, add `GITHUB_TOKEN` (the token) and `DATA_REPO` (like `your-name/blook-maker-data`).
 
+### Keeping templates on Render
+
+People send in Blooks and packs on the Templates page (`#/templates`). They wait on the admin page until you accept them. Render's disk is wiped on restart, so set `GITHUB_TOKEN` and `DATA_REPO` (the private data repo above) and they are saved in its `templates` folder instead. Without them, the admin page warns that templates only last until a restart.
+
 ### Render's loading page
 
 Render's free plan puts a site to sleep after 15 quiet minutes, then shows its own loading page to the next visitor. A paid Render plan never sleeps. On the free plan, add `KEEP_AWAKE` set to `true` and the site visits itself every 10 minutes to stay up. Free plans get 750 hours a month across every service on the account, and this one service uses about 744, so don't turn it on if you run other free services there.

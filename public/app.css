@@ -692,18 +692,24 @@ body[data-tool=lasso] #wk { cursor: crosshair; }
 .ptabs button.on em { background: #fff; color: var(--brand); }
 .fx-filter { display: flex; flex-wrap: wrap; gap: 6px; }
 .fx-filter .chip { height: 28px; padding: 0 9px; font-size: 12px; }
-.fx-card { border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; }
-.fx-card.on { border-color: var(--brand); }
-.fx-card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; font-size: 13px; }
-.fx-card > summary::-webkit-details-marker { display: none; }
-.fx-card > summary b { flex: 1; font-weight: 800; }
-.fx-card > summary em { font-style: normal; font-size: 11px; color: var(--muted); }
-.fx-card > summary::after { content: ''; width: 7px; height: 7px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform .15s; margin: 0 2px; }
-.fx-card[open] > summary::after { transform: rotate(45deg); }
-.fx-dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
-.fx-card.on .fx-dot { background: var(--brand); border-color: var(--brand); }
-.fx-card .fold-body > p { margin: 0; }
-.fx-toggle { display: flex; flex-direction: column; gap: 10px; }
+.fx-source { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
+.fx-source span { color: var(--muted); font-weight: 700; margin-right: 2px; }
+.fx-source button { height: 24px; padding: 0 8px; border-radius: 12px; font-size: 12px; font-weight: 700; background: var(--brand-soft); }
+.fx-source button:hover { box-shadow: inset 0 0 0 1.5px var(--brand); }
+.fx-source button.on { background: var(--brand); color: #fff; }
+.fx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; }
+.fx-tile { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; min-width: 0; text-align: center; }
+.fx-thumb { position: relative; display: block; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #e4e8ef; box-shadow: inset 0 0 0 1.5px var(--line); }
+.fx-thumb img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.fx-thumb img:not([src]) { visibility: hidden; }
+.fx-tile b { font-size: 11.5px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+.fx-tile:hover .fx-thumb { box-shadow: inset 0 0 0 2px var(--brand); }
+.fx-tile.on .fx-thumb { box-shadow: 0 0 0 2.5px var(--brand); }
+.fx-tile.on .fx-thumb::after { content: "\2713"; position: absolute; right: 4px; top: 4px; width: 18px; height: 18px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 900; display: grid; place-items: center; }
+.fx-tile.picked .fx-thumb { box-shadow: 0 0 0 2.5px var(--brand), 0 0 0 5px var(--brand-soft); }
+.fx-settings { display: flex; flex-direction: column; gap: 10px; padding: 10px; border: 1.5px solid var(--brand); border-radius: 12px; }
+.fx-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+.fx-settings-head .chip { height: 28px; font-size: 12px; }
 .fx-modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .fx-modes .chip { height: 30px; padding: 0 4px; font-size: 12px; }
 .fx-empty { margin: 4px 0; }
@@ -970,3 +976,35 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .backup p { font-size: 13px; font-weight: 700; margin-bottom: 6px; opacity: .9; }
 .backup div { display: flex; gap: 6px; }
 .backup .btn { flex: 1; padding-left: 6px; padding-right: 6px; }
+
+/* Templates people sent in. */
+.tpl-page { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; display: flex; flex-direction: column; gap: 16px; }
+.tpl-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.tpl-top h1 { margin: 0; }
+.tpl-lead { margin: 0; }
+.tpl-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tpl-tools input { height: 36px; padding: 0 12px; border: 1.5px solid var(--line); border-radius: 10px; min-width: 220px; }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
+.tpl-card { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 16px; background: var(--panel, #fff); text-align: left; transition: transform .12s; }
+.tpl-card:hover { transform: translateY(-3px); box-shadow: 0 0 0 2px var(--brand); }
+.tpl-card b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-card small { color: var(--muted); font-size: 12px; }
+.tpl-thumb { display: grid; place-items: center; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: repeating-conic-gradient(#eef1f6 0 25%, #fff 0 50%) 0 0 / 20px 20px; color: var(--muted); }
+.tpl-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.tpl-empty { padding: 40px 0; text-align: center; color: var(--muted); }
+.tpl-big { display: grid; place-items: center; max-height: 50vh; border-radius: 14px; overflow: hidden; background: repeating-conic-gradient(#eef1f6 0 25%, #fff 0 50%) 0 0 / 20px 20px; }
+.tpl-big img { max-width: 100%; max-height: 50vh; object-fit: contain; }
+.tpl-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; max-height: 300px; overflow-y: auto; padding: 4px; }
+.tpl-pick-item { display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 12px; min-width: 0; }
+.tpl-pick-item b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-pick-item.on { box-shadow: 0 0 0 2.5px var(--brand); background: var(--brand-soft); }
+.tpl-admin li { grid-template-columns: 60px 1fr 140px 110px auto 32px; }
+.tpl-admin li.waiting { box-shadow: inset 4px 0 0 #f5b400; }
+.tpl-admin-thumb { padding: 0; overflow: hidden; }
+.tpl-admin-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.tpl-top h1 { color: #fff; }
+.tpl-lead { color: rgba(255, 255, 255, .85); font-weight: 600; }
+.tpl-tools .chip { background: #fff; border-color: #fff; color: var(--bg, #b8334c); }
+.tpl-tools .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.tpl-empty { color: rgba(255, 255, 255, .85); font-weight: 600; }
+#tpladmin h2 .muted { color: rgba(255, 255, 255, .8); font-size: .7em; text-shadow: none; }

@@ -2,7 +2,7 @@
 import { svgToShape, shapeThumb } from './shapes.js';
 import { imageToShape } from './trace.js';
 import { esc } from './render.js';
-import { $, $$, icon, toast, readText, readDataUrl } from './ui.js';
+import { $, $$, icon, toast, readText, readDataUrl, confirmBox } from './ui.js';
 
 const TOKEN_KEY = 'blook-admin-token';
 
@@ -83,6 +83,55 @@ async function uploadFiles(root, files) {
   renderManager(root);
 }
 
+/* ---------- Templates people sent in ---------- */
+
+const KINDS = { blook: 'Blook', pack: 'Pack', banner: 'Banner', background: 'Background', icon: 'Icon', other: 'Other art' };
+const SAVED_NOTE = {
+  github: '',
+  temporary: '<p class="admin-note">Templates are only kept until this site restarts. Set GITHUB_TOKEN and DATA_REPO on Render to keep them in the private data repo.</p>',
+  disk: '',
+};
+
+// Waiting ones first. Accept puts one on the Templates page for everyone.
+async function templateSection(root, host) {
+  let data;
+  try { data = await call('GET', '/api/admin/templates'); } catch (error) {
+    if (error.status === 401) { renderLogin(root); return; }
+    host.innerHTML = `<p class="muted">${esc(error.message)}</p>`;
+    return;
+  }
+  const list = data.templates.sort((a, b) => (a.status === b.status ? b.at - a.at : a.status === 'waiting' ? -1 : 1));
+  const waiting = list.filter((t) => t.status === 'waiting').length;
+  host.innerHTML = `<h2>Templates <span class="muted">${waiting} waiting · ${list.length - waiting} live</span></h2>${SAVED_NOTE[data.saved] || ''}
+    ${list.length ? '' : '<p class="muted">Nothing sent in yet. People send templates from the Templates page.</p>'}
+    <ul class="admin-list tpl-admin">${list.map((t) => `<li data-id="${esc(t.id)}" class="${t.status}">
+      <span class="admin-thumb tpl-admin-thumb"><img alt=""></span>
+      <label class="field"><span>Name</span><input data-k="name" maxlength="60" value="${esc(t.name)}"></label>
+      <label class="field"><span>Kind</span><select data-k="kind">${Object.entries(KINDS).map(([k, l]) => `<option value="${k}" ${k === t.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <span class="tpl-admin-who muted small">${t.by ? `by ${esc(t.by)}<br>` : ''}${new Date(t.at).toLocaleDateString()}</span>
+      ${t.status === 'waiting' ? `<button class="btn primary" data-act="accept">Accept</button>` : '<button class="btn ghost" data-act="hide">Take down</button>'}
+      <button class="ib" data-del aria-label="Delete ${esc(t.name)}" title="Delete">${icon('trash')}</button>
+    </li>`).join('')}</ul>`;
+  const redo = () => templateSection(root, host);
+  const failed = (error) => (error.status === 401 ? renderLogin(root) : toast(error.message, 'warn'));
+  $$('li', host).forEach(async (row) => {
+    const id = row.dataset.id;
+    $$('[data-k]', row).forEach((field) => {
+      field.onchange = () => call('PATCH', `/api/admin/templates/${id}`, { [field.dataset.k]: field.value }).then(() => toast('Saved.', 'ok'), failed);
+    });
+    $('[data-act]', row).onclick = (e) => call('POST', `/api/admin/templates/${id}/${e.currentTarget.dataset.act}`).then(redo, failed);
+    $('[data-del]', row).onclick = async () => {
+      const ok = await confirmBox({ title: 'Delete this template?', message: 'It is removed for good. Copies people already made stay theirs.', action: 'Delete', danger: true });
+      if (ok) call('DELETE', `/api/admin/templates/${id}`).then(redo, failed);
+    };
+    // Waiting ones aren't public, so their picture needs the admin sign-in.
+    try {
+      const res = await fetch(`/api/templates/${id}/thumb`, { headers: { Authorization: `Bearer ${getToken() || ''}` } });
+      if (res.ok) $('img', row).src = URL.createObjectURL(await res.blob());
+    } catch { /* No picture. */ }
+  });
+}
+
 async function renderManager(root) {
   const { shapes = [], temporary = false } = await call('GET', '/api/shapes');
   const lastCategory = shapes[shapes.length - 1]?.category || 'Uploaded';
@@ -93,6 +142,7 @@ async function renderManager(root) {
       <div class="grow"></div>
       <button class="btn ghost" id="signout">Sign out</button>
     </header>
+    <section id="tpladmin"></section>
     ${temporary ? '<p class="admin-note">Shapes uploaded on this live site disappear when it restarts. To keep a shape, upload it in your VS Code preview, then push to GitHub.</p>' : ''}
     <section class="upload">
       <label class="drop" id="drop">
@@ -118,6 +168,7 @@ async function renderManager(root) {
   </div>`;
 
   $('#signout', root).onclick = () => { setToken(null); renderLogin(root); };
+  templateSection(root, $('#tpladmin', root));
   const input = $('#ufile', root), drop = $('#drop', root);
   input.onchange = () => uploadFiles(root, [...input.files]);
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });

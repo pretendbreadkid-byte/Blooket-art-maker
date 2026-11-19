@@ -1,6 +1,7 @@
 // Picks the screen to show from the address bar.
 import { renderHome } from './home.js';
 import { renderAdmin } from './admin.js';
+import { renderTemplates } from './community.js';
 import { renderWelcome } from './welcome.js';
 import { openEditor, closeEditor } from './editor.js';
 import { hasStarted } from './session.js';
@@ -21,6 +22,7 @@ async function route() {
   const project = hash.match(/^\/p\/([\w-]+)$/);
   if (project) await openEditor(root, project[1]);
   else if (hash === '/art') await renderHome(root, route);
+  else if (hash === '/templates') await renderTemplates(root);
   else await renderWelcome(root, hasStarted() || (await listProjects()).length > 0);
 }
 
