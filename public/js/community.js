@@ -38,6 +38,7 @@ export async function renderTemplates(root) {
     <div id="tpls"><p class="muted">Loading templates…</p></div>
   </div>`;
   $('#sendin', root).onclick = () => sendIn();
+  adminNote(root);
   let list = [];
   try { list = (await api('GET', '/api/templates')).templates; } catch (error) {
     $('#tpls', root).innerHTML = `<p class="muted">${esc(error.message)}</p>`;
@@ -60,6 +61,23 @@ export async function renderTemplates(root) {
   };
   $('#findtpl', root).oninput = (e) => { search = e.target.value; draw(); };
   draw();
+}
+
+// Only for an admin who is signed in: how many are waiting, and a way to check them.
+async function adminNote(root) {
+  let token = null;
+  try { token = sessionStorage.getItem('blook-admin-token'); } catch { /* not signed in */ }
+  if (!token) return;
+  try {
+    const res = await fetch('/api/admin/templates', { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const waiting = (await res.json()).templates.filter((t) => t.status === 'waiting').length;
+    const note = document.createElement('a');
+    note.className = 'tpl-admin-note';
+    note.href = '#/admin';
+    note.innerHTML = `${icon('shield')}<span>${waiting ? `<b>${waiting}</b> waiting to be checked.` : 'Nothing waiting to be checked.'} Accept or take them down on the admin page.</span>`;
+    $('.tpl-lead', root)?.after(note);
+  } catch { /* no note */ }
 }
 
 // A bigger look, then make your own copy.

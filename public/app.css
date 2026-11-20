@@ -1040,3 +1040,6 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .side-foot span { flex: 1; min-width: 0; }
 .side-foot .ib { width: 30px; height: 30px; }
 .side-foot .admin-link { padding: 4px; }
+.tpl-admin-note { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; background: var(--sun); color: var(--ink); font-weight: 700; box-shadow: 0 4px 0 var(--crust); }
+.tpl-admin-note:hover { background: #ffd666; }
+.tpl-admin-note b { font-size: 16px; }
