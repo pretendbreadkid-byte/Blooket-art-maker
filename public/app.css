@@ -1020,3 +1020,23 @@ button.buy-chip:hover:not(:disabled) { background: rgba(255, 255, 255, .34); }
 .present:hover .present-bar, .present-bar:focus-within { opacity: 1; }
 .present-bar .ib { color: #fff; }
 .present-count { min-width: 56px; text-align: center; font-weight: 800; }
+
+/* ---------- Home sidebar, folded into sections ---------- */
+.home-side { gap: 10px; }
+.side-main { display: flex; flex-direction: column; gap: 2px; }
+.side-sec { border-top: 2px solid rgba(255, 255, 255, .16); padding-top: 6px; }
+.side-sec > summary { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 4px; list-style: none; cursor: pointer; border-radius: 8px; color: #f8d2da; font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.side-sec > summary::-webkit-details-marker { display: none; }
+.side-sec > summary:hover { color: #fff; }
+.side-sec > summary .ico { width: 15px; height: 15px; transition: transform .15s; }
+.side-sec[open] > summary > .ico:first-child { transform: rotate(90deg); }
+.side-sec > summary span { flex: 1; }
+.side-sec > summary .ib { width: 26px; height: 26px; }
+.side-sec > summary .ib .ico { transform: none; }
+.side-sec > .folders { margin: 2px 0 4px; }
+.side-sec .folder { height: 36px; }
+.side-empty { padding: 2px 10px 8px; font-size: 12.5px; color: #f8d2da; font-weight: 600; }
+.side-foot { display: flex; align-items: center; gap: 4px; padding-top: 10px; border-top: 2px solid rgba(255, 255, 255, .16); color: #f8d2da; font-size: 12px; font-weight: 700; }
+.side-foot span { flex: 1; min-width: 0; }
+.side-foot .ib { width: 30px; height: 30px; }
+.side-foot .admin-link { padding: 4px; }

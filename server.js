@@ -428,6 +428,8 @@ async function serveStatic(req, res, path) {
   if (path === '/tutorials' || path.startsWith('/tutorials/')) return serveTutorials(res, path);
   if (path.startsWith('/tutorials-media/')) return serveTutorialMedia(req, res, path);
   if (path === '/sitemap.xml') return serveSitemap(res);
+  // The video maker and the code studio are their own pages.
+  if (path === '/video' || path === '/code') path = `${path}.html`;
   const versioned = path.match(VERSIONED);
   const rel = normalize(decodeURIComponent(versioned ? versioned[1] : path)).replace(/^[/\\]+/, '');
   const file = join(PUBLIC, rel);
@@ -579,7 +581,7 @@ function tutorialSummaries() {
 }
 
 async function serveSitemap(res) {
-  const urls = ['/', '/tutorials', '/privacy.html', ...tutorialList().map((t) => `/tutorials/${t.slug}`)];
+  const urls = ['/', '/video', '/code', '/tutorials', '/privacy.html', ...tutorialList().map((t) => `/tutorials/${t.slug}`)];
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `  <url><loc>${SITE_URL}${u}</loc></url>`).join('\n')}\n</urlset>\n`;
   return send(res, 200, xml, 'application/xml; charset=utf-8');
 }

@@ -69,6 +69,19 @@ export const SIZE_GROUPS = [
 
 const PACKS = 'packs';
 
+// Which sidebar sections are folded open. Groups start folded to keep it tidy.
+const SIDE_KEY = 'bb-side-open';
+const sideOpen = (() => {
+  const start = { groups: false, folders: true, more: true };
+  try { return { ...start, ...JSON.parse(localStorage.getItem(SIDE_KEY) || '{}') }; } catch { return start; }
+})();
+// Other things to make, outside the art editor.
+const MORE_TOOLS = [
+  { href: '/video', icon: 'video', name: 'Video maker' },
+  { href: '/code', icon: 'code', name: 'Code studio' },
+  { href: '/tutorials', icon: 'play', name: 'Tutorials' },
+];
+
 // Projects sort themselves into these by what they were made as.
 const GROUPS = [
   { id: 'blook', name: 'Blooks', icon: 'blook' },
@@ -127,32 +140,40 @@ export async function renderHome(root, onLeave = leave) {
     <aside class="home-side">
       <a class="brand" href="#/" title="Welcome page"><span class="brand-mark" data-sideways-logo><img src="/logo.svg" alt=""></span><b>Blook Berry</b></a>
       <button class="btn primary big" id="new">${icon('plus')}<span>New project</span></button>
-      <a class="folder" href="#/templates">${icon('shapes')}<span>Templates</span></a>
-      <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
-      <ul class="folders">
-        <li><button class="folder ${currentFolder === 'all' ? 'on' : ''}" data-f="all">${icon('shapes')}<span>All projects</span><em>${projects.length}</em></button></li>
-      </ul>
-      <h3>Groups</h3>
-      <ul class="folders">
-        ${groups.map((g) => `<li><button class="folder ${group === g ? 'on' : ''}" data-g="${g.id}">${icon(g.icon)}<span>${g.name}</span><em>${inGroup(g.id)}</em></button></li>`).join('')}
-      </ul>
-      <h3>Folders</h3>
-      <ul class="folders">
-        ${folders.map((f) => `<li class="folder-row">
-          <button class="folder ${currentFolder === f.id ? 'on' : ''}" data-f="${f.id}">${icon('folder')}<span>${esc(f.name)}</span><em>${count(f.id)}</em></button>
-          <button class="ib folder-more" data-more="${f.id}" aria-label="Folder options for ${esc(f.name)}">${icon('dots')}</button>
-        </li>`).join('')}
-      </ul>
-      <button class="btn ghost" id="newfolder">${icon('folderplus')}<span>New folder</span></button>
+      <nav class="side-main" aria-label="Your art">
+        <button class="folder ${currentFolder === 'all' ? 'on' : ''}" data-f="all">${icon('grid')}<span>All projects</span><em>${projects.length}</em></button>
+        <button class="folder ${inPacks ? 'on' : ''}" id="packs">${icon('pack')}<span>Test</span><em>${packs.length}</em></button>
+        <a class="folder" href="#/templates">${icon('shapes')}<span>Templates</span></a>
+      </nav>
+      <details class="side-sec" data-sec="groups" ${sideOpen.groups || group ? 'open' : ''}>
+        <summary>${icon('chevron')}<span>Groups</span></summary>
+        <ul class="folders">
+          ${groups.map((g) => `<li><button class="folder ${group === g ? 'on' : ''}" data-g="${g.id}">${icon(g.icon)}<span>${g.name}</span><em>${inGroup(g.id)}</em></button></li>`).join('')}
+        </ul>
+      </details>
+      <details class="side-sec" data-sec="folders" ${sideOpen.folders || folders.some((f) => f.id === currentFolder) ? 'open' : ''}>
+        <summary>${icon('chevron')}<span>Folders</span><button class="ib" id="newfolder" title="New folder" aria-label="New folder">${icon('folderplus')}</button></summary>
+        ${folders.length ? `<ul class="folders">
+          ${folders.map((f) => `<li class="folder-row">
+            <button class="folder ${currentFolder === f.id ? 'on' : ''}" data-f="${f.id}">${icon('folder')}<span>${esc(f.name)}</span><em>${count(f.id)}</em></button>
+            <button class="ib folder-more" data-more="${f.id}" aria-label="Folder options for ${esc(f.name)}">${icon('dots')}</button>
+          </li>`).join('')}
+        </ul>` : '<p class="side-empty">No folders yet. Press + to make one.</p>'}
+      </details>
+      <details class="side-sec" data-sec="more" ${sideOpen.more ? 'open' : ''}>
+        <summary>${icon('chevron')}<span>More</span></summary>
+        <ul class="folders">
+          ${MORE_TOOLS.map((t) => `<li><a class="folder" href="${t.href}">${icon(t.icon)}<span>${t.name}</span></a></li>`).join('')}
+        </ul>
+      </details>
       <div class="grow"></div>
-      <a class="side-tuts" href="/tutorials">${icon('play')}<span>Watch tutorials</span></a>
-      <div class="backup">
-        <p>Your art saves in this browser.</p>
-        <div><button class="btn ghost" id="backup" title="Download all your art as one file">${icon('download')}<span>Back up</span></button>
-        <button class="btn ghost" id="restore" title="Bring art back from a backup file">${icon('upload')}<span>Restore</span></button></div>
+      <div class="side-foot">
+        <span>Your art saves in this browser.</span>
+        <button class="ib" id="backup" title="Back up: download all your art as one file" aria-label="Back up">${icon('download')}</button>
+        <button class="ib" id="restore" title="Restore: bring art back from a backup file" aria-label="Restore">${icon('upload')}</button>
         <input type="file" id="restorefile" accept=".json,application/json" hidden>
+        <a class="admin-link" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
       </div>
-      <a class="admin-link" href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
     </aside>
     <main class="home-main">
       ${head}
@@ -180,7 +201,11 @@ export async function renderHome(root, onLeave = leave) {
   const redraw = () => renderHome(root);
   $$('[data-tab]', root).forEach((b) => { b.onclick = () => { testTab = b.dataset.tab; redraw(); }; });
   if (inPacks) fillTest($('#market', root), packs, redraw);
-  $('#newfolder', root).onclick = () => createFolder();
+  $('#newfolder', root).onclick = (e) => { e.preventDefault(); createFolder(); };
+  // Folding sidebar sections remember whether they are open.
+  $$('details[data-sec]', root).forEach((d) => {
+    d.ontoggle = () => { sideOpen[d.dataset.sec] = d.open; try { localStorage.setItem(SIDE_KEY, JSON.stringify(sideOpen)); } catch { /* fine */ } };
+  });
   $('#backup', root).onclick = async () => {
     const data = await backupAll();
     const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
