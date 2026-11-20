@@ -29,7 +29,9 @@ export function flattenLayers(doc) {
 export const newLayer = (name) => ({ id: uid('l'), name, visible: true, locked: false, opacity: 1, objects: [] });
 
 // animMode: 'keys' slides between keyframes, 'pages' flips between whole drawings.
-export function newDoc({ name, folderId = null, animated = false, animMode = 'keys', width = 1024, height = 1024 }) {
+// Slides are pages you click through yourself, like a presentation.
+export function newDoc({ name, folderId = null, animated = false, animMode = 'keys', width = 1024, height = 1024, slides = false }) {
+  if (slides) { animated = true; animMode = 'pages'; }
   const layer = newLayer('Layer 1');
   const doc = {
     id: uid('p'), name, folderId, animated, animMode, width, height,
@@ -38,6 +40,7 @@ export function newDoc({ name, folderId = null, animated = false, animMode = 'ke
     createdAt: Date.now(), updatedAt: Date.now(),
   };
   if (animated && animMode === 'pages') Object.assign(doc, { fps: 6, frames: 1, pages: [{ id: uid('g') }] });
+  if (slides) doc.slides = true;
   return doc;
 }
 
@@ -615,6 +618,7 @@ export function loopBack(objects) {
 /* ---------- Pages ---------- */
 
 export const isPages = (doc) => !!doc.animated && doc.animMode === 'pages';
+export const isSlides = (doc) => isPages(doc) && !!doc.slides;
 
 // In a page animation, each object lives on one page.
 export const onFrame = (doc, o, frame) => !isPages(doc) || o.page === doc.pages[frame]?.id;

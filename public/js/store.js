@@ -86,7 +86,7 @@ async function write(changes) {
 }
 
 const metaOf = (doc, thumb) => ({
-  id: doc.id, name: doc.name, folderId: doc.folderId, animated: doc.animated,
+  id: doc.id, name: doc.name, folderId: doc.folderId, animated: doc.animated, slides: !!doc.slides,
   width: doc.width, height: doc.height, updatedAt: doc.updatedAt, thumb, template: doc.template, pack: !!doc.pack,
 });
 

@@ -15,13 +15,56 @@ const MIN_SIZE = 16;
 const MAX_SIZE = 8192;
 const ROUNDED_CANVAS = 0.12;
 
-const SIZE_PRESETS = [
-  { name: 'Small square', w: 512, h: 512 },
-  { name: 'Large square', w: 1024, h: 1024 },
-  { name: 'Wide screen', w: 1920, h: 1080 },
-  { name: 'Tall phone', w: 1080, h: 1920 },
-  { name: 'Poster', w: 1200, h: 1600 },
-  { name: 'Banner', w: 1500, h: 500 },
+// Sizes for "Anything else", in groups. Most aren't for Blooket at all.
+export const SIZE_GROUPS = [
+  { id: 'basic', name: 'Basics', sizes: [
+    { name: 'Small square', w: 512, h: 512 },
+    { name: 'Large square', w: 1024, h: 1024 },
+    { name: 'Wide screen', w: 1920, h: 1080 },
+    { name: 'Tall phone', w: 1080, h: 1920 },
+    { name: 'Poster', w: 1200, h: 1600 },
+    { name: 'Banner', w: 1500, h: 500 },
+  ] },
+  { id: 'logo', name: 'Logos & icons', sizes: [
+    { name: 'Logo', w: 1000, h: 1000 },
+    { name: 'Wide logo', w: 1200, h: 400 },
+    { name: 'App icon', w: 1024, h: 1024 },
+    { name: 'Profile picture', w: 400, h: 400 },
+    { name: 'Emoji', w: 128, h: 128 },
+    { name: 'Website icon', w: 64, h: 64 },
+  ] },
+  { id: 'video', name: 'Video', sizes: [
+    { name: 'Video thumbnail', w: 1280, h: 720 },
+    { name: 'HD video', w: 1920, h: 1080 },
+    { name: '4K video', w: 3840, h: 2160 },
+    { name: 'Short video', w: 1080, h: 1920 },
+    { name: 'Channel banner', w: 2560, h: 1440 },
+    { name: 'Stream panel', w: 320, h: 160 },
+  ] },
+  { id: 'social', name: 'Social', sizes: [
+    { name: 'Square post', w: 1080, h: 1080 },
+    { name: 'Tall post', w: 1080, h: 1350 },
+    { name: 'Story', w: 1080, h: 1920 },
+    { name: 'Profile header', w: 1500, h: 500 },
+    { name: 'Cover photo', w: 1640, h: 624 },
+    { name: 'Server banner', w: 960, h: 540 },
+  ] },
+  { id: 'screen', name: 'Slides & screens', sizes: [
+    { name: 'Wide slides', w: 1920, h: 1080 },
+    { name: 'Classic slides', w: 1024, h: 768 },
+    { name: 'Desktop wallpaper', w: 2560, h: 1440 },
+    { name: 'Phone wallpaper', w: 1170, h: 2532 },
+    { name: 'Tablet', w: 2048, h: 1536 },
+    { name: 'Game screen', w: 1280, h: 720 },
+  ] },
+  { id: 'print', name: 'Print', sizes: [
+    { name: 'A4 page', w: 2480, h: 3508 },
+    { name: 'Letter page', w: 2550, h: 3300 },
+    { name: 'Flyer', w: 1275, h: 1650 },
+    { name: 'Postcard', w: 1800, h: 1200 },
+    { name: 'Business card', w: 1050, h: 600 },
+    { name: 'Sticker', w: 1000, h: 1000 },
+  ] },
 ];
 
 const PACKS = 'packs';
@@ -234,7 +277,7 @@ function card(p) {
   return `<a class="card" href="#/p/${p.id}" data-id="${p.id}" draggable="true">
     <span class="thumb">${p.thumb ? `<img src="${esc(p.thumb)}" alt="" style="aspect-ratio:${ratio}">` : `<span class="thumb-blank" style="aspect-ratio:${ratio}"></span>`}</span>
     <span class="card-foot">
-      <span class="card-text"><b>${esc(p.name)}</b><small>${p.width} × ${p.height}${p.animated ? ' · Animation' : ''}</small></span>
+      <span class="card-text"><b>${esc(p.name)}</b><small>${p.width} × ${p.height}${p.slides ? ' · Slides' : p.animated ? ' · Animation' : ''}</small></span>
       <button class="ib card-more" aria-label="Options for ${esc(p.name)}">${icon('dots')}</button>
     </span>
   </a>`;
@@ -361,12 +404,14 @@ function newProjectWizard(folders, preset) {
     width: 1024,
     height: 1024,
     rounded: false,
+    slides: false,
+    sizeGroup: 'basic',
     template: preset ?? null,
   };
   let step = 0;
 
   return dialog((box, close) => {
-    const dots = () => `<ol class="steps">${['Name', 'Kind', 'Type', 'Finish'].map((s, i) => `<li class="${i === step ? 'on' : ''} ${i < step ? 'done' : ''}">${s}</li>`).join('')}</ol>`;
+    const dots = () => `<ol class="steps">${(state.template ? ['Name', 'Kind', 'Type', 'Finish'] : ['Name', 'Kind', 'Size', 'Type']).map((s, i) => `<li class="${i === step ? 'on' : ''} ${i < step ? 'done' : ''}">${s}</li>`).join('')}</ol>`;
 
     const stepName = () => {
       box.innerHTML = `${dots()}<h2>What should we call it?</h2>
@@ -393,7 +438,7 @@ function newProjectWizard(folders, preset) {
         state.name = input.value.trim() || 'Untitled';
         state.folderId = $('#pfolder', box).value || null;
         state.layers = $('#players', box).checked;
-        if (skipKind) { step = 2; stepType(); return; }
+        if (skipKind) { afterKind(); return; }
         step = 1;
         stepKind();
       };
@@ -412,8 +457,15 @@ function newProjectWizard(folders, preset) {
         <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
       $('[data-back]', box).onclick = () => { step = 0; stepName(); };
       $$('.kind-card', box).forEach((b) => {
-        b.onclick = () => { state.template = b.dataset.t || null; step = 2; stepType(); };
+        b.onclick = () => { state.template = b.dataset.t || null; afterKind(); };
       });
+    };
+
+    // Blooket shapes have their own size. Anything else picks one next.
+    const afterKind = () => {
+      step = 2;
+      if (state.template) stepType();
+      else stepSize();
     };
 
     const create = async (doc) => {
@@ -449,9 +501,41 @@ function newProjectWizard(folders, preset) {
       $$('[data-o]', box).forEach((b) => { b.onclick = () => createFromTemplate(!!b.dataset.o); });
     };
 
+    const createOther = () => {
+      const { width, height } = state;
+      const doc = newDoc({ ...state, width, height, slides: state.slides });
+      doc.cornerRadius = state.rounded ? Math.round(Math.min(width, height) * ROUNDED_CANVAS) : 0;
+      return create(doc);
+    };
+
+    // After a size: slides you click through, or one canvas.
+    const stepSlides = () => {
+      step = 3;
+      const k = 40 / Math.max(state.width, state.height), small = 17 / Math.max(state.width, state.height);
+      const frame = `<i style="width:${state.width * k}px;height:${state.height * k}px"></i>`;
+      box.innerHTML = `${dots()}<h2>Do you want it to be slides?</h2>
+        <div class="type-cards">
+          <button class="type-card ${state.slides ? 'on' : ''}" data-s="1">
+            <span class="type-art slide-art">${`<i style="width:${state.width * small}px;height:${state.height * small}px"></i>`.repeat(3)}</span><b>Yes, slides</b><small>Lots of slides you click through, like a presentation</small>
+          </button>
+          <button class="type-card ${state.slides === false && state.animated !== null ? 'on' : ''}" data-s="" autofocus>
+            <span class="type-art slide-art">${frame}</span><b>No, just one</b><small>One canvas, still or animated</small>
+          </button>
+        </div>
+        <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
+      $('[data-back]', box).onclick = () => { step = 2; stepSize(); };
+      $$('[data-s]', box).forEach((b) => {
+        b.onclick = () => {
+          state.slides = !!b.dataset.s;
+          if (state.slides) createOther();
+          else stepType();
+        };
+      });
+    };
+
     const stepLast = () => {
       step = 3;
-      if (!state.template) stepSize();
+      if (!state.template) createOther();
       else if (TEMPLATES[state.template].overlay) stepOverlay();
       else createFromTemplate(false);
     };
@@ -468,6 +552,7 @@ function newProjectWizard(folders, preset) {
         </div>
         <div class="dlg-actions"><button class="btn ghost" data-back>Back</button></div>`;
       $('[data-back]', box).onclick = () => {
+        if (!state.template) { stepSlides(); return; }
         if (skipKind) { step = 0; stepName(); return; }
         step = 1;
         stepKind();
@@ -499,9 +584,11 @@ function newProjectWizard(folders, preset) {
     };
 
     const stepSize = () => {
-      box.innerHTML = `${dots()}<h2>How big should the frame be?</h2>
+      const sizes = SIZE_GROUPS.find((g) => g.id === state.sizeGroup).sizes;
+      box.innerHTML = `${dots()}<h2>How big should it be?</h2>
+        <div class="fx-filter size-groups">${SIZE_GROUPS.map((g) => `<button type="button" class="chip ${g.id === state.sizeGroup ? 'on' : ''}" data-g="${g.id}">${g.name}</button>`).join('')}</div>
         <div class="size-grid">
-          ${SIZE_PRESETS.map((p, i) => {
+          ${sizes.map((p, i) => {
             const k = 44 / Math.max(p.w, p.h);
             return `<button class="size-card" data-i="${i}">
               <span class="size-art"><i class="${state.rounded ? 'round' : ''}" style="width:${p.w * k}px;height:${p.h * k}px"></i></span>
@@ -523,12 +610,12 @@ function newProjectWizard(folders, preset) {
           <p class="size-err" hidden></p>
           <div class="dlg-actions">
             <button type="button" class="btn ghost" data-back>Back</button>
-            <button class="btn primary" id="create">${icon('check')}<span>Create project</span></button>
+            <button class="btn primary" id="create">Next</button>
           </div>
         </form>`;
       const w = $('#pw', box), h = $('#ph', box);
       const mark = () => $$('.size-card', box).forEach((c) => {
-        const p = SIZE_PRESETS[+c.dataset.i];
+        const p = sizes[+c.dataset.i];
         c.classList.toggle('on', p.w === +w.value && p.h === +h.value);
       });
       mark();
@@ -539,17 +626,25 @@ function newProjectWizard(folders, preset) {
           $$('.size-art i', box).forEach((i) => i.classList.toggle('round', state.rounded));
         };
       });
+      $$('[data-g]', box).forEach((b) => {
+        b.onclick = () => {
+          state.sizeGroup = b.dataset.g;
+          state.width = Math.round(+w.value) || state.width;
+          state.height = Math.round(+h.value) || state.height;
+          stepSize();
+        };
+      });
       $$('.size-card', box).forEach((c) => {
         c.onclick = () => {
-          const p = SIZE_PRESETS[+c.dataset.i];
+          const p = sizes[+c.dataset.i];
           w.value = p.w; h.value = p.h;
           mark();
         };
       });
       $('[data-back]', box).onclick = () => {
-        step = 2;
-        if (state.animated) stepMotion();
-        else stepType();
+        if (skipKind) { step = 0; stepName(); return; }
+        step = 1;
+        stepKind();
       };
       $('form', box).onsubmit = async (e) => {
         e.preventDefault();
@@ -560,9 +655,9 @@ function newProjectWizard(folders, preset) {
           err.hidden = false;
           return;
         }
-        const doc = newDoc({ ...state, width, height });
-        doc.cornerRadius = state.rounded ? Math.round(Math.min(width, height) * ROUNDED_CANVAS) : 0;
-        await create(doc);
+        state.width = width;
+        state.height = height;
+        stepSlides();
       };
     };
 

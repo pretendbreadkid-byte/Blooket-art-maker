@@ -12,7 +12,7 @@ import {
 import { toggleBlooks, addPictureApart } from './blooks.js';
 import { mountSplits } from './splits.js';
 import { drawPanels } from './panels.js';
-import { drawTimeline, setFrame, stop, togglePlay } from './timeline.js';
+import { drawTimeline, setFrame, stop, togglePlay, presentSlides } from './timeline.js';
 import { fetchCatalog } from './shapes.js';
 import { esc } from './render.js';
 import { exportDialog } from './export.js';
@@ -179,6 +179,7 @@ function onKey(e) {
     S.sel.clear(); S.nodeSel.clear(); refresh(); return;
   }
   if (e.key === 'Enter' && lineInProgress()) { finishLine(); return; }
+  if (e.key === 'Enter' && S.doc.slides && S.doc.animated) { presentSlides(); return; }
   if (e.key === 'Enter' && S.doc.animated) { togglePlay(); return; }
   if (e.key === ',' && S.doc.animated) { setFrame(S.frame - 1); return; }
   if (e.key === '.' && S.doc.animated) { setFrame(S.frame + 1); return; }

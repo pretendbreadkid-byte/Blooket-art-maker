@@ -50,11 +50,9 @@ const toBlob = (canvas, type, quality) => new Promise((resolve, reject) => {
   canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not make that file.'))), type, quality);
 });
 
-// Wraps one JPEG in the smallest valid PDF, one page the size of the canvas.
-export function jpegToPdf(jpeg, widthPx, heightPx) {
+// Wraps JPEGs in the smallest valid PDF, one page each, sized to the canvas.
+export function jpegsToPdf(pages) {
   const encoder = new TextEncoder();
-  const w = +(widthPx * 0.75).toFixed(2), h = +(heightPx * 0.75).toFixed(2);
-  const content = `q ${w} 0 0 ${h} 0 0 cm /Art Do Q`;
   const parts = [encoder.encode('%PDF-1.4\n')];
   let offset = parts[0].length;
   const offsets = [];
@@ -66,16 +64,25 @@ export function jpegToPdf(jpeg, widthPx, heightPx) {
       offset += bytes.length;
     }
   };
+  const kids = pages.map((_, i) => `${3 + i * 3} 0 R`).join(' ');
   add('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
-  add('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
-  add(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Contents 4 0 R /Resources << /XObject << /Art 5 0 R >> >> >>\nendobj\n`);
-  add(`4 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
-  add(`5 0 obj\n<< /Type /XObject /Subtype /Image /Width ${widthPx} /Height ${heightPx} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`, jpeg, '\nendstream\nendobj\n');
+  add(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>\nendobj\n`);
+  pages.forEach(({ jpeg, width, height }, i) => {
+    const n = 3 + i * 3;
+    const w = +(width * 0.75).toFixed(2), h = +(height * 0.75).toFixed(2);
+    const content = `q ${w} 0 0 ${h} 0 0 cm /Art Do Q`;
+    add(`${n} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Contents ${n + 1} 0 R /Resources << /XObject << /Art ${n + 2} 0 R >> >> >>\nendobj\n`);
+    add(`${n + 1} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
+    add(`${n + 2} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`, jpeg, '\nendstream\nendobj\n');
+  });
+  const count = offsets.length + 1;
   const rows = offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('');
   const xrefAt = offset;
-  add(`xref\n0 6\n0000000000 65535 f \n${rows}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
+  add(`xref\n0 ${count}\n0000000000 65535 f \n${rows}trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
   return parts;
 }
+
+export const jpegToPdf = (jpeg, widthPx, heightPx) => jpegsToPdf([{ jpeg, width: widthPx, height: heightPx }]);
 
 // JPG and PDF have no transparency, so they sit on white.
 function onWhite(canvas) {
@@ -89,8 +96,18 @@ function onWhite(canvas) {
   return flat;
 }
 
-async function makeFile(doc, format, { animate, frame, mark }) {
+async function makeFile(doc, format, { animate, frame, mark, every }) {
   const svg = (opts) => (mark ? withMark(exportSVG(doc, opts), doc.width, doc.height) : exportSVG(doc, opts));
+  // Every slide in one PDF, a page each.
+  if (format === 'pdf' && every) {
+    const pages = [];
+    for (let f = 0; f < doc.pages.length; f++) {
+      const canvas = await rasterize(svg({ frame: f }), doc.width, doc.height);
+      const jpeg = await toBlob(onWhite(canvas), 'image/jpeg', JPEG_QUALITY);
+      pages.push({ jpeg: new Uint8Array(await jpeg.arrayBuffer()), width: doc.width, height: doc.height });
+    }
+    return new Blob(jpegsToPdf(pages), { type: 'application/pdf' });
+  }
   if (format === 'svg') return new Blob([svg({ frame, animate })], { type: 'image/svg+xml' });
   const canvas = await rasterize(svg({ frame }), doc.width, doc.height);
   if (format === 'png') return toBlob(canvas, 'image/png');
@@ -108,10 +125,12 @@ async function makeFile(doc, format, { animate, frame, mark }) {
 export function exportDialog() {
   const doc = S.doc;
   const safe = doc.name.replace(/[^\w -]+/g, '').trim() || 'art';
-  let format = 'svg';
+  const slides = !!(doc.slides && doc.animated);
+  let format = slides ? 'pdf' : 'svg';
   dialog((box, close) => {
     const paint = () => {
-      const animated = doc.animated && format === 'svg';
+      const animated = doc.animated && !slides && format === 'svg';
+      const thing = slides ? 'slide' : 'frame';
       box.innerHTML = `<h2>Export</h2>
         <p class="muted">${doc.width} × ${doc.height} px.</p>
         <label class="field"><span>File name</span><input id="xname" value="${esc($('#xname', box)?.value ?? safe)}"></label>
@@ -122,7 +141,11 @@ export function exportDialog() {
           <label class="radio"><input type="radio" name="kind" value="anim" checked><span><b>Animated</b><small>Plays and loops in any web browser</small></span></label>
           <label class="radio"><input type="radio" name="kind" value="frame"><span><b>Just this frame</b><small>A still picture of frame ${S.frame + 1}</small></span></label>
         </div>` : ''}
-        ${doc.animated && format !== 'svg' ? `<p class="muted">This saves frame ${S.frame + 1} as a still picture.</p>` : ''}
+        ${slides && format === 'pdf' ? `<div class="choice-row">
+          <label class="radio"><input type="radio" name="every" value="all" checked><span><b>All slides</b><small>${doc.pages.length} ${doc.pages.length === 1 ? 'page' : 'pages'}, one slide on each</small></span></label>
+          <label class="radio"><input type="radio" name="every" value="one"><span><b>Just this slide</b><small>Slide ${S.frame + 1} on its own</small></span></label>
+        </div>` : ''}
+        ${doc.animated && !animated && !(slides && format === 'pdf') ? `<p class="muted">This saves ${thing} ${S.frame + 1} as a still picture.</p>` : ''}
         <label class="check"><input type="checkbox" id="xmark" ${markOn() ? 'checked' : ''}><span>Add a small "Made with Blook Berry" tag in the corner</span></label>
         <div class="dlg-actions">
           <button class="btn ghost" data-no>Cancel</button>
@@ -144,10 +167,11 @@ export function exportDialog() {
       });
       $('[data-yes]', box).onclick = async () => {
         setMark($('#xmark', box).checked);
-        const animate = doc.animated && format === 'svg' && $('[name=kind]:checked', box).value === 'anim';
+        const animate = animated && $('[name=kind]:checked', box).value === 'anim';
+        const every = slides && format === 'pdf' && $('[name=every]:checked', box).value === 'all';
         const name = ($('#xname', box).value.trim() || safe).replace(/\.(svg|webp|png|jpe?g|pdf)$/i, '');
         try {
-          download(`${name}.${format}`, await makeFile(doc, format, { animate, frame: S.frame, mark: $('#xmark', box).checked }));
+          download(`${name}.${format}`, await makeFile(doc, format, { animate, every, frame: S.frame, mark: $('#xmark', box).checked }));
           close();
           toast('Your file is downloading.', 'ok');
         } catch (error) {

@@ -287,7 +287,7 @@ function documentPanel(box) {
   };
   size.append(sizeField('Canvas width', d.width, (v) => { w = v; }), sizeField('Canvas height', d.height, (v) => { h = v; }));
   box.append(size);
-  if (d.animated) box.append(html('<p class="muted">Animation</p>'));
+  if (d.animated) box.append(html(`<p class="muted">${d.slides ? 'Slides' : 'Animation'}</p>`));
   box.append(colorButton({
     label: 'Background', value: d.bgGradient || d.background, allowNone: true, allowGradient: true,
     onInput: (c) => {

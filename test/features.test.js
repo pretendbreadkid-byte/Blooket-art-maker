@@ -8,7 +8,7 @@ import {
 import { exportSVG, embedFont } from '../public/js/render.js';
 import { subjectMask, cleanMask, maskToShape, loopToSubpath } from '../public/js/trace.js';
 import { pixelsToPieces, loopToCurves } from '../public/js/vectorize.js';
-import { jpegToPdf } from '../public/js/export.js';
+import { jpegToPdf, jpegsToPdf } from '../public/js/export.js';
 
 const square = () => parseD('M0 0H100V100H0Z');
 
@@ -1043,4 +1043,21 @@ test('effects turn into filter steps in the export', async () => {
   const { out, steps } = fxSteps(obj.fx);
   assert.ok(svg.includes(`<feGaussianBlur in="${out}"`), 'blur works on the effects, not the plain art');
   assert.ok(steps.indexOf('#ffffff') < steps.indexOf('#ffee00'), 'the outline comes before the glow, so the glow goes round it');
+});
+
+test('slides are pages you click through, and export as one PDF', () => {
+  const doc = newDoc({ name: 's', width: 1920, height: 1080, slides: true });
+  assert.equal(doc.animated, true);
+  assert.equal(doc.animMode, 'pages');
+  assert.equal(doc.slides, true);
+  assert.equal(doc.pages.length, 1);
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+  const parts = jpegsToPdf([{ jpeg, width: 100, height: 50 }, { jpeg, width: 100, height: 50 }, { jpeg, width: 100, height: 50 }]);
+  const text = Buffer.concat(parts.map((p) => Buffer.from(p))).toString('latin1');
+  assert.ok(text.includes('/Count 3'));
+  const offsets = [...text.matchAll(/^(\d{10}) 00000 n /gm)].map((m) => +m[1]);
+  assert.equal(offsets.length, 11);
+  offsets.forEach((o, i) => assert.equal(text.slice(o, o + `${i + 1} 0 obj`.length), `${i + 1} 0 obj`));
+  const xref = +text.match(/startxref\n(\d+)/)[1];
+  assert.equal(text.slice(xref, xref + 4), 'xref');
 });

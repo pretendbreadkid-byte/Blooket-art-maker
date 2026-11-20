@@ -1,10 +1,11 @@
 // The animation timeline: playback, the frame ruler and keyframe diamonds.
 import { S, hooks, commit, refresh, activeLayer, selected, select } from './state.js';
 import {
-  EASINGS, addKey, removeKey, moveKey, clamp, clone, isPages, loopBack, loopPagesBack, addPage, removePage, movePage,
+  EASINGS, addKey, removeKey, moveKey, clamp, clone, isPages, isSlides, loopBack, loopPagesBack, addPage, removePage, movePage,
 } from './model.js';
 import { esc, layersMarkup } from './render.js';
 import { $, $$, html, icon, menu, toast } from './ui.js';
+import { present } from './present.js';
 
 const CELL = 16;
 const MAX_FRAMES = 1000;
@@ -189,15 +190,26 @@ function header() {
 
 /* ---------- Pages ---------- */
 
+// Slides are pages too, just called slides.
+const word = () => (isSlides(S.doc) ? 'slide' : 'page');
+
+// Shows the slides full screen, then lands on the last one shown.
+export async function presentSlides() {
+  if (S.playing) stop();
+  S.sel.clear();
+  hooks.overlay();
+  setFrame(await present(S.doc, S.frame));
+}
+
 function newPageAfter(index, copyFrom = null) {
-  if (S.doc.pages.length >= MAX_PAGES) { toast(`A project can have up to ${MAX_PAGES} pages.`, 'warn'); return; }
+  if (S.doc.pages.length >= MAX_PAGES) { toast(`A project can have up to ${MAX_PAGES} ${word()}s.`, 'warn'); return; }
   const at = addPage(S.doc, index, copyFrom);
   commit();
   setFrame(at);
 }
 
 function deletePage(index) {
-  if (!removePage(S.doc, index)) { toast('You need at least one page.', 'warn'); return; }
+  if (!removePage(S.doc, index)) { toast(`You need at least one ${word()}.`, 'warn'); return; }
   S.sel.clear();
   S.frame = Math.min(S.frame, S.doc.frames - 1);
   commit();
@@ -205,7 +217,7 @@ function deletePage(index) {
 
 function loopPages() {
   if (S.doc.pages.length < 2) { toast('Add another page first.'); return; }
-  if (S.doc.pages.length * 2 - 1 > MAX_PAGES) { toast(`A project can have up to ${MAX_PAGES} pages.`, 'warn'); return; }
+  if (S.doc.pages.length * 2 - 1 > MAX_PAGES) { toast(`A project can have up to ${MAX_PAGES} ${word()}s.`, 'warn'); return; }
   loopPagesBack(S.doc);
   commit();
   toast('The pages now flip back to the beginning.', 'ok');
@@ -214,6 +226,16 @@ function loopPages() {
 function pageMenu(e, index) {
   e.preventDefault();
   const at = { getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX + 190, top: e.clientY, bottom: e.clientY }) };
+  if (isSlides(S.doc)) {
+    menu(at, [
+      { label: 'Copy this slide', icon: 'copy', onClick: () => newPageAfter(index, index) },
+      { label: 'New blank slide', icon: 'plus', onClick: () => newPageAfter(index) },
+      { label: 'Present from here', icon: 'slides', onClick: () => { setFrame(index); presentSlides(); } },
+      null,
+      { label: 'Delete slide', icon: 'trash', danger: true, onClick: () => deletePage(index) },
+    ]);
+    return;
+  }
   menu(at, [
     { label: 'Copy this page', icon: 'copy', onClick: () => newPageAfter(index, index) },
     { label: 'New blank page', icon: 'plus', onClick: () => newPageAfter(index) },
@@ -221,6 +243,35 @@ function pageMenu(e, index) {
     null,
     { label: 'Delete page', icon: 'trash', danger: true, onClick: () => deletePage(index) },
   ]);
+}
+
+function slideHeader() {
+  const d = S.doc;
+  const bar = html(`<div class="time-bar">
+    <div class="time-play">
+      <button class="ib" data-a="prev" title="Previous slide (,)">${icon('prev')}</button>
+      <span class="frame-label">Slide <b id="framelabel">${S.frame + 1} / ${d.frames}</b></span>
+      <button class="ib" data-a="next" title="Next slide (.)">${icon('next')}</button>
+    </div>
+    <div class="time-keys">
+      <button class="chip" data-a="add">${icon('plus')}<span>New slide</span></button>
+      <button class="chip" data-a="copy">${icon('copy')}<span>Copy slide</span></button>
+      <button class="chip" data-a="drop">${icon('trash')}<span>Delete slide</span></button>
+    </div>
+    <div class="time-set">
+      <button class="btn primary present-btn" data-a="present" title="Show the slides full screen (Enter)">${icon('slides')}<span>Present</span></button>
+    </div>
+  </div>`);
+  bar.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (a === 'prev') setFrame(S.frame - 1);
+    if (a === 'next') setFrame(S.frame + 1);
+    if (a === 'add') newPageAfter(S.frame);
+    if (a === 'copy') newPageAfter(S.frame, S.frame);
+    if (a === 'drop') deletePage(S.frame);
+    if (a === 'present') presentSlides();
+  });
+  return bar;
 }
 
 function pageHeader() {
@@ -262,7 +313,7 @@ function pageHeader() {
 
 function pageCard(index) {
   const d = S.doc;
-  const card = html(`<button class="page-card ${index === S.frame ? 'on' : ''}" draggable="true" title="Page ${index + 1}. Drag to reorder. Right-click for more.">
+  const card = html(`<button class="page-card ${index === S.frame ? 'on' : ''}" draggable="true" title="${isSlides(d) ? 'Slide' : 'Page'} ${index + 1}. Drag to reorder. Right-click for more.">
     <svg viewBox="0 0 ${d.width} ${d.height}">${layersMarkup(d, index, { prefix: `pg${index}` })}</svg><b>${index + 1}</b></button>`);
   card.style.aspectRatio = `${d.width} / ${d.height}`;
   card.onclick = () => { if (S.playing) stop(); setFrame(index); };
@@ -284,10 +335,10 @@ function pageCard(index) {
 function drawPages(box) {
   const scrollLeft = $('.page-strip', box)?.scrollLeft || 0;
   box.innerHTML = '';
-  box.append(pageHeader());
-  const strip = html('<div class="page-strip"></div>');
+  box.append(isSlides(S.doc) ? slideHeader() : pageHeader());
+  const strip = html(`<div class="page-strip ${isSlides(S.doc) ? 'slide-strip' : ''}"></div>`);
   S.doc.pages.forEach((_, i) => strip.append(pageCard(i)));
-  const add = html(`<button class="page-add" title="New page" aria-label="New page">${icon('plus')}</button>`);
+  const add = html(`<button class="page-add" title="New ${word()}" aria-label="New ${word()}">${icon('plus')}</button>`);
   add.onclick = () => newPageAfter(S.doc.pages.length - 1);
   strip.append(add);
   box.append(strip);

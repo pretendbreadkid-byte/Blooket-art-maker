@@ -76,6 +76,7 @@ const ICONS = {
   loop: 'M4 12a8 8 0 0 1 14-5.300L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.300L4 15M4 20v-5h5',
   link: 'M9 15l6-6M8 11l-3 3a3.500 3.500 0 0 0 5 5l3-3M16 13l3-3a3.500 3.500 0 0 0-5-5l-3 3',
   page: 'M6 3h9l4 4v14H6zM15 3v4h4',
+  slides: 'M3 4h18v12H3zM12 16v4M8 21h8M8 9l3 2-3 2z',
   caret: 'M6 9l6 6 6-6',
   forward: 'M12 15V4M7 9l5-5 5 5M4 19h16',
   backward: 'M12 9v11M7 15l5 5 5-5M4 5h16',
