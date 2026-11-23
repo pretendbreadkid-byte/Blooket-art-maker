@@ -50,7 +50,7 @@ export function openCodes(onChange = () => {}) {
       const have = unlocked();
       const now = currentTheme();
       box.innerHTML = `<h2>Codes</h2>
-        <p class="muted">Got a code? Type it in to unlock something special.</p>
+        <p class="muted">Got a code? Type it in to unlock something special. Each code works once.</p>
         <form class="code-row" id="codeform"><input id="code" placeholder="FALL-XXXX-XXXX-XXXX" maxlength="24" autocomplete="off" spellcheck="false" aria-label="Code" autofocus>
           <button class="btn primary" type="submit">${icon('gift')}<span>Unlock</span></button></form>
         <b>Themes</b>

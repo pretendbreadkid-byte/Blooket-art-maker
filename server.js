@@ -52,11 +52,10 @@ const tries = new Map();
 const codeTries = new Map();
 
 // Codes that unlock extra themes. Only their hashes are kept, so the list can't be read here.
-const CODES_FILE = join(ROOT, 'catalog', 'codes.json');
+const CODES_FILE = process.env.CODES_FILE || join(ROOT, 'catalog', 'codes.json');
 const themeCodes = existsSync(CODES_FILE) ? JSON.parse(readFileSync(CODES_FILE, 'utf8')) : {};
 const codeHash = (code) => createHash('sha256').update('blook-berry-code:' + String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '')).digest('hex');
-function themeForCode(code) {
-  const h = codeHash(code);
+function themeForCode(h) {
   return Object.keys(themeCodes).find((theme) => themeCodes[theme].includes(h)) || null;
 }
 
@@ -236,6 +235,16 @@ let templateList = [];
 let templatesReady = (async () => {
   try { templateList = JSON.parse((await readStored('index.json')) || '[]'); } catch (error) { console.log(`Templates: ${error.message}`); }
 })();
+// Each theme code works once. The used ones are kept with the templates so they stay used.
+const usedCodes = new Set();
+const usedReady = (async () => {
+  try { JSON.parse((await readStored('used-codes.json')) || '[]').forEach((h) => usedCodes.add(h)); } catch (error) { console.log(`Codes: ${error.message}`); }
+})();
+let codesWrite = Promise.resolve();
+const saveUsedCodes = () => {
+  codesWrite = codesWrite.catch(() => {}).then(() => writeStored('used-codes.json', JSON.stringify([...usedCodes]), 'A code was used'));
+  return codesWrite;
+};
 const bodies = new Map();
 let listWrite = Promise.resolve();
 // One save at a time, and a failed save doesn't block the next one.
@@ -376,10 +385,18 @@ async function api(req, res, path) {
     const record = triesFor(req, codeTries);
     if (record.count >= MAX_TRIES) return send(res, 429, TOO_MANY);
     const { code } = await readJson(req);
-    const theme = themeForCode(code);
+    await usedReady;
+    const h = codeHash(code);
+    const theme = themeForCode(h);
     if (!theme) {
       record.count += 1;
       return send(res, 400, { error: 'That code does not work. Check it and try again.' });
+    }
+    if (usedCodes.has(h)) return send(res, 409, { error: 'That code has already been used.' });
+    usedCodes.add(h);
+    try { await saveUsedCodes(); } catch {
+      usedCodes.delete(h);
+      return send(res, 503, { error: 'Could not check that code just now. Try again in a moment.' });
     }
     return send(res, 200, { theme });
   }

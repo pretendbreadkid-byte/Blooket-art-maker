@@ -1,7 +1,8 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,8 +18,11 @@ let server, dataDir, token;
 
 before(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'blook-test-'));
+  // Made-up codes for the tests, so the real ones never have to be written down here.
+  const hash = (c) => createHash('sha256').update('blook-berry-code:' + c).digest('hex');
+  writeFileSync(join(dataDir, 'codes.json'), JSON.stringify({ fall: [hash('FALLTESTONE1'), hash('FALLTESTTWO2')] }));
   server = spawn(process.execPath, ['server.js'], {
-    env: { ...process.env, PORT, ADMIN_PASSWORD: PASSWORD, DATA_DIR: dataDir },
+    env: { ...process.env, PORT, ADMIN_PASSWORD: PASSWORD, DATA_DIR: dataDir, CODES_FILE: join(dataDir, 'codes.json'), GITHUB_TOKEN: '', DATA_REPO: '' },
   });
   await new Promise((resolve, reject) => {
     server.stdout.on('data', (d) => { if (String(d).includes('Running at')) resolve(); });
@@ -78,6 +82,17 @@ test('theme codes: 100 kept only as hashes, and a wrong code is refused', async 
   const res = await api('POST', '/api/codes', { code: 'FALL-NOPE-NOPE-NOPE' }, false);
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /does not work/);
+});
+
+test('each theme code works only once', async () => {
+  const first = await api('POST', '/api/codes', { code: 'fall-test-one1' }, false);
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).theme, 'fall');
+  const again = await api('POST', '/api/codes', { code: 'FALL-TEST-ONE1' }, false);
+  assert.equal(again.status, 409);
+  assert.match((await again.json()).error, /already been used/);
+  assert.ok(existsSync(join(dataDir, 'templates', 'used-codes.json')), 'used codes are saved');
+  assert.equal((await api('POST', '/api/codes', { code: 'FALL-TEST-TWO2' }, false)).status, 200);
 });
 
 test('an admin can add, rename and delete a shape', async () => {
