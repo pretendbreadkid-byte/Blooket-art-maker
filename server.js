@@ -49,6 +49,16 @@ function loadPassword() {
 const adminPassword = loadPassword();
 const sessions = new Map();
 const tries = new Map();
+const codeTries = new Map();
+
+// Codes that unlock extra themes. Only their hashes are kept, so the list can't be read here.
+const CODES_FILE = join(ROOT, 'catalog', 'codes.json');
+const themeCodes = existsSync(CODES_FILE) ? JSON.parse(readFileSync(CODES_FILE, 'utf8')) : {};
+const codeHash = (code) => createHash('sha256').update('blook-berry-code:' + String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '')).digest('hex');
+function themeForCode(code) {
+  const h = codeHash(code);
+  return Object.keys(themeCodes).find((theme) => themeCodes[theme].includes(h)) || null;
+}
 
 let shapes = existsSync(SHAPES_FILE) ? JSON.parse(readFileSync(SHAPES_FILE, 'utf8')) : [];
 
@@ -61,13 +71,13 @@ function saveShapes() {
 /* ---------- Admin ---------- */
 
 // Wrong admin passwords are limited per address.
-function triesFor(req) {
+function triesFor(req, map = tries) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
   const now = Date.now();
-  let record = tries.get(ip);
+  let record = map.get(ip);
   if (!record || record.reset < now) {
     record = { count: 0, reset: now + TRY_WINDOW_MS };
-    tries.set(ip, record);
+    map.set(ip, record);
   }
   return record;
 }
@@ -361,6 +371,18 @@ async function api(req, res, path) {
   }
   if (req.method === 'GET' && path === '/api/blooks') return send(res, 200, { blooks: listBlooks() });
   if (path === '/api/tutorials' && req.method === 'GET') return send(res, 200, { tutorials: tutorialSummaries() });
+
+  if (req.method === 'POST' && path === '/api/codes') {
+    const record = triesFor(req, codeTries);
+    if (record.count >= MAX_TRIES) return send(res, 429, TOO_MANY);
+    const { code } = await readJson(req);
+    const theme = themeForCode(code);
+    if (!theme) {
+      record.count += 1;
+      return send(res, 400, { error: 'That code does not work. Check it and try again.' });
+    }
+    return send(res, 200, { theme });
+  }
 
   if (req.method === 'POST' && path === '/api/admin/login') {
     const record = triesFor(req);

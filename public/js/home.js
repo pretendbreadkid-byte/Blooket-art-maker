@@ -9,6 +9,7 @@ import {
   drawCollection, editPack, newPackProject, savePack, marketCard, shopPack,
 } from './packs.js';
 import { whyNotOpen } from './pack-rules.js';
+import { THEMES, currentTheme, openCodes } from './themes.js';
 import { $, $$, icon, askText, confirmBox, dialog, menu, toast } from './ui.js';
 
 const MIN_SIZE = 16;
@@ -68,6 +69,7 @@ export const SIZE_GROUPS = [
 ];
 
 const PACKS = 'packs';
+const codeBadge = () => (currentTheme() === 'classic' ? '' : `<em>${THEMES[currentTheme()].name}</em>`);
 
 // Which sidebar sections are folded open. Groups start folded to keep it tidy.
 const SIDE_KEY = 'bb-side-open';
@@ -167,6 +169,7 @@ export async function renderHome(root, onLeave = leave) {
         </ul>
       </details>
       <div class="grow"></div>
+      <button class="side-codes" id="codes" title="Type in a code to unlock themes">${icon('gift')}<span>Codes</span>${codeBadge()}</button>
       <div class="side-foot">
         <span>Your art saves in this browser.</span>
         <button class="ib" id="backup" title="Back up: download all your art as one file" aria-label="Back up">${icon('download')}</button>
@@ -206,6 +209,7 @@ export async function renderHome(root, onLeave = leave) {
   $$('details[data-sec]', root).forEach((d) => {
     d.ontoggle = () => { sideOpen[d.dataset.sec] = d.open; try { localStorage.setItem(SIDE_KEY, JSON.stringify(sideOpen)); } catch { /* fine */ } };
   });
+  $('#codes', root).onclick = () => openCodes(() => { $('#codes em', root)?.remove(); $('#codes', root).insertAdjacentHTML('beforeend', codeBadge()); });
   $('#backup', root).onclick = async () => {
     const data = await backupAll();
     const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));

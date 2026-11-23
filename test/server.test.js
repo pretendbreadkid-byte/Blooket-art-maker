@@ -1,7 +1,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -69,6 +69,15 @@ test('anyone can list the Blook assets and open one', async () => {
 
 test('a wrong password is refused', async () => {
   assert.equal((await api('POST', '/api/admin/login', { password: 'nope' }, false)).status, 401);
+});
+
+test('theme codes: 100 kept only as hashes, and a wrong code is refused', async () => {
+  const { fall } = JSON.parse(readFileSync(new URL('../catalog/codes.json', import.meta.url), 'utf8'));
+  assert.equal(new Set(fall).size, 100);
+  assert.ok(fall.every((h) => /^[0-9a-f]{64}$/.test(h)));
+  const res = await api('POST', '/api/codes', { code: 'FALL-NOPE-NOPE-NOPE' }, false);
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /does not work/);
 });
 
 test('an admin can add, rename and delete a shape', async () => {
