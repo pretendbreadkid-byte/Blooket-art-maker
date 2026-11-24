@@ -867,7 +867,7 @@ function previewShape(p, e) {
 
 export function addShape(shape, cx, cy, w, h) {
   const subpaths = fitSubpaths(shape.subpaths, w, h);
-  const obj = newPath({ name: shape.name, x: cx, y: cy, subpaths, fillRule: shape.fillRule, ...shapePaint(shape) });
+  const obj = newPath({ name: shape.name, x: cx, y: cy, subpaths, fillRule: shape.fillRule, ...shapePaint(shape), ...(shape.paint || {}) });
   addObject(activeLayer(), obj);
   S.lastShapeId = obj.id;
   select([obj.id]);
@@ -883,7 +883,7 @@ function finishShape() {
     return;
   }
   const size = Math.min(S.doc.width, S.doc.height) * DEFAULT_SHAPE_SIZE;
-  addShape(S.shape, p0.x, p0.y, size, size);
+  addShape(S.shape, p0.x, p0.y, size, S.shape.ratio ? size / S.shape.ratio : size);
 }
 
 /* ---------- Bucket ---------- */

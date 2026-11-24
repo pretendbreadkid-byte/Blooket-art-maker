@@ -1,5 +1,6 @@
 // Built-in shapes, the uploaded catalog, and turning SVG files into editable shapes.
 import { parseD, pathD, fitSubpaths, mapSubpaths, pathBounds, round } from './model.js';
+import { UNDERBELLY } from './templates.js';
 
 function polygonD(sides, startDeg = -90) {
   const pts = [];
@@ -23,11 +24,15 @@ function starD(points, inner) {
 const CIRCLE = 'M50 0A50 50 0 1 1 -50 0A50 50 0 1 1 50 0Z';
 
 const roundedAll = (d, r) => parseD(d).map((sp) => ({ ...sp, nodes: sp.nodes.map((n) => ({ ...n, r })) }));
+// Only the top two corners rounded.
+const roundedTop = (r) => parseD('M-50 -50H50V50H-50Z').map((sp) => ({ ...sp, nodes: sp.nodes.map((n, i) => (i < 2 ? { ...n, r } : n)) }));
 
 const BASIC_DEFS = [
   ['square', 'Square', 'M-50 -50H50V50H-50Z'],
   ['rounded', 'Rounded', null, () => roundedAll('M-50 -50H50V50H-50Z', 18)],
   ['circle', 'Circle', CIRCLE],
+  ['arch', 'Arch', 'M-50 50V0A50 50 0 0 1 50 0V50Z'],
+  ['round-top', 'Round top', null, () => roundedTop(30)],
   ['triangle', 'Triangle', 'M0 -50L50 50H-50Z'],
   ['right-triangle', 'Corner', 'M-50 -50L50 50H-50Z'],
   ['diamond', 'Diamond', 'M0 -50L50 0L0 50L-50 0Z'],
@@ -43,11 +48,13 @@ const BASIC_DEFS = [
   ['moon', 'Moon', 'M15 -50A50 50 0 1 0 15 50A38 50 0 1 1 15 -50Z'],
   ['ring', 'Ring', `${CIRCLE}M28 0A28 28 0 1 1 -28 0A28 28 0 1 1 28 0Z`, null, 'evenodd'],
   ['line', 'Line', 'M-50 0L50 0', null, 'nonzero', true],
+  // The Blook underbelly as a shape of its own: wide, and see-through black to start.
+  ['underbelly', 'Underbelly', UNDERBELLY, null, 'nonzero', false, { ratio: 300 / 85.86, paint: { fill: '#000000', stroke: 'none', strokeWidth: 0, opacity: 0.28 } }],
 ];
 
-export const BASIC_SHAPES = BASIC_DEFS.map(([id, name, d, make, fillRule = 'nonzero', lineOnly = false]) => ({
-  id, name, category: 'Basic', fillRule, lineOnly,
-  subpaths: fitSubpaths(make ? make() : parseD(d), 100, 100),
+export const BASIC_SHAPES = BASIC_DEFS.map(([id, name, d, make, fillRule = 'nonzero', lineOnly = false, extra = {}]) => ({
+  id, name, category: 'Basic', fillRule, lineOnly, ...extra,
+  subpaths: fitSubpaths(make ? make() : parseD(d), 100, extra.ratio ? 100 / extra.ratio : 100),
 }));
 
 function flowerD(petals) {

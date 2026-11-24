@@ -1109,7 +1109,7 @@ export function startPanelDrag(e, item, picture, onDrop) {
 function dropShape(shape, p) {
   const size = Math.min(S.doc.width, S.doc.height) * DROPPED_SHAPE_SIZE;
   if (shape.id !== 'line') S.shape = shape;
-  addShape(shape, p.x, p.y, size, size);
+  addShape(shape, p.x, p.y, size, shape.ratio ? size / shape.ratio : size);
 }
 
 function renderCatalogGrid() {
