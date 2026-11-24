@@ -253,7 +253,7 @@ function underbellyFilter(o, id) {
     + (u.blur > 0 ? `<feGaussianBlur in="band" stdDeviation="${round(u.blur, 2)}" result="band"/>` : '')
     + `<feFlood flood-color="${esc(u.color)}" flood-opacity="${round(u.strength, 3)}"/>`
     + (u.blur > 0 ? '<feComposite in2="band" operator="in"/><feComposite in2="SourceAlpha" operator="in" result="belly"/>' : '<feComposite in2="band" operator="in" result="belly"/>')
-    + '<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="belly"/></feMerge></filter>';
+    + (u.only ? '<feMerge><feMergeNode in="belly"/></feMerge></filter>' : '<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="belly"/></feMerge></filter>');
 }
 
 // Blur is measured on the canvas, so it sits outside the piece's own scale.

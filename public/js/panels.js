@@ -10,7 +10,7 @@ import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, alignSelection, distributeSelection, alignCount, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, canGroup, canUngroup, groupSelection, ungroupSelection, autoSmooth, setAutoSmooth, smoothable, smoothLines,
+  canTakeApart, takeApart, stackEnds, alignSelection, distributeSelection, alignCount, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, detachUnderbelly, canDetachUnderbelly, canGroup, canUngroup, groupSelection, ungroupSelection, autoSmooth, setAutoSmooth, smoothable, smoothLines,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { drawLayers } from './layers.js';
@@ -128,6 +128,7 @@ function optionBar() {
       button('Flip up and down', 'flipy', () => flipSelection('y')),
     );
     if (canWeld()) add(button('Weld', 'weld', weldSelection));
+    if (canDetachUnderbelly()) add(button('Detach underbelly', 'apart', detachUnderbelly));
     if (canRestoreSize()) add(button('Original size', 'undo', restoreSize));
   }
   if (tool === 'pencil' || tool === 'marker' || tool === 'eraser' || tool === 'line') {
@@ -401,6 +402,7 @@ function underbellyControls(items, toggle = true) {
       slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', reset: 100, onInput: (v) => set({ size: v / 100 }), onChange: commit }),
       slider({ label: 'Opacity', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
       slider({ label: 'Blur', value: look.blur || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ blur: v }), onChange: commit }),
+      button('Detach as its own shape', 'apart', detachUnderbelly, canDetachUnderbelly, 'wide'),
     );
   }
   return box;

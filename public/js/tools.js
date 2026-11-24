@@ -1054,6 +1054,58 @@ export async function weldSelection() {
   toast(`Welded ${items.length} things into one shape.${moving ? ' It keeps how they looked on this frame.' : ''}`, 'ok');
 }
 
+/* ---------- Detach the underbelly ---------- */
+
+export const canDetachUnderbelly = () => selected().some((o) => o.underbelly);
+
+// Makes the underbelly of each picked thing into a shape of its own, right above
+// it, so it can be moved, recoloured, reshaped or deleted by itself. The band is
+// drawn alone, traced, and the thing loses its built-in underbelly.
+export async function detachUnderbelly() {
+  const items = selected().filter((o) => o.underbelly);
+  if (!items.length) return;
+  const made = [];
+  for (const item of items) {
+    const box = worldBox([item.id]);
+    if (!box) continue;
+    const u = { size: 1, strength: 0.28, color: '#000000', ...item.underbelly };
+    const pad = Math.max(box.width, box.height) * 0.02 + 4;
+    const area = { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 };
+    const scale = WELD_PX / Math.max(area.width, area.height);
+    const w = Math.max(8, Math.round(area.width * scale)), h = Math.max(8, Math.round(area.height * scale));
+    const band = { ...silhouette(item), underbelly: { size: u.size, strength: 1, color: '#000000', only: true } };
+    const plain = { ...S.doc, animated: false, autoShadow: null, layers: [{ id: 'belly', name: 'Belly', visible: true, locked: false, opacity: 1, objects: [band] }] };
+    let loops = [];
+    try {
+      const canvas = await rasterize(exportSVG(plain, { box: area }), w, h);
+      const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+      const mask = new Uint8Array(w * h);
+      for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] > 127 ? 1 : 0;
+      loops = traceLoops(mask, w, h, { minArea: 6, raw: true });
+    } catch { /* nothing traced */ }
+    if (!loops.length) continue;
+    const subpaths = mapSubpaths(loops.map((loop) => loopToCurves(loop, WELD_FIT)), (x, y) => ({ x: area.x + x / scale, y: area.y + y / scale }));
+    const b = pathBounds(subpaths);
+    const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    subpaths.forEach((sp) => sp.nodes.forEach((n) => { n.x -= cx; n.y -= cy; }));
+    const piece = newPath({
+      name: `${item.name || 'Thing'} underbelly`, x: cx, y: cy, subpaths, fillRule: 'evenodd',
+      fill: u.color, stroke: 'none', strokeWidth: 0, opacity: Math.round(u.strength * (item.opacity ?? 1) * 1000) / 1000,
+      blur: u.blur ? Math.round(u.blur * Math.abs(item.scaleY || 1) * 10) / 10 : 0,
+      ...(isPages(S.doc) && item.page ? { page: item.page } : {}), ...(item.group ? { group: item.group } : {}),
+    });
+    const layer = layerOf(item.id);
+    layer.objects.splice(layer.objects.indexOf(item) + 1, 0, piece);
+    item.underbelly = null;
+    made.push(piece.id);
+  }
+  if (!made.length) { toast('There was no underbelly to detach there.', 'warn'); return; }
+  select(made);
+  commit();
+  refresh();
+  toast(made.length > 1 ? 'The underbellies are their own shapes now.' : 'The underbelly is its own shape now. Move it, recolour it or delete it.', 'ok');
+}
+
 export const canUnweld = () => selected().some((o) => o.parts?.length);
 
 // Puts a welded shape's pieces back where they are now, as separate things.
