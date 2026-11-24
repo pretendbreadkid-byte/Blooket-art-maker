@@ -10,7 +10,7 @@ import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
   TOOLS, TOOL_GROUPS, addShape, reorderSelection, flipSelection, duplicateSelection, deleteSelection, deleteNodes, setNodesKind, setTool,
-  canTakeApart, takeApart, stackEnds, alignSelection, distributeSelection, alignCount, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, detachUnderbelly, canDetachUnderbelly, canGroup, canUngroup, groupSelection, ungroupSelection, autoSmooth, setAutoSmooth, smoothable, smoothLines,
+  canTakeApart, takeApart, stackEnds, alignSelection, distributeSelection, alignCount, shapeLook, rememberSize, canRestoreSize, restoreSize, stretchItems, stretchStart, canWeld, weldSelection, canUnweld, unweldSelection, detachUnderbelly, canDetachUnderbelly, canClip, clipSelection, canUnclip, unclipSelection, canGroup, canUngroup, groupSelection, ungroupSelection, autoSmooth, setAutoSmooth, smoothable, smoothLines,
 } from './tools.js';
 import { drawBlooks } from './blooks.js';
 import { drawLayers } from './layers.js';
@@ -128,6 +128,8 @@ function optionBar() {
       button('Flip up and down', 'flipy', () => flipSelection('y')),
     );
     if (canWeld()) add(button('Weld', 'weld', weldSelection));
+    if (canClip()) add(button('Clipping mask', 'mask', clipSelection));
+    if (canUnclip()) add(button('Release clipping mask', 'mask', unclipSelection));
     if (canDetachUnderbelly()) add(button('Detach underbelly', 'apart', detachUnderbelly));
     if (canRestoreSize()) add(button('Original size', 'undo', restoreSize));
   }
@@ -402,7 +404,7 @@ function underbellyControls(items, toggle = true) {
       slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', reset: 100, onInput: (v) => set({ size: v / 100 }), onChange: commit }),
       slider({ label: 'Opacity', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
       slider({ label: 'Blur', value: look.blur || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ blur: v }), onChange: commit }),
-      button('Detach as its own shape', 'apart', detachUnderbelly, canDetachUnderbelly, 'wide'),
+      button('Detach as its own shape', 'apart', detachUnderbelly, canDetachUnderbelly, canClip, clipSelection, canUnclip, unclipSelection, 'wide'),
     );
   }
   return box;
@@ -512,6 +514,8 @@ function selectedPanel() {
   if (panelTab === 'effects') { effectsPanel(box, items); return; }
   if (canWeld()) box.append(button('Weld into one shape', 'weld', weldSelection, 'wide'));
   if (canUnweld()) box.append(button('Unweld', 'apart', unweldSelection, 'wide'));
+  if (canClip()) box.append(button('Clipping mask: show these only inside the top one', 'mask', clipSelection, 'wide'));
+  if (canUnclip()) box.append(button('Release clipping mask', 'mask', unclipSelection, 'wide'));
   if (canRemoveBackground()) box.append(button('Remove background', 'eraser', removeBackground, 'wide'));
   if (items.some(smoothable)) box.append(button('Smooth lines', 'smooth', () => { if (smoothLines(items)) commit(); }, 'wide'));
   if (canGroup() || canUngroup()) {
@@ -589,6 +593,7 @@ function selectedPanel() {
     }));
   }
   box.append(fold('opacity', 'Opacity', see));
+  box.append(fold('underbelly', 'Underbelly', [underbellyControls(items)]));
   box.append(colorSwaps(items));
 
   if (single?.type === 'image') box.append(fold('crop', 'Crop', cropControls(single)));

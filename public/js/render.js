@@ -237,9 +237,11 @@ function localHeight(o) {
 }
 
 // The underbelly: a see-through band along the bottom of anything (shapes,
-// pictures, text), made from its own outline. The outline moved up is cut out of
-// the outline, so the band follows the bottom edge and curves up wherever the
-// edge does. The cut-out edge is sharpened so straight sides leave no faint line.
+// pictures, text), made from its own outline. A spot is in the band when the
+// thing ends within the band's depth below it, straight down and also diagonally
+// down to each side. Checking the diagonals keeps the band on the bottom edge only:
+// sides that slope inwards towards the bottom don't get a thin strip up them.
+// The cut-out edge is sharpened so straight sides leave no faint line.
 function underbellyFilter(o, id) {
   if (!o.underbelly) return '';
   const u = { ...newUnderbelly(), ...o.underbelly };
@@ -248,7 +250,10 @@ function underbellyFilter(o, id) {
   const half = MASK_SIZE / 2;
   return `<filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}" color-interpolation-filters="sRGB">`
     + `<feOffset in="SourceAlpha" dx="0" dy="${round(-depth, 2)}" result="up"/>`
-    + '<feComposite in="SourceAlpha" in2="up" operator="out"/>'
+    + `<feOffset in="SourceAlpha" dx="${round(Math.abs(depth), 2)}" dy="${round(-depth, 2)}" result="upl"/>`
+    + `<feOffset in="SourceAlpha" dx="${round(-Math.abs(depth), 2)}" dy="${round(-depth, 2)}" result="upr"/>`
+    + '<feMerge result="below"><feMergeNode in="up"/><feMergeNode in="upl"/><feMergeNode in="upr"/></feMerge>'
+    + '<feComposite in="SourceAlpha" in2="below" operator="out"/>'
     + '<feComponentTransfer result="band"><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>'
     + (u.blur > 0 ? `<feGaussianBlur in="band" stdDeviation="${round(u.blur, 2)}" result="band"/>` : '')
     + `<feFlood flood-color="${esc(u.color)}" flood-opacity="${round(u.strength, 3)}"/>`

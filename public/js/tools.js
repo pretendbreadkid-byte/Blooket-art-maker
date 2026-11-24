@@ -1054,6 +1054,30 @@ export async function weldSelection() {
   toast(`Welded ${items.length} things into one shape.${moving ? ' It keeps how they looked on this frame.' : ''}`, 'ok');
 }
 
+/* ---------- Tracing an outline ---------- */
+
+// Draws things solid black and traces what shows, giving the outline on the
+// canvas. threshold is how solid a pixel must be (0-255) to count.
+async function traceOutline(objects, threshold = WELD_SOLID) {
+  const box = worldBox(objects.map((o) => o.id));
+  if (!box) return [];
+  const pad = Math.max(box.width, box.height) * 0.02 + 4;
+  const area = { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 };
+  const scale = WELD_PX / Math.max(area.width, area.height);
+  const w = Math.max(8, Math.round(area.width * scale)), h = Math.max(8, Math.round(area.height * scale));
+  const plain = { ...S.doc, animated: false, autoShadow: null, layers: [{ id: 'trace', name: 'Trace', visible: true, locked: false, opacity: 1, objects: objects.map((o) => o.silhouette || silhouette(o)) }] };
+  try {
+    const canvas = await rasterize(exportSVG(plain, { box: area }), w, h);
+    const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] > threshold ? 1 : 0;
+    const loops = traceLoops(mask, w, h, { minArea: 6, raw: true });
+    return mapSubpaths(loops.map((loop) => loopToCurves(loop, WELD_FIT)), (x, y) => ({ x: area.x + x / scale, y: area.y + y / scale }));
+  } catch {
+    return [];
+  }
+}
+
 /* ---------- Detach the underbelly ---------- */
 
 export const canDetachUnderbelly = () => selected().some((o) => o.underbelly);
@@ -1066,25 +1090,10 @@ export async function detachUnderbelly() {
   if (!items.length) return;
   const made = [];
   for (const item of items) {
-    const box = worldBox([item.id]);
-    if (!box) continue;
     const u = { size: 1, strength: 0.28, color: '#000000', ...item.underbelly };
-    const pad = Math.max(box.width, box.height) * 0.02 + 4;
-    const area = { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 };
-    const scale = WELD_PX / Math.max(area.width, area.height);
-    const w = Math.max(8, Math.round(area.width * scale)), h = Math.max(8, Math.round(area.height * scale));
     const band = { ...silhouette(item), underbelly: { size: u.size, strength: 1, color: '#000000', only: true } };
-    const plain = { ...S.doc, animated: false, autoShadow: null, layers: [{ id: 'belly', name: 'Belly', visible: true, locked: false, opacity: 1, objects: [band] }] };
-    let loops = [];
-    try {
-      const canvas = await rasterize(exportSVG(plain, { box: area }), w, h);
-      const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
-      const mask = new Uint8Array(w * h);
-      for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] > 127 ? 1 : 0;
-      loops = traceLoops(mask, w, h, { minArea: 6, raw: true });
-    } catch { /* nothing traced */ }
-    if (!loops.length) continue;
-    const subpaths = mapSubpaths(loops.map((loop) => loopToCurves(loop, WELD_FIT)), (x, y) => ({ x: area.x + x / scale, y: area.y + y / scale }));
+    const subpaths = await traceOutline([{ id: item.id, silhouette: band }], 127);
+    if (!subpaths.length) continue;
     const b = pathBounds(subpaths);
     const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
     subpaths.forEach((sp) => sp.nodes.forEach((n) => { n.x -= cx; n.y -= cy; }));
@@ -1104,6 +1113,63 @@ export async function detachUnderbelly() {
   commit();
   refresh();
   toast(made.length > 1 ? 'The underbellies are their own shapes now.' : 'The underbelly is its own shape now. Move it, recolour it or delete it.', 'ok');
+}
+
+/* ---------- Clipping mask ---------- */
+
+export const canClip = () => S.sel.size > 1;
+export const canUnclip = () => selected().some((o) => o.masks?.length);
+
+// The top picked thing becomes a mask: everything else picked only shows inside
+// its shape. Shapes keep their exact outline; text and pictures are traced.
+export async function clipSelection() {
+  const items = selected();
+  if (items.length < 2) return;
+  const order = S.doc.layers.flatMap((l) => l.objects);
+  const stacked = [...items].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const mask = stacked[stacked.length - 1];
+  const targets = stacked.slice(0, -1);
+  const m = posed(mask);
+  const world = m.type === 'path'
+    ? mapSubpaths(m.subpaths.filter((sp) => sp.nodes.length > 2), (x, y) => localToWorld(m, x, y))
+    : await traceOutline([mask]);
+  if (!world.length) { toast('The top one has no shape to clip with.', 'warn'); return; }
+  const rule = m.type === 'path' ? (m.fillRule || 'nonzero') : 'evenodd';
+  for (const t of targets) {
+    const p = posed(t);
+    const local = mapSubpaths(world, (x, y) => worldToLocal(p, x, y)).map((sp) => ({ ...sp, closed: true }));
+    t.clips = [...(t.clips || []), [{ rule, subpaths: local }]];
+    t.masks = [...(t.masks || []), clone(mask)];
+  }
+  for (const l of S.doc.layers) l.objects = l.objects.filter((o) => o !== mask);
+  select(targets.map((o) => o.id));
+  commit();
+  refresh();
+  toast(`Clipped to "${mask.name || 'the top shape'}". Release clipping mask brings the shape back.`, 'ok');
+}
+
+// Takes the masks off the picked things and puts the mask shapes back.
+export function unclipSelection() {
+  const items = selected().filter((o) => o.masks?.length);
+  if (!items.length) return;
+  const back = [];
+  const have = new Set(S.doc.layers.flatMap((l) => l.objects).map((o) => o.id));
+  for (const o of items) {
+    o.clips = (o.clips || []).slice(0, Math.max(0, (o.clips || []).length - o.masks.length));
+    if (!o.clips.length) delete o.clips;
+    const layer = layerOf(o.id);
+    for (const m of o.masks) {
+      if (have.has(m.id)) continue;
+      have.add(m.id);
+      layer.objects.splice(layer.objects.indexOf(o) + 1, 0, m);
+      back.push(m.id);
+    }
+    delete o.masks;
+  }
+  select([...items.map((o) => o.id), ...back]);
+  commit();
+  refresh();
+  toast('Clipping mask released.', 'ok');
 }
 
 export const canUnweld = () => selected().some((o) => o.parts?.length);
