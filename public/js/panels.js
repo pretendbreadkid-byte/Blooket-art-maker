@@ -5,7 +5,7 @@ import {
 import { clone, pathBounds, localToWorld, cropOf, isCropped, setCropSide } from './model.js';
 import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup, texturesOf, bgTexturesOf } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
-import { esc, newDropShadow, newAutoShadow, newUnderbelly, WARPS } from './render.js';
+import { esc, newDropShadow, newAutoShadow, newUnderbelly, BELLY_SIDES, WARPS } from './render.js';
 import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
@@ -402,6 +402,7 @@ function underbellyControls(items, toggle = true) {
     box.append(
       colorButton({ label: 'Underbelly colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
       slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', reset: 100, onInput: (v) => set({ size: v / 100 }), onChange: commit }),
+      slider({ label: 'Up the sides', value: Math.round((look.sides ?? BELLY_SIDES) * 100), min: 0, max: 100, unit: '%', reset: Math.round(BELLY_SIDES * 100), onInput: (v) => set({ sides: v / 100 }), onChange: commit }),
       slider({ label: 'Opacity', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
       slider({ label: 'Blur', value: look.blur || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ blur: v }), onChange: commit }),
       button('Detach as its own shape', 'apart', detachUnderbelly, canDetachUnderbelly, canClip, clipSelection, canUnclip, unclipSelection, 'wide'),

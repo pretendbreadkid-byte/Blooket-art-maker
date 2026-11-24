@@ -224,7 +224,12 @@ function clipsOf(o, id) {
   };
 }
 
-export const newUnderbelly = () => ({ size: 1, strength: 0.28, color: '#000000' });
+export const newUnderbelly = () => ({ size: 1, strength: 0.28, color: '#000000', sides: BELLY_SIDES });
+
+// How far the band climbs the sides, 0 to 1. 1 follows the outline all the way up;
+// lower stops it running up sides that slope in towards the bottom, while rounded
+// corners still curve up.
+export const BELLY_SIDES = 0.85;
 
 // How deep the band is at size 100%, as a share of the thing's height.
 const BELLY_DEPTH = 0.14;
@@ -247,11 +252,12 @@ function underbellyFilter(o, id) {
   const u = { ...newUnderbelly(), ...o.underbelly };
   const depth = localHeight(o) * BELLY_DEPTH * u.size * Math.sign(o.scaleY || 1);
   if (!depth || !(u.strength > 0)) return '';
+  const lean = 1 - Math.min(1, Math.max(0, u.sides ?? BELLY_SIDES));
   const half = MASK_SIZE / 2;
   return `<filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}" color-interpolation-filters="sRGB">`
     + `<feOffset in="SourceAlpha" dx="0" dy="${round(-depth, 2)}" result="up"/>`
-    + `<feOffset in="SourceAlpha" dx="${round(Math.abs(depth), 2)}" dy="${round(-depth, 2)}" result="upl"/>`
-    + `<feOffset in="SourceAlpha" dx="${round(-Math.abs(depth), 2)}" dy="${round(-depth, 2)}" result="upr"/>`
+    + `<feOffset in="SourceAlpha" dx="${round(Math.abs(depth) * lean, 2)}" dy="${round(-depth, 2)}" result="upl"/>`
+    + `<feOffset in="SourceAlpha" dx="${round(-Math.abs(depth) * lean, 2)}" dy="${round(-depth, 2)}" result="upr"/>`
     + '<feMerge result="below"><feMergeNode in="up"/><feMergeNode in="upl"/><feMergeNode in="upr"/></feMerge>'
     + '<feComposite in="SourceAlpha" in2="below" operator="out"/>'
     + '<feComponentTransfer result="band"><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>'
