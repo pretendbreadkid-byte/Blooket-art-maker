@@ -1085,3 +1085,6 @@ html[data-skin="fall"] .home-main, html[data-skin="fall"] .landing {
 .theme-swatch { display: grid; grid-template-columns: 1fr 2.4fr; height: 64px; border-radius: 9px; overflow: hidden; }
 .theme-swatch i:last-child { display: grid; place-items: center; }
 .theme-swatch b { width: 40%; height: 14px; border-radius: 5px; }
+.tpl-admin-link { align-self: center; display: inline-flex; align-items: center; gap: 7px; margin-top: 30px; padding: 8px 14px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: var(--soft-ink); font-size: 13px; font-weight: 700; }
+.tpl-admin-link:hover { background: rgba(255, 255, 255, .26); color: #fff; }
+.tpl-admin-link .ico { width: 16px; height: 16px; }

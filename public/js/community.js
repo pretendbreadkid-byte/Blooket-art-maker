@@ -65,12 +65,20 @@ export async function renderTemplates(root) {
 
 // Only for an admin who is signed in: how many are waiting, and a way to check them.
 async function adminNote(root) {
+  // Not signed in (or the sign-in ran out): a small way in to the admin page.
+  const signIn = () => {
+    const link = document.createElement('a');
+    link.className = 'tpl-admin-link';
+    link.href = '#/admin';
+    link.innerHTML = `${icon('shield')}<span>Admin? Sign in to accept sent-in templates</span>`;
+    $('.tpl-page', root)?.append(link);
+  };
   let token = null;
-  try { token = sessionStorage.getItem('blook-admin-token'); } catch { /* not signed in */ }
-  if (!token) return;
+  try { token = localStorage.getItem('blook-admin-token'); } catch { /* not signed in */ }
+  if (!token) { signIn(); return; }
   try {
     const res = await fetch('/api/admin/templates', { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) return;
+    if (!res.ok) { signIn(); return; }
     const waiting = (await res.json()).templates.filter((t) => t.status === 'waiting').length;
     const note = document.createElement('a');
     note.className = 'tpl-admin-note';

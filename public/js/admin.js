@@ -7,13 +7,14 @@ import { $, $$, icon, toast, readText, readDataUrl, confirmBox } from './ui.js';
 const TOKEN_KEY = 'blook-admin-token';
 
 function getToken() {
-  try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
 function setToken(token) {
   try {
-    if (token) sessionStorage.setItem(TOKEN_KEY, token);
-    else sessionStorage.removeItem(TOKEN_KEY);
+    // Kept in this browser so every tab knows you're signed in. The server ends it after 8 hours.
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
   } catch { /* The session just won't survive a reload. */ }
 }
 
