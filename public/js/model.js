@@ -101,24 +101,38 @@ export const isCorner = (sp, i) => {
   const N = nodes.length;
   if (N < 3 || (!closed && (i === 0 || i === N - 1))) return false;
   const n = nodes[i];
-  return !hasIn(n) && !hasOut(n) && !hasOut(nodes[(i - 1 + N) % N]) && !hasIn(nodes[(i + 1) % N]);
+  // Only the point itself has to be pointed. Its neighbours can be curvy: the
+  // corner then rounds along the direction each curve arrives from.
+  return !hasIn(n) && !hasOut(n);
 };
+
+// Whether a neighbour also rounds its corner, so the two must share the line between them.
+const roundsToo = (sp, i) => !!sp.nodes[i].r && isCorner(sp, i);
 
 function cornerGeometry(sp, i) {
   const n = sp.nodes[i];
   const plain = { inn: n, out: n, r: 0 };
   if (!n.r || !isCorner(sp, i)) return plain;
   const N = sp.nodes.length;
-  const prev = sp.nodes[(i - 1 + N) % N];
-  const next = sp.nodes[(i + 1) % N];
-  const ax = prev.x - n.x, ay = prev.y - n.y, bx = next.x - n.x, by = next.y - n.y;
-  const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
-  if (!la || !lb) return plain;
-  const ux = ax / la, uy = ay / la, vx = bx / lb, vy = by / lb;
+  const ip = (i - 1 + N) % N, iq = (i + 1) % N;
+  const prev = sp.nodes[ip];
+  const next = sp.nodes[iq];
+  // Which way each side leaves the corner: towards the neighbour, or along its
+  // handle when that side is a curve.
+  const pa = hasOut(prev) ? { x: prev.x + prev.ox, y: prev.y + prev.oy } : prev;
+  const pb = hasIn(next) ? { x: next.x + next.ix, y: next.y + next.iy } : next;
+  const ax = pa.x - n.x, ay = pa.y - n.y, bx = pb.x - n.x, by = pb.y - n.y;
+  const da = Math.hypot(ax, ay), db = Math.hypot(bx, by);
+  if (!da || !db) return plain;
+  const ux = ax / da, uy = ay / da, vx = bx / db, vy = by / db;
+  // How much of each side the curve may use: half when the neighbour rounds too,
+  // nearly all of it when it doesn't. Curvy sides keep some room for their curve.
+  const room = (other, k, curvy) => Math.hypot(other.x - n.x, other.y - n.y) * (curvy ? 0.45 : roundsToo(sp, k) ? 0.5 : 0.95);
+  const la = room(prev, ip, hasOut(prev)), lb = room(next, iq, hasIn(next));
   const angle = Math.acos(clamp(ux * vx + uy * vy, -1, 1));
   if (angle < 0.01 || angle > Math.PI - 0.01) return plain;
   const tan = Math.tan(angle / 2);
-  const t = Math.min(n.r / tan, Math.min(la, lb) / 2);
+  const t = Math.min(n.r / tan, la, lb);
   return {
     inn: { x: n.x + ux * t, y: n.y + uy * t },
     out: { x: n.x + vx * t, y: n.y + vy * t },
@@ -162,7 +176,10 @@ function subpathD(raw, uniform, sx = 1, sy = 1) {
     const a = nodes[k], j = (k + 1) % N, b = nodes[j], g = geo[j];
     const from = geo[k].out;
     if (hasOut(a) || hasIn(b)) {
-      d += `C${pt(a.x + (a.ox || 0), a.y + (a.oy || 0))} ${pt(b.x + (b.ix || 0), b.y + (b.iy || 0))} ${pt(g.inn.x, g.inn.y)}`;
+      // A rounded corner at either end: the curve meets the corner's own start or end.
+      const c1 = geo[k].r ? from : { x: a.x + (a.ox || 0), y: a.y + (a.oy || 0) };
+      const c2 = g.r ? g.inn : { x: b.x + (b.ix || 0), y: b.y + (b.iy || 0) };
+      d += `C${pt(c1.x, c1.y)} ${pt(c2.x, c2.y)} ${pt(g.inn.x, g.inn.y)}`;
     } else if (uniform) {
       const c = (p, q, t) => p + (q - p) * t;
       d += `C${pt(c(from.x, g.inn.x, 1 / 3), c(from.y, g.inn.y, 1 / 3))} ${pt(c(from.x, g.inn.x, 2 / 3), c(from.y, g.inn.y, 2 / 3))} ${pt(g.inn.x, g.inn.y)}`;
