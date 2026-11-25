@@ -5,7 +5,7 @@ import {
 import { clone, pathBounds, localToWorld, cropOf, isCropped, setCropSide } from './model.js';
 import { TEXTURES, MOVES, newTexture, kindLook, patternMarkup, texturesOf, bgTexturesOf } from './textures.js';
 import { colorsIn, swapColor, pictureColors, recolorPictures, normalColor } from './recolor.js';
-import { esc, newDropShadow, newAutoShadow, newUnderbelly, BELLY_SIDES, WARPS } from './render.js';
+import { esc, newDropShadow, newAutoShadow, newUnderbelly, newHalfglow, BELLY_SIDES, WARPS } from './render.js';
 import { BASIC_SHAPES, MORE_SHAPES, shapeThumb } from './shapes.js';
 import { localBox, worldBox, hasCorners, toDoc } from './stage.js';
 import {
@@ -130,7 +130,8 @@ function optionBar() {
     if (canWeld()) add(button('Weld', 'weld', weldSelection));
     if (canClip()) add(button('Clipping mask', 'mask', clipSelection));
     if (canUnclip()) add(button('Release clipping mask', 'mask', unclipSelection));
-    if (canDetachUnderbelly()) add(button('Detach underbelly', 'apart', detachUnderbelly));
+    if (canDetachUnderbelly()) add(button('Detach underbelly', 'apart', () => detachUnderbelly('underbelly')));
+    if (canDetachUnderbelly('halfglow')) add(button('Detach half glow', 'apart', () => detachUnderbelly('halfglow')));
     if (canRestoreSize()) add(button('Original size', 'undo', restoreSize));
   }
   if (tool === 'pencil' || tool === 'marker' || tool === 'eraser' || tool === 'line') {
@@ -385,27 +386,33 @@ function dropShadowControls(items, toggle = true) {
   return box;
 }
 
-// A see-through band along the bottom of whatever is picked, following its outline.
-function underbellyControls(items, toggle = true) {
-  const first = items.find((o) => o.underbelly);
-  const box = html(`<div class="shadow-box">${toggle ? `<label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>Underbelly</span></label>
-    <p class="muted small">A see-through band along the bottom, following the outline. Works on shapes, pictures and text.</p>` : ''}</div>`);
+// A see-through band along the bottom (underbelly) or a light one along the top
+// (half glow) of whatever is picked, following its outline.
+const BANDS = {
+  underbelly: { title: 'Underbelly', make: newUnderbelly, note: 'A see-through band along the bottom, following the outline. Works on shapes, pictures and text.', detach: () => detachUnderbelly('underbelly') },
+  halfglow: { title: 'Half glow', make: newHalfglow, note: 'A light band along the top, like the underbelly turned over. Works on shapes, pictures and text.', detach: () => detachUnderbelly('halfglow') },
+};
+function underbellyControls(items, toggle = true, key = 'underbelly') {
+  const band = BANDS[key];
+  const first = items.find((o) => o[key]);
+  const box = html(`<div class="shadow-box">${toggle ? `<label class="check"><input type="checkbox" ${first ? 'checked' : ''}><span>${band.title}</span></label>
+    <p class="muted small">${band.note}</p>` : ''}</div>`);
   if (toggle) $('input', box).onchange = (e) => {
-    const look = e.target.checked ? { ...newUnderbelly(), ...first?.underbelly } : null;
-    items.forEach((o) => { o.underbelly = look && { ...look }; });
+    const look = e.target.checked ? { ...band.make(), ...first?.[key] } : null;
+    items.forEach((o) => { o[key] = look && { ...look }; });
     commit();
     hooks.panels();
   };
   if (first) {
-    const look = { ...newUnderbelly(), ...first.underbelly };
-    const set = (patch) => { Object.assign(look, patch); items.forEach((o) => { o.underbelly = { ...look }; }); liveRefresh(); };
+    const look = { ...band.make(), ...first[key] };
+    const set = (patch) => { Object.assign(look, patch); items.forEach((o) => { o[key] = { ...look }; }); liveRefresh(); };
     box.append(
-      colorButton({ label: 'Underbelly colour', value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
+      colorButton({ label: `${band.title} colour`, value: look.color, onInput: (c) => set({ color: c }), onDone: commit }),
       slider({ label: 'Size', value: Math.round(look.size * 100), min: 10, max: 400, unit: '%', reset: 100, onInput: (v) => set({ size: v / 100 }), onChange: commit }),
-      slider({ label: 'Up the sides', value: Math.round((look.sides ?? BELLY_SIDES) * 100), min: 0, max: 100, unit: '%', reset: Math.round(BELLY_SIDES * 100), onInput: (v) => set({ sides: v / 100 }), onChange: commit }),
+      slider({ label: key === 'halfglow' ? 'Down the sides' : 'Up the sides', value: Math.round((look.sides ?? BELLY_SIDES) * 100), min: 0, max: 100, unit: '%', reset: Math.round(BELLY_SIDES * 100), onInput: (v) => set({ sides: v / 100 }), onChange: commit }),
       slider({ label: 'Opacity', value: Math.round(look.strength * 100), min: 0, max: 100, unit: '%', onInput: (v) => set({ strength: v / 100 }), onChange: commit }),
       slider({ label: 'Blur', value: look.blur || 0, min: 0, max: 30, unit: 'px', onInput: (v) => set({ blur: v }), onChange: commit }),
-      button('Detach as its own shape', 'apart', detachUnderbelly, canDetachUnderbelly, canClip, clipSelection, canUnclip, unclipSelection, 'wide'),
+      button('Detach as its own shape', 'apart', band.detach, 'wide'),
     );
   }
   return box;
@@ -595,6 +602,7 @@ function selectedPanel() {
   }
   box.append(fold('opacity', 'Opacity', see));
   box.append(fold('underbelly', 'Underbelly', [underbellyControls(items)]));
+  box.append(fold('halfglow', 'Half glow', [underbellyControls(items, true, 'halfglow')]));
   box.append(colorSwaps(items));
 
   if (single?.type === 'image') box.append(fold('crop', 'Crop', cropControls(single)));
@@ -763,6 +771,12 @@ const FX_CARDS = [
     controls: (items) => [underbellyControls(items, false)],
   },
   {
+    key: 'halfglow', group: 'light', title: 'Half glow',
+    used: (items) => items.some((o) => o.halfglow),
+    on: (o) => { o.halfglow = newHalfglow(); }, preview: (o) => { o.halfglow = { ...newHalfglow(), strength: 0.6 }; }, off: (o) => { o.halfglow = null; },
+    controls: (items) => [underbellyControls(items, false, 'halfglow')],
+  },
+  {
     key: 'texture', group: 'texture', title: 'Texture',
     used: (items) => items.some((o) => texturesOf(posed(o)).length),
     on: (o) => { o.textures = [newTexture('dots', S.doc.animated)]; delete o.texture; },
@@ -794,7 +808,7 @@ function panelTabs(items) {
 
 // What the art looks like without its effects, so its preview only redraws when the art changes.
 const artKey = (items) => JSON.stringify(items.map((o) => o.id)) + JSON.stringify(items, (k, v) => (
-  k === 'href' ? String(v).length : ['fx', 'dropShadow', 'underbelly', 'textures', 'texture', 'blur', 'pixel'].includes(k) ? undefined : v));
+  k === 'href' ? String(v).length : ['fx', 'dropShadow', 'underbelly', 'halfglow', 'textures', 'texture', 'blur', 'pixel'].includes(k) ? undefined : v));
 const tileCache = new Map();
 
 // Every effect as a tile. Tap one to put it on; tap it again for its settings.

@@ -508,11 +508,25 @@ test('anything can have an underbelly made from its own outline', async () => {
   words.underbelly = newUnderbelly();
   const svg = exportSVG(doc);
   // The square is 100 tall, so at 200% the band is 28 deep: the outline moved up 28 is cut out.
-  assert.ok(svg.includes('<feOffset in="SourceAlpha" dx="0" dy="-28" result="up"/>'), svg);
+  assert.ok(svg.includes('<feOffset in="SourceAlpha" dx="0" dy="-28" result="belly1"/>'), svg);
   assert.ok(svg.includes('flood-color="#3a1f5c" flood-opacity="0.6"'));
   assert.ok(svg.includes(`filter="url(#erase-${shape.id}-belly)"`));
   assert.ok(svg.includes(`filter="url(#erase-${words.id}-belly)"`), 'text gets one too');
   assert.ok(!svg.includes('M-113.62 42.93'), 'no stretched template shape');
+});
+
+test('a half glow is a light band along the top, and works with an underbelly', async () => {
+  const { newUnderbelly, newHalfglow } = await import('../public/js/render.js');
+  const doc = newDoc({ name: 't', width: 400, height: 400 });
+  const shape = newPath({ x: 0, y: 0, subpaths: [{ closed: true, nodes: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] }], fill: '#ff0000' });
+  shape.halfglow = newHalfglow();
+  doc.layers[0].objects.push(shape);
+  let svg = exportSVG(doc);
+  assert.ok(svg.includes('<feOffset in="SourceAlpha" dx="0" dy="14" result="glow1"/>'), 'shifted down, so the band sits on top');
+  assert.ok(svg.includes('flood-color="#ffffff" flood-opacity="0.35"'), 'light to start');
+  shape.underbelly = newUnderbelly();
+  svg = exportSVG(doc);
+  assert.ok(svg.includes('<feMergeNode in="SourceGraphic"/><feMergeNode in="belly"/><feMergeNode in="glow"/>'), 'both in one filter');
 });
 
 test('a flipped shape keeps its underbelly on the bottom', async () => {
@@ -520,7 +534,7 @@ test('a flipped shape keeps its underbelly on the bottom', async () => {
   const doc = newDoc({ name: 't' });
   const shape = newPath({ subpaths: square(), fill: '#ff0000', scaleY: -1, underbelly: newUnderbelly() });
   doc.layers[0].objects.push(shape);
-  assert.ok(exportSVG(doc).includes('dy="14" result="up"'));
+  assert.ok(exportSVG(doc).includes('dy="14" result="belly1"'));
 });
 
 test('an underbelly follows an animated shape', async () => {
@@ -895,7 +909,7 @@ test('a blurred texture blurs across its tile edges, and underbellies can be sof
   const svg = exportSVG(doc);
   assert.ok(svg.includes(`<filter id="erase-${box.id}-tex0-blur"`), 'the texture has its blur');
   assert.equal((svg.match(/<rect width="40" height="16" fill="#ffffff"\/>/g) || []).length, 9, 'drawn with its neighbours, so no seams');
-  assert.ok(svg.includes('<feGaussianBlur in="band" stdDeviation="3" result="band"/>') && svg.includes('<feComposite in2="SourceAlpha" operator="in" result="belly"/>'), 'a soft underbelly that stays inside');
+  assert.ok(svg.includes('<feGaussianBlur in="bellyb" stdDeviation="3" result="bellys"/>') && svg.includes('in2="SourceAlpha" operator="in" result="belly"/>'), 'a soft underbelly that stays inside');
 });
 
 test('pixelate turns art and the background into blocks on one grid', () => {

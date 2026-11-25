@@ -10,7 +10,7 @@ const TILE = 160;
 const FILL = 0.74;
 
 // Pieces with every effect taken off, so a preview shows just the one effect.
-const EFFECT_PROPS = ['fx', 'dropShadow', 'underbelly', 'textures', 'texture'];
+const EFFECT_PROPS = ['fx', 'dropShadow', 'underbelly', 'halfglow', 'textures', 'texture'];
 function plain(o) {
   const c = clone(o);
   for (const k of EFFECT_PROPS) delete c[k];

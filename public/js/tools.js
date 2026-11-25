@@ -982,7 +982,7 @@ function silhouette(raw) {
   const ink = (paint) => (paint && paint !== 'none' ? '#000000' : 'none');
   return {
     ...o, keys: [], page: undefined, opacity: 1, blur: 0, gradient: null, texture: null, textures: null, look: undefined,
-    dropShadow: null, underbelly: null, shadow: false, fill: o.type === 'text' ? '#000000' : ink(o.fill), stroke: ink(o.stroke),
+    dropShadow: null, underbelly: null, halfglow: null, shadow: false, fill: o.type === 'text' ? '#000000' : ink(o.fill), stroke: ink(o.stroke),
   };
 }
 
@@ -990,7 +990,7 @@ function silhouette(raw) {
 // own colours, without the effects that belong to the whole shape now.
 function weldPart(raw, cx, cy) {
   const o = clone(posed(raw));
-  return { ...o, id: uid('w'), x: o.x - cx, y: o.y - cy, keys: [], page: undefined, group: undefined, dropShadow: null, underbelly: null, blur: 0 };
+  return { ...o, id: uid('w'), x: o.x - cx, y: o.y - cy, keys: [], page: undefined, group: undefined, dropShadow: null, underbelly: null, halfglow: null, blur: 0 };
 }
 
 // Joins the picked things into one shape. Their silhouettes are drawn together and
@@ -1037,7 +1037,7 @@ export async function weldSelection() {
     name: 'Welded shape', x: cx, y: cy, subpaths, fillRule: 'evenodd',
     fill: looks.fill && looks.fill !== 'none' ? looks.fill : '#000000', gradient: clone(looks.gradient ?? null),
     stroke: looks.stroke || 'none', strokeWidth: looks.strokeWidth || 0, opacity: looks.opacity ?? 1,
-    ...(top.textures || top.texture ? { textures: clone(top.textures || [top.texture]) } : {}), ...(top.underbelly ? { underbelly: clone(top.underbelly) } : {}),
+    ...(top.textures || top.texture ? { textures: clone(top.textures || [top.texture]) } : {}), ...(top.underbelly ? { underbelly: clone(top.underbelly) } : {}), ...(top.halfglow ? { halfglow: clone(top.halfglow) } : {}),
     ...(top.dropShadow ? { dropShadow: clone(top.dropShadow) } : {}), ...(isPages(S.doc) && top.page ? { page: top.page } : {}),
     parts: stacked.map((o) => weldPart(o, cx, cy)),
   });
@@ -1080,39 +1080,43 @@ async function traceOutline(objects, threshold = WELD_SOLID) {
 
 /* ---------- Detach the underbelly ---------- */
 
-export const canDetachUnderbelly = () => selected().some((o) => o.underbelly);
+export const canDetachUnderbelly = (key = 'underbelly') => selected().some((o) => o[key]);
+export const detachHalfglow = () => detachUnderbelly('halfglow');
 
 // Makes the underbelly of each picked thing into a shape of its own, right above
 // it, so it can be moved, recoloured, reshaped or deleted by itself. The band is
 // drawn alone, traced, and the thing loses its built-in underbelly.
-export async function detachUnderbelly() {
-  const items = selected().filter((o) => o.underbelly);
+export async function detachUnderbelly(key = 'underbelly') {
+  if (typeof key !== 'string') key = 'underbelly';
+  const glow = key === 'halfglow';
+  const what = glow ? 'half glow' : 'underbelly';
+  const items = selected().filter((o) => o[key]);
   if (!items.length) return;
   const made = [];
   for (const item of items) {
-    const u = { size: 1, strength: 0.28, color: '#000000', ...item.underbelly };
-    const band = { ...silhouette(item), underbelly: { size: u.size, strength: 1, color: '#000000', only: true } };
+    const u = { size: 1, strength: glow ? 0.35 : 0.28, color: glow ? '#ffffff' : '#000000', ...item[key] };
+    const band = { ...silhouette(item), [key]: { size: u.size, sides: u.sides, strength: 1, color: '#000000', only: true } };
     const subpaths = await traceOutline([{ id: item.id, silhouette: band }], 127);
     if (!subpaths.length) continue;
     const b = pathBounds(subpaths);
     const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
     subpaths.forEach((sp) => sp.nodes.forEach((n) => { n.x -= cx; n.y -= cy; }));
     const piece = newPath({
-      name: `${item.name || 'Thing'} underbelly`, x: cx, y: cy, subpaths, fillRule: 'evenodd',
+      name: `${item.name || 'Thing'} ${what}`, x: cx, y: cy, subpaths, fillRule: 'evenodd',
       fill: u.color, stroke: 'none', strokeWidth: 0, opacity: Math.round(u.strength * (item.opacity ?? 1) * 1000) / 1000,
       blur: u.blur ? Math.round(u.blur * Math.abs(item.scaleY || 1) * 10) / 10 : 0,
       ...(isPages(S.doc) && item.page ? { page: item.page } : {}), ...(item.group ? { group: item.group } : {}),
     });
     const layer = layerOf(item.id);
     layer.objects.splice(layer.objects.indexOf(item) + 1, 0, piece);
-    item.underbelly = null;
+    item[key] = null;
     made.push(piece.id);
   }
-  if (!made.length) { toast('There was no underbelly to detach there.', 'warn'); return; }
+  if (!made.length) { toast(`There was no ${what} to detach there.`, 'warn'); return; }
   select(made);
   commit();
   refresh();
-  toast(made.length > 1 ? 'The underbellies are their own shapes now.' : 'The underbelly is its own shape now. Move it, recolour it or delete it.', 'ok');
+  toast(made.length > 1 ? `Each ${what} is its own shape now.` : `The ${what} is its own shape now. Move it, recolour it or delete it.`, 'ok');
 }
 
 /* ---------- Clipping mask ---------- */

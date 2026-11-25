@@ -225,6 +225,7 @@ function clipsOf(o, id) {
 }
 
 export const newUnderbelly = () => ({ size: 1, strength: 0.28, color: '#000000', sides: BELLY_SIDES });
+export const newHalfglow = () => ({ size: 1, strength: 0.35, color: '#ffffff', sides: BELLY_SIDES });
 
 // How far the band climbs the sides, 0 to 1. 1 follows the outline all the way up;
 // lower stops it running up sides that slope in towards the bottom, while rounded
@@ -247,24 +248,37 @@ function localHeight(o) {
 // down to each side. Checking the diagonals keeps the band on the bottom edge only:
 // sides that slope inwards towards the bottom don't get a thin strip up them.
 // The cut-out edge is sharpened so straight sides leave no faint line.
-function underbellyFilter(o, id) {
-  if (!o.underbelly) return '';
-  const u = { ...newUnderbelly(), ...o.underbelly };
+// The half glow is the same band turned over: a lighter one along the top edge.
+function bandSteps(o, u, name, top) {
   const depth = localHeight(o) * BELLY_DEPTH * u.size * Math.sign(o.scaleY || 1);
   if (!depth || !(u.strength > 0)) return '';
   const lean = 1 - Math.min(1, Math.max(0, u.sides ?? BELLY_SIDES));
+  const dy = round(top ? depth : -depth, 2), dx = round(Math.abs(depth) * lean, 2);
+  const band = u.blur > 0 ? `${name}s` : `${name}b`;
+  return `<feOffset in="SourceAlpha" dx="0" dy="${dy}" result="${name}1"/>`
+    + `<feOffset in="SourceAlpha" dx="${dx}" dy="${dy}" result="${name}2"/>`
+    + `<feOffset in="SourceAlpha" dx="${-dx}" dy="${dy}" result="${name}3"/>`
+    + `<feMerge result="${name}m"><feMergeNode in="${name}1"/><feMergeNode in="${name}2"/><feMergeNode in="${name}3"/></feMerge>`
+    + `<feComposite in="SourceAlpha" in2="${name}m" operator="out" result="${name}o"/>`
+    + `<feComponentTransfer in="${name}o" result="${name}b"><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>`
+    + (u.blur > 0 ? `<feGaussianBlur in="${name}b" stdDeviation="${round(u.blur, 2)}" result="${name}s"/>` : '')
+    + `<feFlood flood-color="${esc(u.color)}" flood-opacity="${round(u.strength, 3)}" result="${name}f"/>`
+    + (u.blur > 0
+      ? `<feComposite in="${name}f" in2="${band}" operator="in" result="${name}c"/><feComposite in="${name}c" in2="SourceAlpha" operator="in" result="${name}"/>`
+      : `<feComposite in="${name}f" in2="${band}" operator="in" result="${name}"/>`);
+}
+
+function underbellyFilter(o, id) {
+  if (!o.underbelly && !o.halfglow) return '';
+  const belly = o.underbelly ? { ...newUnderbelly(), ...o.underbelly } : null;
+  const glow = o.halfglow ? { ...newHalfglow(), ...o.halfglow } : null;
+  const steps = [belly && ['belly', bandSteps(o, belly, 'belly', false)], glow && ['glow', bandSteps(o, glow, 'glow', true)]].filter((x) => x && x[1]);
+  if (!steps.length) return '';
+  const only = belly?.only || glow?.only;
   const half = MASK_SIZE / 2;
   return `<filter id="${id}" filterUnits="userSpaceOnUse" x="${-half}" y="${-half}" width="${MASK_SIZE}" height="${MASK_SIZE}" color-interpolation-filters="sRGB">`
-    + `<feOffset in="SourceAlpha" dx="0" dy="${round(-depth, 2)}" result="up"/>`
-    + `<feOffset in="SourceAlpha" dx="${round(Math.abs(depth) * lean, 2)}" dy="${round(-depth, 2)}" result="upl"/>`
-    + `<feOffset in="SourceAlpha" dx="${round(-Math.abs(depth) * lean, 2)}" dy="${round(-depth, 2)}" result="upr"/>`
-    + '<feMerge result="below"><feMergeNode in="up"/><feMergeNode in="upl"/><feMergeNode in="upr"/></feMerge>'
-    + '<feComposite in="SourceAlpha" in2="below" operator="out"/>'
-    + '<feComponentTransfer result="band"><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>'
-    + (u.blur > 0 ? `<feGaussianBlur in="band" stdDeviation="${round(u.blur, 2)}" result="band"/>` : '')
-    + `<feFlood flood-color="${esc(u.color)}" flood-opacity="${round(u.strength, 3)}"/>`
-    + (u.blur > 0 ? '<feComposite in2="band" operator="in"/><feComposite in2="SourceAlpha" operator="in" result="belly"/>' : '<feComposite in2="band" operator="in" result="belly"/>')
-    + (u.only ? '<feMerge><feMergeNode in="belly"/></feMerge></filter>' : '<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="belly"/></feMerge></filter>');
+    + steps.map((x) => x[1]).join('')
+    + `<feMerge>${only ? '' : '<feMergeNode in="SourceGraphic"/>'}${steps.map((x) => `<feMergeNode in="${x[0]}"/>`).join('')}</feMerge></filter>`;
 }
 
 // Blur is measured on the canvas, so it sits outside the piece's own scale.
