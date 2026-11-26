@@ -376,6 +376,7 @@ body.panning #wk { cursor: grab; }
 
 /* Breadlet theme */
 @font-face { font-family: "Titan One"; src: url(/fonts/TitanOne.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: "DSEG7 Classic"; src: url(/fonts/DSEG7Classic.woff2) format("woff2"); font-display: swap; }
 h1, h2, .brand b, .opt-title b, .btn.big, .fit-ask b, .format b { font-family: "Titan One", Nunito, "Segoe UI", sans-serif; font-weight: 400; letter-spacing: .01em; }
 h3, .btn { font-family: Nunito, "Segoe UI", sans-serif; font-weight: 800; }
 .btn { border-radius: 8px; }

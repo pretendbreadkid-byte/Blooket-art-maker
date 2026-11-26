@@ -1,0 +1,3 @@
+DSEG7 Classic, by keshikan (https://github.com/keshikan/DSEG).
+Copyright (c) 2017, keshikan (http://www.keshikan.net), with Reserved Font Name "DSEG".
+Licensed under the SIL Open Font License, Version 1.1 (see OFL.txt).

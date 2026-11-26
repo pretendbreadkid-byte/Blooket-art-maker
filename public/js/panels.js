@@ -23,7 +23,8 @@ import { resizeCanvas } from './fit.js';
 import { $, $$, html, icon, swatch, colorPopover, readDataUrl, toast } from './ui.js';
 
 export const BLOOKET_FONT = 'Titan One';
-const FONTS = [[BLOOKET_FONT, 'Blooket (Titan One)'], ...['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'].map((f) => [f, f])];
+export const CLOCK_FONT = 'DSEG7 Classic';
+const FONTS = [[BLOOKET_FONT, 'Blooket (Titan One)'], [CLOCK_FONT, 'Digital clock'], ...['Arial', 'Verdana', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact'].map((f) => [f, f])];
 
 // Double-click a slider to put it back to its usual value.
 function slider({ label, value, min, max, step = 1, unit = '', onInput, onChange, reset }) {
