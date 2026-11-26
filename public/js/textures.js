@@ -5,6 +5,21 @@ import { round } from './model.js';
 import { esc } from './render.js';
 import { BLOOKS_TILE } from './texture-art.js';
 
+// A cartoon wave mark: a little "~" w wide, its middle at (x, y).
+const squiggle = (t, x, y, w) => {
+  const a = round(t * (x - w / 2)), h = round(t * w * 0.22), q = round((t * w) / 4), half = round((t * w) / 2);
+  return `M${a} ${round(t * y)}q${q} ${-h} ${half} 0t${half} 0`;
+};
+
+// Sand speckles: [x, y, size] as shares of the tile, spread unevenly so the
+// repeat is hard to spot. All of them stay inside the tile, so there are no seams.
+const GRAINS = [
+  [0.12, 0.14, 0.03], [0.38, 0.08, 0.02], [0.66, 0.18, 0.035], [0.88, 0.1, 0.022],
+  [0.24, 0.36, 0.022], [0.52, 0.42, 0.03], [0.8, 0.38, 0.02], [0.1, 0.58, 0.035],
+  [0.36, 0.66, 0.02], [0.62, 0.62, 0.025], [0.9, 0.7, 0.03], [0.2, 0.88, 0.022],
+  [0.48, 0.86, 0.035], [0.74, 0.9, 0.02],
+];
+
 const star = (t) => {
   const c = t / 2, a = t * 0.32, q = t * 0.04;
   return `M${c} ${c - a}Q${c + q} ${c - q} ${c + a} ${c}Q${c + q} ${c + q} ${c} ${c + a}Q${c - q} ${c + q} ${c - a} ${c}Q${c - q} ${c - q} ${c} ${c - a}Z`;
@@ -66,6 +81,21 @@ export const TEXTURES = {
     tile: (t, c, tex, id, th) => `<mask id="${id}-m" maskUnits="userSpaceOnUse" x="0" y="0" width="${t}" height="${th}">`
       + `<image href="data:image/webp;base64,${BLOOKS_TILE.data}" width="${t}" height="${th}" preserveAspectRatio="none"/></mask>`
       + `<rect width="${t}" height="${th}" fill="${c}" mask="url(#${id}-m)"/>`,
+  },
+  // Cartoon water: rows of little wave marks, each row shifted, with a glint or two.
+  water: {
+    name: 'Water',
+    look: { size: 140, angle: 0, opacity: 0.55, move: 'right', speed: 1 },
+    tile: (t, c) => `<path d="${squiggle(t, 0.26, 0.2, 0.26)}${squiggle(t, 0.72, 0.5, 0.3)}${squiggle(t, 0.3, 0.82, 0.22)}" fill="none" stroke="${c}" stroke-width="${round(t * 0.04)}" stroke-linecap="round" stroke-linejoin="round"/>`
+      + `<circle cx="${round(t * 0.62)}" cy="${round(t * 0.16)}" r="${round(t * 0.022)}" fill="${c}"/><circle cx="${round(t * 0.7)}" cy="${round(t * 0.22)}" r="${round(t * 0.013)}" fill="${c}"/>`
+      + `<circle cx="${round(t * 0.12)}" cy="${round(t * 0.52)}" r="${round(t * 0.016)}" fill="${c}"/><circle cx="${round(t * 0.8)}" cy="${round(t * 0.84)}" r="${round(t * 0.02)}" fill="${c}"/>`,
+  },
+  // Cartoon sand: speckles of different sizes and a couple of tiny ripples.
+  sand: {
+    name: 'Sand',
+    look: { size: 90, angle: 0, opacity: 0.45, color: '#9a6a32' },
+    tile: (t, c) => GRAINS.map(([x, y, r]) => `<circle cx="${round(t * x)}" cy="${round(t * y)}" r="${round(t * r, 2)}" fill="${c}"/>`).join('')
+      + `<path d="M${round(t * 0.58)} ${round(t * 0.28)}q${round(t * 0.06)} ${round(-t * 0.04)} ${round(t * 0.12)} 0M${round(t * 0.22)} ${round(t * 0.76)}q${round(t * 0.06)} ${round(-t * 0.04)} ${round(t * 0.12)} 0" fill="none" stroke="${c}" stroke-width="${round(t * 0.025, 2)}" stroke-linecap="round"/>`,
   },
   picture: { name: 'Picture', tile: (t, c, tex) => (tex.href ? `<image href="${esc(tex.href)}" width="${t}" height="${t}" preserveAspectRatio="xMidYMid slice"/>` : '') },
 };
